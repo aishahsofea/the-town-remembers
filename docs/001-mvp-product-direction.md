@@ -311,18 +311,6 @@ This scope keeps the distinctive promise of the project: one player's social act
 
 It is intentionally smaller than a general living-town simulation. The project has ten days, one developer, a new database platform, multiple required integrations, and a sub-three-minute demonstration. Reliability and explainability take priority over content volume.
 
-## Open decisions
+## Follow-up decision
 
-The following have not yet been selected:
-
-- Application and deployment stack
-- CockroachDB schema and vector-index design
-- AWS runtime and queue topology
-- Exact model choice and prompting strategy
-- Confidence and trust formulas
-- API shape
-- Observability implementation
-- Security and abuse controls for the public demo
-- Evaluation suite and failure tests
-- Ten-day implementation sequence
-
+The application stack, database design, AWS topology, model roles, security, cost controls, and test strategy are recorded in [Decision 002: MVP System Architecture](002-mvp-system-architecture.md).
