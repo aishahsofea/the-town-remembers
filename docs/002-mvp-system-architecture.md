@@ -61,18 +61,27 @@ flowchart LR
     Bedrock --> Sonnet["Sonnet: dialogue"]
     Bedrock --> Titan["Titan: embeddings"]
 
-    Game --> CRDB["CockroachDB Basic"]
-    CRDB --> State["Town state"]
-    CRDB --> Memory["Episodes and vector memories"]
-    CRDB --> Outbox["Outbox jobs"]
+    subgraph CRDB["CockroachDB Basic"]
+        direction TB
+        State["Town state and events"]
+        Memory["Episodes and vector memories"]
+        Outbox["outbox table<br/>pending delivery jobs"]
+    end
 
-    Outbox --> Queue["SQS: delayed jobs"]
+    Game -->|"read and write"| State
+    Game -->|"insert job with event transaction"| Outbox
+    Game -->|"publish job after commit"| Queue["SQS: delayed ambient jobs"]
     Queue --> Tick["Ambient Tick Lambda"]
     Tick --> Bedrock
-    Tick --> CRDB
+    Tick --> State
+    Tick --> Memory
 
-    Recovery["EventBridge + Recovery Lambda"] --> Outbox
-    MCP["Managed MCP: read-only inspection"] --> CRDB
+    EventBridge["EventBridge schedule"] -->|"invoke"| Recovery["Recovery Lambda"]
+    Recovery -->|"find and mark unsent jobs"| Outbox
+    Recovery -->|"publish missed jobs"| Queue
+
+    MCP["Managed MCP: read-only inspection"] --> State
+    MCP --> Memory
 ```
 
 ## Main technology choices
