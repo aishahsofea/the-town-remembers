@@ -340,3 +340,7 @@ The application stack, database design, AWS topology, model roles, security, cos
 
 The public route, session, projection, action, and error contracts are recorded
 in the [HTTP API Contract](006-http-api-contract.md).
+
+The complete mystery canon, seed state, NPC voices, clue graph, access routes,
+promise offers, case-board visibility, and endings are recorded in
+[Decision 009: Authored Game Content](009-authored-game-content.md).

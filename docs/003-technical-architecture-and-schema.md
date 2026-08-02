@@ -422,11 +422,12 @@ movement.
 
 The MVP seed uses Mara as the social hub:
 
-| From | May contact |
-|---|---|
-| Mara | Nessa, Corin |
-| Nessa | Mara |
-| Corin | Mara |
+| From | May contact | From NPC's trust in contact |
+|---|---|---:|
+| Mara | Nessa | `30` |
+| Mara | Corin | `40` |
+| Nessa | Mara | `20` |
+| Corin | Mara | `20` |
 
 Contactability permits an off-screen conversation opportunity. It does not
 override secrecy, trust, promise, cover-story, or claim-disclosure rules.
@@ -453,6 +454,10 @@ That reference owns:
 - Belief, relationship, disclosure, access, and recall constants
 - Event effects, idempotency records, outbox delivery, and ambient ranges
 - Required indexes, inspection views, and database verification priorities
+
+Exact gameplay calculations and balance constants are consolidated in
+[Decision 008: Deterministic Game Rules](008-deterministic-game-rules.md). The
+schema contract owns how their inputs and outputs are persisted and constrained.
 
 This runtime document intentionally keeps only the information needed to
 understand how requests, models, queues, and transactions interact.
@@ -492,3 +497,6 @@ understand how requests, models, queues, and transactions interact.
 - [Infrastructure Cost Estimate](004-infrastructure-cost-estimate.md)
 - [Logical Data Model and Schema Contract](005-logical-data-model-and-schema-contract.md)
 - [HTTP API Contract](006-http-api-contract.md)
+- [MVP Reliability Parameters](007-mvp-reliability-parameters.md)
+- [Decision 008: Deterministic Game Rules](008-deterministic-game-rules.md)
+- [Decision 009: Authored Game Content](009-authored-game-content.md)

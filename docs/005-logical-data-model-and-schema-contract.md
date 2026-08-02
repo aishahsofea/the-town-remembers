@@ -14,8 +14,13 @@ explanations on every visit.
 ## How to use this document
 
 - Start with [Technical Architecture and Runtime Flows](003-technical-architecture-and-schema.md) to understand system behavior and model boundaries.
+- Use [Decision 008: Deterministic Game Rules](008-deterministic-game-rules.md)
+  for the authoritative calculations behind belief, relationship, disclosure,
+  access, recall, promises, ambient selection, and case progression.
 - Use this document when designing migrations, Kysely types, repositories, seed data, inspection views, and database tests.
 - The entity boundaries, value domains, nullability, relationships, uniqueness rules, and required indexes are accepted decisions.
+- Numeric ranges repeated here are schema-enforced mirrors of `mvp-rules-v1`;
+  Decision 008 owns the behavioral calculations.
 - Migration syntax and constraint names may change without changing this contract.
 
 ## Contents
@@ -328,6 +333,18 @@ The two NPCs must be different and in the same town. Contact and trust are
 directional. This table replaces the ambiguous NPC-to-NPC rows previously
 implied by `relationships`.
 
+The `mvp-rules-v1` seed contains:
+
+| From NPC | To NPC | From NPC's trust in To NPC |
+|---|---|---:|
+| Mara | Nessa | `30` |
+| Mara | Corin | `40` |
+| Nessa | Mara | `20` |
+| Corin | Mara | `20` |
+
+When one NPC hears another, testimony weighting reads the listener-to-speaker
+edge. Contact eligibility reads the speaker-to-listener edge.
+
 #### `player_visits`
 
 | Column | Type and nullability | Meaning |
@@ -411,6 +428,10 @@ discovery row is not required.
 
 `clue_kind` is `physical_trace`, `document`, or `object_state`. These labels
 control presentation only; the signed claim effects remain authoritative.
+An explicit `contradicts` edge and a contradiction derived from the same clue's
+`supports` edge coalesce into one contribution for that NPC, clue, and claim.
+Positive support uses evidence kind `physical_clue`; every negative clue effect
+uses `contradiction`.
 
 The final confrontation gate requires the `case_solutions.required_item_id` to
 be revealed and every clue marked `required_for_resolution` to have at least one
@@ -441,6 +462,8 @@ action. A player may enter the Old Chapel when they hold the key or possess
 suspicion below 20, after the player presents a relevant required clue. These
 conditions are evaluated in application code and their resulting item,
 capability, promise, and relationship records are committed atomically.
+Decision 008's action order evaluates same-action gates against the predicted
+post-effect relationship state.
 
 ### Claims, memories, and beliefs
 
@@ -472,6 +495,13 @@ pair and relation kind are unique. Exact positive/negative opposites and
 mutually exclusive same-context locations are created deterministically;
 authored semantic relations may be seeded. This table drives visible
 contradictions without a separate case-board link table.
+
+Claims not already in the authored catalog may be created through the bounded
+grammar. Creating one also creates its deterministic relations and backfills
+missing contradiction mirrors from existing, unreversed primary support
+evidence in the same transaction. Each backfilled mirror uses the
+claim-creation event as its causal event and points to its older primary
+evidence row, making the result independent of claim-creation order.
 
 #### `claim_drafts`
 
@@ -527,7 +557,9 @@ Speaker and recipient must differ. `(town_id, event_id, ordinal)` is unique.
 
 `hop_count` is zero for original assertions and direct observations. Repeating a
 transmission sets it to the parent's hop count plus one. Alleged hearsay starts
-at one. An originating transmission names itself as `root_transmission_id`; a
+at one. `hop_count` is constrained to `0` through `3`; a proposed fourth hop is
+not a valid transmission. An originating transmission names itself as
+`root_transmission_id`; a
 repeat copies its parent's root. Provenance and independent-source identity are
 therefore explicit and are not inferred from prose. A player-visible
 provenance path starts at the displayed transmission, repeatedly follows
@@ -560,8 +592,8 @@ what the NPC experienced.
 
 The vector index prefixes `town_id` and `npc_id` before `embedding` and includes
 only ready embeddings. Candidate recall returns at most 30 rows; deterministic
-reranking selects at most 10, normally 6–10, for a prompt. The initial
-normalized reranking score is:
+reranking selects exactly the top 8 authorized rows, or every authorized row
+when fewer than eight exist. The normalized reranking score is:
 
 | Signal | Weight |
 |---|---|
@@ -589,7 +621,7 @@ not change.
 | Table | Required domain columns | Responsibility |
 |---|---|---|
 | `npc_beliefs` | `town_id UUID`, `npc_id UUID`, `claim_id UUID`, `score INT4`, `label STRING`, `revision INT8`, `updated_event_id UUID` | Current deterministic aggregate |
-| `belief_evidence` | `town_id UUID`, `id UUID`, `npc_id UUID`, `claim_id UUID`, `event_id UUID`, `episode_id UUID NULL`, `transmission_id UUID NULL`, `source_root_transmission_id UUID NULL`, `clue_id UUID NULL`, `evidence_kind STRING`, `signed_weight INT4`, `trust_snapshot INT4 NULL`, `hop_count INT4 NULL`, `reverses_evidence_id UUID NULL`, `rule_version STRING` | Append-only explanation for one score contribution |
+| `belief_evidence` | `town_id UUID`, `id UUID`, `npc_id UUID`, `claim_id UUID`, `event_id UUID`, `episode_id UUID NULL`, `transmission_id UUID NULL`, `source_root_transmission_id UUID NULL`, `independent_source_actor_id UUID NULL`, `corroboration_threshold INT4 NULL`, `clue_id UUID NULL`, `evidence_kind STRING`, `signed_weight INT4`, `trust_snapshot INT4 NULL`, `hop_count INT4 NULL`, `mirrors_evidence_id UUID NULL`, `reverses_evidence_id UUID NULL`, `rule_version STRING` | Append-only explanation for one score contribution |
 
 `npc_beliefs(town_id, npc_id, claim_id)` is the primary key. Scores are clamped
 to -100 through 100. Labels are derived:
@@ -605,26 +637,43 @@ Initial evidence policy:
 | Evidence | Signed weight |
 |---|---|
 | NPC direct observation | +80 |
-| Verified physical clue | Value stored in `clue_claim_effects`; normally +70 or -70 |
+| Verified physical clue | Value stored in `clue_claim_effects`; exactly +70 or -70 in `mvp-rules-v1` |
 | Original player testimony | 35 + floor(current NPC-to-player trust / 10), yielding 25–45 |
 | NPC testimony | 40 + floor(authored directional trust / 10), yielding 30–50 |
-| Each hearsay hop after the first | -10 from the testimony weight, minimum absolute support 10 |
-| Independent corroboration | +15 once per independent source chain |
+| Each recorded hearsay hop | -10 from the testimony weight, minimum absolute support 10 |
+| Independent corroboration | +15 for the second and third originating actors; maximum +30 |
 
 `belief_evidence.evidence_kind` is `direct_observation`, `player_testimony`,
 `npc_testimony`, `physical_clue`, `corroboration`, `contradiction`, or
 `source_reversal`. Column-presence checks require the matching episode,
-transmission, clue, root transmission, or reversed evidence reference.
+transmission, clue, root transmission, independent source actor, corroboration
+threshold, mirrored evidence, or reversed evidence reference.
+`independent_source_actor_id` is
+present only for testimony and corroboration; it references the actor who
+originated the root transmission. `corroboration_threshold` is present only for
+corroboration and is `2` or `3`.
 
-Contradictory evidence applies its signed weight to the contradicted claim and
-the opposite sign to the supported claim where a `claim_relations` row exists.
+Supporting evidence applies its positive weight to the supported claim and a
+negative mirror to each explicit contradictory claim. Evidence authored only
+as `contradicts` applies its negative weight to that claim without inferring
+which alternative is true. A mirror never recursively creates another mirror,
+stores `mirrors_evidence_id`, and is unique for its NPC, target claim, and
+primary evidence. New claim relations backfill missing mirrors before the
+creating action's own belief effects commit.
 `trust_snapshot` and the final `signed_weight` are stored permanently. Caught
-lies, broken promises, and `source_discredited` events append reversal evidence
-that points to `reverses_evidence_id`; old evidence is never edited. A reversal
+lies create targeted `source_discredited` effects for one listening NPC, source
+actor, and claim; those effects append reversal evidence that points to
+`reverses_evidence_id`. Broken promises change relationships and recall but do
+not automatically reverse factual testimony. Old evidence is never edited. A reversal
 uses the exact opposite weight, preventing repeated discrediting from subtracting
 the same evidence twice. `reverses_evidence_id` is unique when present.
-Corroboration is unique by NPC, claim, and independent root transmission. The
-aggregate score is the clamped sum of all ledger weights.
+Testimony is unique by NPC, claim, and independent originating actor, even when
+that actor creates another root transmission. `independent_source_actor_id`
+stores that root speaker. Corroboration thresholds are `2` and `3` and are unique
+within one causal event, NPC, and claim. Thresholds may be crossed again after
+a source reversal. The aggregate score is the clamped sum of all ledger
+weights. Decision 008 defines the exact contradiction, contestation,
+corroboration, and reversal rules.
 
 ### Relationships, promises, and player-visible progress
 
@@ -633,12 +682,13 @@ aggregate score is the clamped sum of all ledger weights.
 | Table | Required domain columns | Responsibility |
 |---|---|---|
 | `npc_player_relationships` | `town_id UUID`, `npc_id UUID`, `player_id UUID`, `trust_score INT4`, `suspicion_score INT4`, `revision INT8`, `updated_event_id UUID` | Current directional NPC stance toward one player |
-| `relationship_changes` | `town_id UUID`, `id UUID`, `npc_id UUID`, `player_id UUID`, `event_id UUID`, `trust_delta INT4`, `suspicion_delta INT4`, `reason_kind STRING`, `claim_id UUID NULL`, `promise_id UUID NULL`, `rule_version STRING` | Append-only relationship ledger |
+| `relationship_changes` | `town_id UUID`, `id UUID`, `npc_id UUID`, `player_id UUID`, `event_id UUID`, `trust_delta INT4`, `suspicion_delta INT4`, `reason_kind STRING`, `claim_id UUID NULL`, `clue_id UUID NULL`, `item_id UUID NULL`, `promise_id UUID NULL`, `source_root_transmission_id UUID NULL`, `rule_version STRING` | Append-only relationship ledger |
 
 The current row is unique by `(town_id, npc_id, player_id)`. Both scores are
 clamped to -100 through 100. Player creation seeds one zeroed row for each NPC.
-The current score is reconstructed
-by applying history deltas in event order and clamping after each change.
+The current score is reconstructed by grouping history rows by causal event,
+summing that event's trust and suspicion deltas, applying events in
+`world_events.sequence_no` order, and clamping after each event.
 Initial qualitative UI labels are:
 
 - Trust: `trusting` at 40 or above, `neutral` from -19 to 39, `wary` at -20 or
@@ -657,7 +707,7 @@ The initial relationship policy is:
 | Deterministic event | Trust delta | Suspicion delta |
 |---|---:|---:|
 | A player's earlier testimony is verified by physical evidence | +10 | -5 |
-| A player presents relevant verified evidence without having lied | +5 | -5 |
+| A player presents relevant verified evidence without a lie implicated by that clue | +5 | -5 |
 | A player gives an NPC an item that NPC requested | +15 | -5 |
 | A promise is fulfilled | +25 | -15 |
 | A player's asserted claim is disproved and marked as their lie | -30 | +40 |
@@ -667,6 +717,12 @@ The initial relationship policy is:
 `relationship_changes.reason_kind` is `verified_testimony`,
 `evidence_presented`, `requested_item_given`, `promise_fulfilled`,
 `lie_established`, or `promise_broken`.
+
+Column-presence checks bind `verified_testimony` to its claim, clue, and root
+transmission; `evidence_presented` to its clue; `requested_item_given` to its
+item; promise consequences to their promise; and `lie_established` to its claim
+and root transmission. The partial unique indexes below enforce the repeat
+rules in Decision 008.
 
 One causal event applies each configured delta at most once. Evidence merely
 contradicting a player is not automatically a caught lie: the system requires
@@ -692,7 +748,9 @@ Exactly one of `protected_claim_id` and `item_id` is set, matching `kind`.
 Transitions are `active -> fulfilled` or `active -> broken` and are irreversible.
 Repeating a protected normalized claim to an actor other than the requester
 breaks secrecy. Returning the item to the requester fulfills the return promise;
-an incompatible transfer configured by the authored rule breaks it.
+transferring it from the player to any other actor breaks it. Leaving town while
+holding it does neither. A player may have only one active promise for the same
+NPC, kind, and protected claim or item.
 
 At town resolution, active return-item promises are fulfilled only if the
 requester holds the item and otherwise become broken. Active secrecy promises
@@ -859,6 +917,15 @@ retrieval uses only deterministic, already-authorized recent or important
 episodes, unresolved promises, and public disclosures before falling back to
 authored dialogue; it never widens the visibility boundary.
 
+At most one `player_actions` row per `(town_id, player_id)` may have
+`status = 'processing'`; enforce this with a partial unique index. A new,
+different action encountered while the live claim exists is rejected before
+record creation with `409 ACTION_IN_PROGRESS`. If that claim has expired, the
+server may conditionally fail the abandoned action with
+`409 ACTION_SUPERSEDED` and no effects, clear its claim, and then create the new
+action in the same transaction. The expired worker cannot commit because
+completion still requires its removed token.
+
 #### `world_events`
 
 | Column group | Required values |
@@ -916,15 +983,6 @@ invalid output, credentials, authentication tokens, and connection strings are
 not stored.
 
 #### `outbox` and `ambient_job_executions`
-
-At most one `player_actions` row per `(town_id, player_id)` may have
-`status = 'processing'`; enforce this with a partial unique index. A new,
-different action encountered while the live claim exists is rejected before
-record creation with `409 ACTION_IN_PROGRESS`. If that claim has expired, the
-server may conditionally fail the abandoned action with
-`409 ACTION_SUPERSEDED` and no effects, clear its claim, and then create the new
-action in the same transaction. The expired worker cannot commit because
-completion still requires its removed token.
 
 | Table | Required domain columns | Responsibility |
 |---|---|---|
@@ -1051,7 +1109,30 @@ In addition to primary keys and uniqueness constraints, migrations must provide:
 - `claim_transmissions(town_id, claim_id, created_at)` and
   `claim_transmissions(town_id, parent_transmission_id)`.
 - `belief_evidence(town_id, npc_id, claim_id, created_at)`.
+- A partial unique index on
+  `belief_evidence(town_id, npc_id, claim_id, independent_source_actor_id)` for
+  `player_testimony` and `npc_testimony`, and a partial unique index on
+  `belief_evidence(town_id, event_id, npc_id, claim_id, corroboration_threshold)`
+  for `corroboration`.
+- A partial unique index on
+  `belief_evidence(town_id, npc_id, claim_id, clue_id)` for `physical_clue` and
+  clue-backed `contradiction`, preventing another player from applying the same
+  discovered clue to the same NPC twice or duplicating an explicit and derived
+  negative effect.
+- A partial unique index on
+  `belief_evidence(town_id, npc_id, claim_id, mirrors_evidence_id)` for
+  `contradiction` mirrors.
 - `relationship_changes(town_id, npc_id, player_id, created_at)`.
+- Partial unique relationship-trigger indexes for
+  `(town_id, npc_id, player_id, reason_kind, claim_id)` on
+  `verified_testimony` and `lie_established`,
+  `(town_id, npc_id, player_id, reason_kind, clue_id)` on
+  `evidence_presented`, `(town_id, npc_id, player_id, reason_kind, item_id)` on
+  `requested_item_given`, and `(town_id, promise_id, reason_kind)` on promise
+  consequences.
+- Partial unique active-promise indexes on
+  `(town_id, npc_id, player_id, protected_claim_id)` for `keep_secret` and
+  `(town_id, npc_id, player_id, item_id)` for `return_item`.
 - `case_board_entries(town_id, created_at)`.
 - `player_actions(town_id, player_id, idempotency_key)`, a partial unique index
   on `(town_id, player_id)` where `status = 'processing'`, a partial stale-work
@@ -1249,6 +1330,8 @@ The minimum high-risk tests are:
 30. Promise acceptance loads the ordered descriptor saved on its source action;
     a content deployment, forged ordinal, or mismatched source cannot reinterpret
     it.
+31. One player cannot have two processing actions; clearing an expired blocker
+    conditionally removes its token before a different action can start.
 
 ## Related decisions
 
@@ -1257,5 +1340,6 @@ The minimum high-risk tests are:
 - [Technical Architecture and Runtime Flows](003-technical-architecture-and-schema.md)
 - [Infrastructure Cost Estimate](004-infrastructure-cost-estimate.md)
 - [HTTP API Contract](006-http-api-contract.md)
-31. One player cannot have two processing actions; clearing an expired blocker
-    conditionally removes its token before a different action can start.
+- [MVP Reliability Parameters](007-mvp-reliability-parameters.md)
+- [Decision 008: Deterministic Game Rules](008-deterministic-game-rules.md)
+- [Decision 009: Authored Game Content](009-authored-game-content.md)

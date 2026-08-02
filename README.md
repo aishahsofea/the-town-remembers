@@ -13,8 +13,9 @@ who trusts whom, how rumours spread, and which parts of the public story are
 actually true.
 
 > **Project status:** the MVP product direction, system architecture, logical
-> schema, and HTTP API contract are accepted. SQL migrations and application
-> implementation are the next phase.
+> schema, HTTP API, reliability, deterministic rules, and authored game content
+> are accepted. SQL migrations and application implementation are the next
+> phase.
 
 ## The three-minute explanation
 
@@ -157,6 +158,16 @@ All interactions are intended to run live against a pre-seeded mystery.
 - [HTTP API contract](docs/006-http-api-contract.md) — routes, sessions,
   player-safe projections, actions, idempotency, rate limits, errors, visits,
   and ambient transition behavior.
+- [MVP reliability parameters](docs/007-mvp-reliability-parameters.md) — runtime
+  time budgets, claims, retries, FIFO delivery, recovery, database limits, and
+  verification requirements.
+- [Deterministic game rules](docs/008-deterministic-game-rules.md) — numerical
+  beliefs, relationships, gates, recall, promises, ambient propagation, and
+  case progression.
+- [Authored game content](docs/009-authored-game-content.md) — objective canon,
+  versioned seed keys, NPC knowledge and voices, clue graph, access routes,
+  promise offers, case-board visibility, fallbacks, confrontation, and endings.
 
-The schema and HTTP API contracts are implementation-ready. SQL migrations and
-local development commands will be added with the implementation.
+The schema, HTTP API, deterministic rules, and authored content contracts are
+implementation-ready. SQL migrations and local development commands will be
+added with the implementation.

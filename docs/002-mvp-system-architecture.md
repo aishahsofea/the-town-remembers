@@ -646,6 +646,9 @@ All shown actions are live. The mystery data is pre-seeded for reliability.
 
 - [HTTP API Contract](006-http-api-contract.md)
 - [Logical Data Model and Schema Contract](005-logical-data-model-and-schema-contract.md)
+- [MVP Reliability Parameters](007-mvp-reliability-parameters.md)
+- [Decision 008: Deterministic Game Rules](008-deterministic-game-rules.md)
+- [Decision 009: Authored Game Content](009-authored-game-content.md)
 - [CockroachDB vector indexes](https://www.cockroachlabs.com/docs/stable/vector-indexes)
 - [CockroachDB Cloud Managed MCP Server](https://www.cockroachlabs.com/docs/cockroachcloud/connect-to-the-cockroachdb-cloud-mcp-server)
 - [CockroachDB Basic clusters](https://www.cockroachlabs.com/docs/cockroachcloud/plan-your-cluster-basic)

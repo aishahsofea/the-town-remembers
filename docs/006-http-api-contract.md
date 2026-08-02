@@ -360,11 +360,23 @@ type CaseAttemptView = {
   createdAt: IsoTime;
 };
 
+type AccusationOptionView = {
+  id: Id;
+  displayName: string;
+};
+
 type ResolutionView =
   | {
       state: "investigating";
       accusationGate:
-        | { state: "open" }
+        | {
+            state: "open";
+            options: {
+              suspects: AccusationOptionView[];
+              motives: AccusationOptionView[];
+              locations: AccusationOptionView[];
+            };
+          }
         | { state: "locked"; message: string };
     }
   | {
@@ -421,7 +433,9 @@ type PlayerView = {
 
 The projection contains player-safe display strings resolved from the town's
 frozen content version. Locked-access and accusation messages are generic and
-never enumerate hidden missing evidence. `currentLocation` is null while away;
+never enumerate hidden missing evidence. A locked accusation gate contains no
+candidate IDs or labels. An open gate contains only the frozen content
+version's authored suspect, motive, and location options. `currentLocation` is null while away;
 `encounters` contains only enabled NPCs at the current location.
 `discoveredClues` contains the town-wide verified clues this player may submit
 through `show`; the original discoverer retains contribution credit. The board
@@ -442,6 +456,8 @@ Projection builders apply these stable orders before hashing or returning JSON:
 - `activePromises`: `(acceptedAt, promiseId)`;
 - `caseBoard`: `(createdAt, entryId)`;
 - `caseAttempts`: `(createdAt, attemptId)`;
+- open accusation `suspects`, `motives`, and `locations`: the frozen authored
+  order for their content version, then ID as a defensive tie-breaker;
 - each `provenancePath`: root speaker to final recipient by following
   `parent_transmission_id` and reversing the chain; and
 - resolution `choices`: `expose_cover_up`, then `restore_bell_quietly`.
@@ -875,6 +891,13 @@ lifetime. The behavior is:
 | Different input | `409 IDEMPOTENCY_KEY_REUSED` |
 | Expired processing claim | A new worker may conditionally take over |
 
+At most one action may be `processing` for a player. For a different new key,
+a live blocking action returns `409 ACTION_IN_PROGRESS`, `Retry-After: 2`, and
+the blocking action's status location without creating a record for the new
+request. An expired blocking action may be conditionally failed with no effects
+and saved `409 ACTION_SUPERSEDED` before the new action is created in the same
+transaction. Same-key replay is resolved first.
+
 CockroachDB serialization conflicts receive the accepted three short retries.
 A model-backed action reloads relevant state once after a town revision change.
 A second relevant conflict stores nonterminal `retryable` state with
@@ -891,13 +914,6 @@ the same key may be used after `Retry-After`. Authentication and
 malformed-request failures also occur before action creation. A same-input
 replay of a processing or terminal action does not consume model quota. A
 retryable action that will actually run model work again must consume the
-At most one action may be `processing` for a player. For a different new key,
-a live blocking action returns `409 ACTION_IN_PROGRESS`, `Retry-After: 2`, and
-the blocking action's status location without creating a record for the new
-request. An expired blocking action may be conditionally failed with no effects
-and saved `409 ACTION_SUPERSEDED` before the new action is created in the same
-transaction. Same-key replay is resolved first.
-
 applicable action-attempt buckets before reclaiming `processing`; a `429` leaves
 that existing action retryable under the same key.
 
@@ -1050,6 +1066,11 @@ The API test suite must prove:
 19. A promise offer remains bound to its saved descriptor and terms version
     across a later content deployment; ordinal or source-action mismatch is
     denied.
+20. One player cannot run two actions concurrently; an expired blocking action
+    may be cleared only after its old processing token can no longer commit.
+21. Locked accusation state exposes no candidates; the open gate returns only
+    the frozen content version's authored suspect, motive, and location options
+    in deterministic order, including non-NPC characters such as Lark.
 
 ## Related decisions
 
@@ -1058,4 +1079,7 @@ The API test suite must prove:
 - [Technical Architecture and Runtime Flows](003-technical-architecture-and-schema.md)
 - [Infrastructure Cost Estimate](004-infrastructure-cost-estimate.md)
 - [Logical Data Model and Schema Contract](005-logical-data-model-and-schema-contract.md)
+- [MVP Reliability Parameters](007-mvp-reliability-parameters.md)
+- [Decision 008: Deterministic Game Rules](008-deterministic-game-rules.md)
+- [Decision 009: Authored Game Content](009-authored-game-content.md)
 - [AWS API Gateway v2 integration timeout](https://docs.aws.amazon.com/cli/latest/reference/apigatewayv2/create-integration.html)
