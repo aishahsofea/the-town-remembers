@@ -82,7 +82,7 @@ The visit estimates then add a 10% repair and retry reserve.
 | CloudFront | Free plan; <1M requests and <100 GB | $0.00 | $0.00 | Plan must be selected; [4] |
 | API Gateway HTTP API | ~35,000 calls | ~$0.04 | ~$0.04 | $1/M calls; [6] |
 | Lambda — Game, Ambient, Recovery | ~20K GB-s; ~77K invocations | ~$0.35 | $0.00 | Within ongoing allowance; [5] |
-| SQS | ~1,000 Standard requests | <$0.01 | $0.00 | First 1M free; [8] |
+| SQS | ~1,000 FIFO requests | <$0.01 | $0.00 | First 1M requests cover this scale; [8] |
 | EventBridge Scheduler | 43,200 invocations | ~$0.04 | $0.00 | One-minute recovery; first 14M free; [9] |
 | CloudWatch | 0.25 GB logs; standard metrics | $0.13 | $0.00 | First 5 GB logs free; [11] |
 | CockroachDB Basic + vector + MCP | 1.25M RU; 0.25 GiB | $0.38 | $0.00 | Monthly resource benefit; [12–13] |
@@ -153,14 +153,14 @@ The following are not present in the accepted MVP architecture and are excluded 
 
 Prices are public list prices and allowances accessed on 1 August 2026. They can change, may vary by account agreement, and are not a vendor quote. Repository scope comes from the local architecture documents.
 
-1. [Repository README](../README.md), [Decision 002](002-mvp-system-architecture.md), [runtime architecture](003-technical-architecture-and-schema.md), [schema contract](005-logical-data-model-and-schema-contract.md), and [HTTP API contract](006-http-api-contract.md) — services, region, models, traffic, data responsibilities, and the $12.50 ceiling.
+1. [Repository README](../README.md), [Decision 002](002-mvp-system-architecture.md), [runtime architecture](003-technical-architecture-and-schema.md), [schema contract](005-logical-data-model-and-schema-contract.md), [HTTP API contract](006-http-api-contract.md), and [reliability parameters](007-mvp-reliability-parameters.md) — services, region, models, traffic, data responsibilities, and the $12.50 ceiling.
 2. [Anthropic model prices — all platforms](https://www-cdn.anthropic.com/files/4zrzovbb/website/3684c2faafb97418665782cea0001f439f74b1d2.pdf) — AWS Bedrock global and in-region rates for Claude Sonnet 4.6 and Haiku 4.5.
 3. [AWS Titan Text Embeddings V2](https://aws.amazon.com/blogs/machine-learning/get-started-with-amazon-titan-text-embeddings-v2-a-new-state-of-the-art-embeddings-model-on-amazon-bedrock/) — $0.02 per million input tokens and 256-dimension support.
 4. [Amazon CloudFront pricing](https://aws.amazon.com/cloudfront/pricing/) — Free flat-rate plan allowances.
 5. [AWS Lambda pricing](https://aws.amazon.com/lambda/pricing/) — request and compute rates plus monthly allowance.
 6. [Amazon API Gateway pricing](https://aws.amazon.com/api-gateway/pricing/) — HTTP API request pricing.
 7. [Amazon S3 pricing](https://aws.amazon.com/s3/pricing/) — S3 Standard storage and request pricing.
-8. [Amazon SQS pricing](https://aws.amazon.com/sqs/pricing/) — Standard queue request pricing and monthly allowance.
+8. [Amazon SQS pricing](https://aws.amazon.com/sqs/pricing/) — FIFO queue request pricing and monthly allowance.
 9. [Amazon EventBridge pricing](https://aws.amazon.com/eventbridge/pricing/) — Scheduler invocation pricing and monthly allowance.
 10. [AWS Secrets Manager pricing](https://aws.amazon.com/secrets-manager/pricing/) — secret-month and API-call pricing.
 11. [Amazon CloudWatch pricing](https://aws.amazon.com/cloudwatch/pricing/) — Logs ingestion and monthly allowance.

@@ -38,7 +38,7 @@ It uses these AWS services:
 
 - Amazon Bedrock
 - AWS Lambda
-- Amazon SQS
+- Amazon SQS FIFO
 - Amazon API Gateway
 - Amazon S3
 - Amazon CloudFront
@@ -71,7 +71,7 @@ flowchart LR
 
     Game -->|"read and write"| State
     Game -->|"insert job with event transaction"| Outbox
-    Game -->|"publish job after commit"| Queue["SQS: delayed ambient jobs"]
+    Game -->|"publish job after commit"| Queue["SQS FIFO: delayed ambient jobs"]
     Queue --> Tick["Ambient Tick Lambda"]
     Tick --> Bedrock
     Tick --> State
@@ -99,7 +99,7 @@ town creation, and join use `no-store`.
 | Infrastructure | AWS CDK in TypeScript | Repeatable AWS setup |
 | API | API Gateway HTTP API | Simple Lambda entry point |
 | Compute | AWS Lambda | No server to keep running |
-| Async work | Amazon SQS | Reliable delayed ambient ticks |
+| Async work | Amazon SQS FIFO | Delayed ambient ticks ordered within each town |
 | Database | CockroachDB Basic | Persistent SQL and vector memory |
 | Models | Amazon Bedrock | Required AWS-powered agent environment |
 | Validation | Zod and Bedrock structured output | Reject malformed model results |
@@ -228,7 +228,10 @@ are saved in one transaction.
 
 `202` includes `Retry-After: 2` and a dedicated action-status location. The
 browser polls that `GET` route; repeating the identical `POST` remains safe.
-Player processing claims last 60 seconds and renew every 20 seconds.
+Player processing claims last 35 seconds and do not renew. If polling still
+shows `processing` after that expiry, the browser resends the identical `POST`
+and key once to permit conditional takeover. Automatic recovery lasts 70
+seconds. Only one action may be processing for a player at a time.
 
 ## Ambient tick flow
 
@@ -239,7 +242,9 @@ that range contains an ambient-eligible event.
    assigns a disjoint range of as-yet-unscheduled events. An eligible range
    creates an outbox row with one stable job key; an ineligible range advances
    the scheduling boundary without a job.
-2. The outbox job is sent to SQS with a 20-second delay.
+2. The outbox job is sent to an SQS FIFO queue configured with a 20-second
+   queue-level delay, `MessageGroupId = town_id`, and
+   `MessageDeduplicationId = job_key`.
 3. SQS wakes the Ambient Tick Lambda with the outbox ID and job key.
 4. The tick creates or reads the job's `ambient_job_executions` record.
 5. A completed duplicate stops immediately. Otherwise, the worker takes a
@@ -272,7 +277,9 @@ Every player-facing ambient transition has a five-minute deadline. At the
 deadline, undelivered work becomes abandoned and nonterminal execution becomes
 quarantined with no effects. Completion or quarantine permits the player to
 start another visit; late delivery cannot apply abandoned work. Ambient claims
-last 120 seconds and renew every 30 seconds.
+last 45 seconds and do not renew. The Ambient Tick Lambda times out after 30
+seconds; the queue visibility timeout is 180 seconds, batch size is one, and
+ambient concurrency is capped at five towns.
 
 ## CockroachDB as persistent memory
 
@@ -417,6 +424,8 @@ These views make the system explainable without granting write access.
 - Allocate disjoint ambient event ranges when visits end.
 - Implement the player and ambient retry behavior above with durable records,
   unique database constraints, processing claims, and atomic completion.
+- Apply the concrete timeouts, retry bounds, FIFO settings, and recovery limits
+  in [MVP Reliability Parameters](007-mvp-reliability-parameters.md).
 - Validate all model output.
 - Retry one invalid model result.
 - Use an authored fallback if the retry fails.

@@ -843,11 +843,12 @@ Showing never transfers custody. Saved API responses exclude `towns.revision`;
 player freshness uses the projection-derived view version defined by the HTTP
 contract.
 
-Player-action processing claims last 60 seconds and are renewed every 20 seconds
-if work remains. A stale claim may be replaced. Completion conditionally matches
-the current token. After three claimed attempts without a committed result, the
-next owner stores a terminal `ACTION_PROCESSING_EXHAUSTED` response without
-effects. API work has a 24-second application completion budget inside the
+Player-action processing claims last 35 seconds and do not renew. A stale claim
+may be replaced only after the original 28-second Lambda lifetime has ended.
+Completion conditionally matches the current token. After three claimed
+attempts without a committed result, the next owner stores a terminal
+`ACTION_PROCESSING_EXHAUSTED` response without effects. API work has a
+24-second application completion budget inside the
 30-second HTTP integration limit. The final four seconds are reserved for
 validation, fallback, and commit. Pre-commit reads and model calls end before
 that reserve; the final transaction uses the remaining application time while
@@ -916,6 +917,15 @@ not stored.
 
 #### `outbox` and `ambient_job_executions`
 
+At most one `player_actions` row per `(town_id, player_id)` may have
+`status = 'processing'`; enforce this with a partial unique index. A new,
+different action encountered while the live claim exists is rejected before
+record creation with `409 ACTION_IN_PROGRESS`. If that claim has expired, the
+server may conditionally fail the abandoned action with
+`409 ACTION_SUPERSEDED` and no effects, clear its claim, and then create the new
+action in the same transaction. The expired worker cannot commit because
+completion still requires its removed token.
+
 | Table | Required domain columns | Responsibility |
 |---|---|---|
 | `outbox` | `town_id UUID`, `id UUID`, `source_event_id UUID`, `visit_id UUID`, `job_type STRING`, `job_key UUID`, `payload JSONB`, `payload_hash BYTES`, `after_event_sequence INT8`, `through_event_sequence INT8`, `not_before TIMESTAMPTZ`, `transition_deadline_at TIMESTAMPTZ`, `next_send_at TIMESTAMPTZ`, `delivery_status STRING`, `send_token UUID NULL`, `send_expires_at TIMESTAMPTZ NULL`, `send_attempt_count INT4`, `last_error_code STRING NULL`, `sent_at TIMESTAMPTZ NULL` | Transactional, retry-safe handoff to SQS with a bounded player transition |
@@ -929,9 +939,11 @@ and payload hash must match its outbox row. The only MVP `job_type` is
 `{version, visitId, afterEventSequence, throughEventSequence}` and must match the
 same relational columns; SQS carries only `town_id`, `outbox_id`, and `job_key`.
 `not_before` is set to 20 seconds after the departure commit and
-`transition_deadline_at` to five minutes after that commit. The initial sender
-publishes immediately with the corresponding SQS delay; a recovery publication
-uses only the remaining delay.
+`transition_deadline_at` to five minutes after that commit. The SQS FIFO queue
+has a queue-level 20-second delay. Every publication uses
+`MessageGroupId = town_id` and `MessageDeduplicationId = job_key`; this includes
+Recovery because FIFO does not support per-message timers. The worker still
+checks the authoritative `not_before` value before applying effects.
 
 Outbox delivery states are `pending`, `sending`, `sent`, and `abandoned`:
 
@@ -957,8 +969,10 @@ the same conditional terminalization when the deadline has passed before
 Recovery runs.
 
 Ambient execution states are `processing`, `completed`, and `quarantined`.
-Claims last 120 seconds and renew every 30 seconds. Completion must match the
-current token. A valid no-op completes with `action_count = 0`. Payload mismatch,
+The Ambient Tick Lambda has a 30-second hard timeout and 24-second application
+budget. Claims last 45 seconds and do not renew. Completion must match the
+current token. SQS visibility is 180 seconds, batch size is one, and ambient
+concurrency is capped at five. A valid no-op completes with `action_count = 0`. Payload mismatch,
 outbox identity corruption, five expired/failed processing claims, transition
 deadline, or a non-active town moves the job to `quarantined` with no effects
 and raises an alert where appropriate. A worker may commit only before the
@@ -1039,8 +1053,9 @@ In addition to primary keys and uniqueness constraints, migrations must provide:
 - `belief_evidence(town_id, npc_id, claim_id, created_at)`.
 - `relationship_changes(town_id, npc_id, player_id, created_at)`.
 - `case_board_entries(town_id, created_at)`.
-- `player_actions(town_id, player_id, idempotency_key)` and a partial stale-work
-  index on `status = 'processing'` and `processing_expires_at`, plus a partial
+- `player_actions(town_id, player_id, idempotency_key)`, a partial unique index
+  on `(town_id, player_id)` where `status = 'processing'`, a partial stale-work
+  index on `status = 'processing'` and `processing_expires_at`, and a partial
   retry index on `status = 'retryable'` and `retry_after_at`.
 - `outbox(town_id, delivery_status, next_send_at, send_expires_at,
   transition_deadline_at)`.
@@ -1223,8 +1238,9 @@ The minimum high-risk tests are:
     authored linkage; a town-discovered clue is showable by another player.
 26. A second relevant revision conflict leaves one retryable action; retrying
     the same request and key can complete it without duplicate effects.
-27. Player claims renew on the 60/20-second schedule and ambient claims on the
-    120/30-second schedule; expired or replaced workers cannot commit.
+27. Player claims last 35 seconds and ambient claims 45 seconds without
+    renewal; both outlive their workers, and expired or replaced workers cannot
+    commit.
 28. A server session survives inactivity until revocation or town retirement,
     while cookie loss remains unrecoverable and issuance is refreshed at most
     monthly.
@@ -1241,3 +1257,5 @@ The minimum high-risk tests are:
 - [Technical Architecture and Runtime Flows](003-technical-architecture-and-schema.md)
 - [Infrastructure Cost Estimate](004-infrastructure-cost-estimate.md)
 - [HTTP API Contract](006-http-api-contract.md)
+31. One player cannot have two processing actions; clearing an expired blocker
+    conditionally removes its token before a different action can start.

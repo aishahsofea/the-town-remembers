@@ -38,7 +38,7 @@ flowchart LR
     Sonnet["Claude Sonnet<br/>dialogue"]
     Titan["Titan Embeddings<br/>semantic recall"]
     Database["CockroachDB Basic"]
-    Queue["Amazon SQS"]
+    Queue["Amazon SQS FIFO"]
     Tick["Ambient Tick Lambda"]
     Recovery["EventBridge +<br/>Recovery Lambda"]
     MCP["Managed MCP<br/>read-only inspection"]
@@ -78,7 +78,7 @@ CockroachDB is the durable source for both current state and causal history.
 | Ambient Tick Lambda | Process one bounded off-screen reaction job | Run continuously or create arbitrary actions |
 | CockroachDB | Store canonical state, history, provenance, beliefs, vectors, and outbox jobs | Decide what a model should say |
 | Bedrock models | Interpret bounded input, embed text, and render approved dialogue | Access the database or mutate state |
-| SQS | Delay, redeliver, and buffer ambient jobs | Guarantee exactly-once delivery |
+| SQS FIFO | Delay, order per-town work, redeliver, and buffer ambient jobs | Guarantee exactly-once effects without the database ledger |
 | EventBridge + Recovery Lambda | Find committed outbox jobs whose delivery is pending or uncertain, and clear expired join-replay secrets | Re-run completed jobs, recover a player identity, or generate replacement keys |
 | Managed MCP | Expose authenticated read-only inspection views | Participate in player requests or mutate state |
 
@@ -196,7 +196,7 @@ claim with objective state and reject lies.
     claim and that the town revision is current, and saves the interaction,
     causal records, response, and completed status together.
 14. If relevant state changed during model calls, Lambda reloads and retries
-    once while retaining or renewing its processing claim.
+    once while retaining its processing claim.
 15. The player receives the response only after persistence succeeds.
 
 If query embedding fails at step 6, Ask uses only deterministic, already
@@ -279,7 +279,9 @@ Implementation details:
 - Completed and terminally failed request records and fingerprints remain for
   the lifetime of the town.
 - Keys identify retries; they are not secrets or authentication credentials.
-- Player processing claims last 60 seconds and renew every 20 seconds. A second
+- Player processing claims last 35 seconds and do not renew. The browser polls
+  every two seconds and resends the identical `POST` once after claim expiry to
+  permit takeover, with a 70-second automatic recovery window. A second
   relevant town-revision conflict stores a nonterminal
   `409 ACTION_CONFLICT` with no effects and a one-second retry delay; the
   identical request reuses the same key after that delay.
@@ -300,7 +302,8 @@ prior issuance; losing it still has no recovery flow.
 The same pattern protects background work:
 
 1. Game Lambda creates an outbox row with one server-generated job key.
-2. Every SQS publication and retry carries that same job key.
+2. Every SQS publication and retry carries that same job key. The FIFO queue
+   uses `town_id` as its message group and the job key as its deduplication ID.
 3. Ambient Tick Lambda creates or reads the matching
    `ambient_job_executions` record.
 4. A completed job stops immediately. A new or recoverable job takes the
@@ -401,9 +404,11 @@ Recovery runs once per minute. Player-facing ambient transitions have a hard
 five-minute deadline. At that point pending delivery is abandoned and
 nonterminal execution quarantines with no effects; a late message is a no-op.
 Completion or quarantine unblocks the next visit, so queue or model failure
-cannot strand a player away. Ambient processing claims last 120 seconds and
-renew every 30 seconds, but no worker may commit after the transition deadline
-or after the town leaves `active`.
+cannot strand a player away. The Ambient Tick Lambda has a 30-second hard
+timeout and 24-second application budget. Processing claims last 45 seconds
+without renewal; SQS visibility is 180 seconds, batch size is one, and global
+ambient concurrency is five. No worker may commit after the transition
+deadline or after the town leaves `active`.
 
 The same invocation also clears hashes on unconfirmed join requests whose
 ten-minute transport-replay window expired. This is credential cleanup only; it

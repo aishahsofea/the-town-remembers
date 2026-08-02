@@ -790,9 +790,12 @@ returns the saved original HTTP status and body: the completed action envelope
 for a success or gameplay denial, or the saved problem body for a terminal
 failure.
 
-Player processing claims last 60 seconds and renew every 20 seconds. The
-accepted attempt-exhaustion and late-worker rules remain those in the schema
-contract.
+Player processing claims last 35 seconds and do not renew. The browser polls
+every two seconds. If the action is still processing after claim expiry, it
+resends the original `POST`, body, and key once so a new worker may
+conditionally take over; automatic recovery stops after 70 seconds and leaves
+a manual same-key retry. The accepted attempt-exhaustion and late-worker rules
+remain those in the schema contract.
 
 ## Visits and ambient transitions
 
@@ -804,7 +807,9 @@ Every world event carries a deterministic `ambient_eligible` value. When a
 visit ends, the transaction allocates the next disjoint event range. If the
 range has no eligible event, it advances the scheduling boundary without an
 outbox job and the player may start another visit immediately. Otherwise it
-creates one delayed ambient job.
+creates one delayed ambient job. The SQS FIFO queue has a 20-second queue-level
+delay, uses `town_id` as the message group, and uses the job key as the
+deduplication ID.
 
 The departing player cannot start another visit until the job is `completed`
 or `quarantined`. Normal player-visible states are `waiting`, `processing`, and
@@ -818,10 +823,13 @@ the deadline has passed before Recovery runs. Late SQS deliveries observe the
 terminal state and stop. Quarantine is player-visible as `complete`, so a
 delivery or model failure can never strand the player away.
 
-Ambient processing claims last 120 seconds and renew every 30 seconds. A worker
-may commit only before the transition deadline, while it holds the current
-claim, and while the town remains `active`. Invalid or exhausted ambient model
-output becomes a recorded `do_nothing` or quarantine without partial effects.
+The Ambient Tick Lambda has a 30-second hard timeout and 24-second application
+budget. Ambient processing claims last 45 seconds without renewal. SQS
+visibility is 180 seconds, batch size is one, and ambient concurrency is capped
+at five. A worker may commit only before the transition deadline, while it
+holds the current claim, and while the town remains `active`. Invalid or
+exhausted ambient model output becomes a recorded `do_nothing` or quarantine
+without partial effects.
 
 ## Accusation and resolution
 
@@ -883,6 +891,13 @@ the same key may be used after `Retry-After`. Authentication and
 malformed-request failures also occur before action creation. A same-input
 replay of a processing or terminal action does not consume model quota. A
 retryable action that will actually run model work again must consume the
+At most one action may be `processing` for a player. For a different new key,
+a live blocking action returns `409 ACTION_IN_PROGRESS`, `Retry-After: 2`, and
+the blocking action's status location without creating a record for the new
+request. An expired blocking action may be conditionally failed with no effects
+and saved `409 ACTION_SUPERSEDED` before the new action is created in the same
+transaction. Same-key replay is resolved first.
+
 applicable action-attempt buckets before reclaiming `processing`; a `429` leaves
 that existing action retryable under the same key.
 
@@ -963,7 +978,7 @@ Core status policy:
 | `401` | Missing or invalid player session |
 | `403` | Authenticated identity lacks route-level permission |
 | `404` | Missing, hidden, inaccessible, or cross-town resource |
-| `409` | Saved idempotency misuse or retryable action conflict |
+| `409` | Saved idempotency misuse, retryable action conflict, or another live action for the player |
 | `410` | Join bootstrap closed, replay expired/exhausted, or town retired |
 | `422` | Well-formed request with unsupported semantic value |
 | `429` | Rate limit, with `Retry-After` |

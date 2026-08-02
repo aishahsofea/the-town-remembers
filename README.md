@@ -99,7 +99,7 @@ The design principle is:
 | Infrastructure | AWS CDK |
 | Static delivery | Amazon S3 + CloudFront |
 | API and compute | API Gateway HTTP API + AWS Lambda |
-| Delayed work | Amazon SQS |
+| Delayed work | Amazon SQS FIFO |
 | Recovery scheduling | Amazon EventBridge |
 | Language models | Claude Haiku 4.5 and Claude Sonnet 4.6 through Amazon Bedrock |
 | Embeddings | Amazon Titan Text Embeddings V2 |
