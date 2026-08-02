@@ -3,14 +3,16 @@
 - **Project:** The Town Remembers
 - **Status:** Accepted technical design; implementation pending
 - **Date:** 2026-07-26
-- **Updated:** 2026-08-01
+- **Updated:** 2026-08-02
 - **Audience:** Judges, reviewers, and implementers
 
 This document expands the accepted
 [MVP system architecture](002-mvp-system-architecture.md) into concrete runtime
 flows, information boundaries, model responsibilities, and reliability
 behavior. The implementation-ready database design is maintained separately in
-the [Logical Data Model and Schema Contract](005-logical-data-model-and-schema-contract.md).
+the [Logical Data Model and Schema Contract](005-logical-data-model-and-schema-contract.md),
+and the public transport surface in the
+[HTTP API Contract](006-http-api-contract.md).
 
 ## Architectural goals
 
@@ -59,8 +61,10 @@ flowchart LR
     MCP --> Database
 ```
 
-CloudFront has separate behaviours for static assets and `/api` traffic. Lambda
-is temporary compute; it does not retain memory between invocations.
+CloudFront has separate behaviours for static assets and `/api` traffic. Shared
+caching is disabled for `/api/*`; player views are private and cookie-varying,
+and mutations, action status, invites, creation, and join are not stored.
+Lambda is temporary compute; it does not retain memory between invocations.
 CockroachDB is the durable source for both current state and causal history.
 
 ## Component responsibilities
@@ -75,7 +79,7 @@ CockroachDB is the durable source for both current state and causal history.
 | CockroachDB | Store canonical state, history, provenance, beliefs, vectors, and outbox jobs | Decide what a model should say |
 | Bedrock models | Interpret bounded input, embed text, and render approved dialogue | Access the database or mutate state |
 | SQS | Delay, redeliver, and buffer ambient jobs | Guarantee exactly-once delivery |
-| EventBridge + Recovery Lambda | Find committed outbox jobs whose delivery is pending or uncertain | Re-run completed jobs or generate replacement keys |
+| EventBridge + Recovery Lambda | Find committed outbox jobs whose delivery is pending or uncertain, and clear expired join-replay secrets | Re-run completed jobs, recover a player identity, or generate replacement keys |
 | Managed MCP | Expose authenticated read-only inspection views | Participate in player requests or mutate state |
 
 ## Information boundaries
@@ -125,6 +129,24 @@ type ApprovedDisclosureBundle = {
 Explicit API response types, explicit SQL projections, and tests prevent raw
 database rows from being serialized to the browser or copied into prompts.
 
+The sole gameplay read model is the aggregated `player-view`. Its opaque
+`viewVersion` and HTTP `ETag` are derived from that player's canonical safe
+projection after excluding `viewVersion` and volatile transport fields, never
+from `towns.revision`. Hidden changes therefore cannot leak through a changing
+version. The browser refreshes after actions and uses conditional light
+polling; unchanged views return `304 Not Modified`. The HTTP contract defines
+the exact domain separator and canonical serialization.
+
+Invite resolution reveals only town status, mystery title, and join mode.
+After joining, ordinary routes use an opaque town ID plus an independent
+town-scoped HTTP-only cookie, so invite tokens do not remain in routine API
+URLs. Town creation, first-time join, and authenticated actions use separate
+durable request ledgers because they occur under different authority.
+The SPA sends `Referrer-Policy: no-referrer`, loads no third-party invite-page
+resources, and replaces the invite URL after resolution. CloudFront and S3 raw
+access logging are disabled; the API access log records the route template but
+not raw paths, queries, headers, or bodies.
+
 ### Objective state, claims, and beliefs
 
 These layers must remain distinct:
@@ -147,8 +169,9 @@ claim with objective state and reject lies.
 ## Player `Ask` flow
 
 1. React creates one UUID idempotency key for the logical `Ask` action, keeps it
-   with the pending action, and sends it in the `Idempotency-Key` header with the
-   secure player cookie. Transport retries reuse both the key and request.
+   with the pending action, and sends it to the versioned typed action route in
+   the `Idempotency-Key` header with the town-scoped secure player cookie.
+   Transport retries reuse both the key and request.
 2. CloudFront routes `/api` to API Gateway, which invokes Game Lambda.
 3. Lambda validates the basic schema, player token, town membership, NPC target,
    and tenant scope.
@@ -176,7 +199,24 @@ claim with objective state and reject lies.
     once while retaining or renewing its processing claim.
 15. The player receives the response only after persistence succeeds.
 
+If query embedding fails at step 6, Ask uses only deterministic, already
+authorized recent or important episodes, unresolved promises, and public
+disclosures. If those yield no safe context, it uses authored dialogue. This
+fallback never broadens the NPC/town visibility boundary.
+
 Bedrock calls happen outside database transactions.
+
+The HTTP API integration allows 30 seconds, Game Lambda 28 seconds, and
+application work 24 seconds. The application records an absolute deadline,
+reserves the final four seconds for validation, fallback, and commit, and makes
+all pre-commit reads and model calls finish before that window. The final
+transaction uses the remaining application time while preserving 500
+milliseconds for response serialization.
+Dialogue uses an authored fallback if its safe result cannot finish within that
+budget. Claim normalization stores a terminal retry-with-new-action `503`
+because it has no safe semantic fallback. A repair or revision rerun starts
+only if its worst-case bound fits before the reserve. An initial request is
+never detached into untracked background work.
 
 ## Idempotency contract
 
@@ -214,8 +254,9 @@ accidentally attached to different input.
 | Different input | Return `409 IDEMPOTENCY_KEY_REUSED` |
 | Processing claim expired | Replace the claim and retry the work |
 
-The MVP uses `Retry-After: 2`; the browser resends the identical request and key
-after two seconds rather than creating a second action.
+The MVP uses `Retry-After: 2` and returns an action-status `Location`. The
+browser polls that dedicated `GET` route; resending the identical request and
+key remains a safe fallback.
 
 The processing claim contains a random token and an expiry time. The final
 database transaction succeeds only if its token still matches the request
@@ -238,6 +279,21 @@ Implementation details:
 - Completed and terminally failed request records and fingerprints remain for
   the lifetime of the town.
 - Keys identify retries; they are not secrets or authentication credentials.
+- Player processing claims last 60 seconds and renew every 20 seconds. A second
+  relevant town-revision conflict stores a nonterminal
+  `409 ACTION_CONFLICT` with no effects and a one-second retry delay; the
+  identical request reuses the same key after that delay.
+
+Town creation and joining do not use this player ledger. Creation replays
+require the judge code. Joining uses a `join_requests` record plus a separate
+hashed join-attempt secret that authorizes at most three cookie issuances until
+the first authenticated view or ten minutes, whichever comes first. Closing
+that bootstrap path clears the hash; the ordinary join idempotency key is not
+an identity credential.
+Server sessions have no inactivity expiry: an active session lasts until
+revocation or town retirement. The browser cookie has a one-year `Max-Age` and
+is reissued on the first authenticated response at least thirty days after its
+prior issuance; losing it still has no recovery flow.
 
 ### Ambient jobs
 
@@ -313,20 +369,24 @@ claim transmission, belief, or player-visible response.
 NPC-to-NPC communication is an off-screen claim transmission, not physical
 movement or an ongoing autonomous conversation.
 
-1. A consequential player action and its outbox job are committed together.
-2. The outbox job is sent to SQS with a short delay. Recovery republishes the
+1. Consequential actions append events marked `ambient_eligible`; they do not
+   publish directly.
+2. Leave Town atomically ends the visit and allocates the next disjoint event
+   range. A range containing an eligible event creates an outbox job; an
+   ineligible range advances the boundary without a job.
+3. An outbox job is sent to SQS with a short delay. Recovery republishes the
    same row if delivery status is uncertain.
-3. SQS invokes Ambient Tick Lambda at least once.
-4. The worker applies the [ambient-job idempotency rules](#ambient-jobs).
+4. SQS invokes Ambient Tick Lambda at least once.
+5. The worker applies the [ambient-job idempotency rules](#ambient-jobs).
    Completed jobs stop here; new or recoverable jobs load ambient-eligible
    events from the outbox row's disjoint sequence range and relevant NPC
    memories.
-5. Application code constructs allowed `(existing claim, contactable NPC)`
+6. Application code constructs allowed `(existing claim, contactable NPC)`
    choices plus `do_nothing`.
-6. Haiku selects supplied choices.
-7. Application code validates contactability, disclosure rules, promise
+7. Haiku selects supplied choices.
+8. Application code validates contactability, disclosure rules, promise
    constraints, provenance, hop limits, and tick limits.
-8. The worker saves the transmissions, recipient episodes, belief evidence,
+9. The worker saves the transmissions, recipient episodes, belief evidence,
    events, agent-run records, and completed job status in one transaction.
 
 Hard bounds:
@@ -336,6 +396,18 @@ Hard bounds:
 - Tick-created events cannot trigger another action until a later tick.
 - No new facts, entities, items, locations, or promises.
 - An invalid choice becomes `do_nothing`.
+
+Recovery runs once per minute. Player-facing ambient transitions have a hard
+five-minute deadline. At that point pending delivery is abandoned and
+nonterminal execution quarantines with no effects; a late message is a no-op.
+Completion or quarantine unblocks the next visit, so queue or model failure
+cannot strand a player away. Ambient processing claims last 120 seconds and
+renew every 30 seconds, but no worker may commit after the transition deadline
+or after the town leaves `active`.
+
+The same invocation also clears hashes on unconfirmed join requests whose
+ten-minute transport-replay window expired. This is credential cleanup only; it
+cannot issue a cookie or recover an identity.
 
 ### Authored NPC contact graph
 
@@ -367,7 +439,7 @@ conditional unless separate semantic validation requires it.
 
 ## Logical schema contract
 
-The accepted 35-table model now lives in
+The accepted 39-table model now lives in
 [Logical Data Model and Schema Contract](005-logical-data-model-and-schema-contract.md).
 That reference owns:
 
@@ -391,6 +463,10 @@ understand how requests, models, queues, and transactions interact.
 - Unique-item transfers and town resolution use conditional updates.
 - All town-owned access is scoped by `town_id`; cross-town foreign keys are
   impossible under the schema contract.
+- Player-safe view versions are derived from the projection rather than the
+  canonical revision.
+- Provisioning, joining, sessions, and application rate limits use their own
+  operational records instead of overloading player actions.
 
 ## Runtime verification focus
 
@@ -410,3 +486,4 @@ understand how requests, models, queues, and transactions interact.
 - [Decision 002: MVP System Architecture](002-mvp-system-architecture.md)
 - [Infrastructure Cost Estimate](004-infrastructure-cost-estimate.md)
 - [Logical Data Model and Schema Contract](005-logical-data-model-and-schema-contract.md)
+- [HTTP API Contract](006-http-api-contract.md)

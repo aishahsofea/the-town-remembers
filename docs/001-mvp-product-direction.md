@@ -3,6 +3,7 @@
 - **Project:** The Town Remembers
 - **Status:** Accepted
 - **Date:** 2026-07-26
+- **Updated:** 2026-08-02
 - **Scope:** Player experience, mystery design, memory behavior, and MVP feature boundary
 
 ## Decision
@@ -60,7 +61,11 @@ The guard's post is part of Festival Square rather than a fifth location.
 
 - Each mystery runs in an isolated town created through an unguessable invite link.
 - Players choose guest display names.
-- A persistent browser token identifies a returning player within that town.
+- A persistent, town-scoped browser session identifies a returning player
+  within that town. One browser may retain independent identities in several
+  towns.
+- Reopening the same invite resumes that identity. Losing all town cookies
+  loses it; there is no recovery flow.
 - There are no accounts, email flows, or OAuth.
 - Players may overlap, but there is no real-time presence, avatar movement, typing indicator, or player chat.
 - Shared state refreshes after actions or through light polling.
@@ -83,15 +88,21 @@ The MVP uses a closed action vocabulary.
 
 ### World actions
 
+- **Start visit:** Enter Festival Square when the player is currently away.
 - **Travel:** Move to an authored location.
 - **Inspect:** Examine an authored object or area.
-- **Leave town:** End a visit and queue an ambient world tick.
+- **Leave town:** End a visit and queue an ambient world tick when the allocated
+  event range contains a consequential event.
 
 ### NPC actions
 
 - **Ask:** Enter a natural-language question.
-- **Tell:** Enter a claim, review its normalized interpretation, and confirm it.
-- **Show:** Present verified evidence to an NPC.
+- **Tell:** Enter a claim, review its normalized interpretation, and confirm the
+  single-use draft before it expires.
+- **Show:** Present one discovered authored clue or one physical item currently
+  carried by the player to an NPC. A carried item has structured evidence
+  effects only when the authored world links it to evidence; otherwise it may
+  produce dialogue or no change.
 - **Give:** Transfer a unique item.
 - **Promise:** Accept a contextual commitment offered by an NPC.
 
@@ -99,6 +110,7 @@ The MVP uses a closed action vocabulary.
 
 - **Add note:** Leave an attributed, unverified message for other players.
 - **Accuse:** Complete the culprit, motive, and location theory.
+- **Resolve:** Make the one irreversible shared choice after a correct theory.
 
 There is no unrestricted "do anything" action.
 
@@ -229,7 +241,10 @@ Hard limits:
 - Idempotent retries
 - Full decision and event trace
 
-A hidden retry control may exist for demo recovery. Continuous scheduled simulation is not part of the MVP.
+An ambient delivery or execution that cannot finish within the bounded
+transition deadline completes safely with no effects and remains inspectable.
+Continuous scheduled simulation and an admin retry control are not part of the
+MVP.
 
 ## Interface
 
@@ -265,6 +280,14 @@ A correct theory leads to one irreversible shared choice:
 - **Restore the bell quietly:** Confront Corin privately and preserve Lark's secret.
 
 Both choices solve the mystery. The epilogue summarizes contributions, propagated claims, promises, relationship outcomes, and the difference between objective truth and the final public story.
+
+The first correct accuser owns the choice for ten minutes. If they do not act,
+any participating player whose visit began no later than the correct accusation
+may finish it, even if currently away. A newcomer who joins after the accusation
+may read but cannot take the choice. While the choice is pending, other gameplay
+and ambient effects are frozen. The first committed choice wins.
+Afterward the town is permanently read-only but remains viewable, including to
+new invite holders, until it is retired.
 
 ## Inspection and explainability
 
@@ -314,3 +337,6 @@ It is intentionally smaller than a general living-town simulation. The project h
 ## Follow-up decision
 
 The application stack, database design, AWS topology, model roles, security, cost controls, and test strategy are recorded in [Decision 002: MVP System Architecture](002-mvp-system-architecture.md).
+
+The public route, session, projection, action, and error contracts are recorded
+in the [HTTP API Contract](006-http-api-contract.md).

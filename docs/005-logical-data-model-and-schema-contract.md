@@ -3,6 +3,7 @@
 - **Project:** The Town Remembers
 - **Status:** Accepted logical design; SQL implementation pending
 - **Date:** 2026-08-01
+- **Updated:** 2026-08-02
 - **Scope:** Entity boundaries, table contracts, value domains, invariants, indexes, inspection views, and schema verification
 
 This document is the implementation contract for the CockroachDB data model.
@@ -38,7 +39,7 @@ explanations on every visit.
 
 ## Logical data model
 
-The settled model contains 35 tables. Each exists because it owns a distinct
+The settled model contains 39 tables. Each exists because it owns a distinct
 identity, lifecycle, consistency boundary, or append-only causal record; there
 are no generic entity-attribute-value tables.
 
@@ -55,6 +56,9 @@ are no generic entity-attribute-value tables.
   model without nullable speaker and recipient columns.
 - Every visit is explicit. Current player location belongs to an active
   `player_visits` row rather than to the persistent player identity.
+- Town creation, first-time join, player sessions, and application rate limits
+  have explicit operational records. Pre-authentication retries do not reuse
+  the authenticated `player_actions` ledger.
 - Physical evidence is authored as `clues` attached to `inspectables`. Discovery
   is recorded separately and attributed to the player who found it.
 - Claim normalization and confirmation are separate operations. Unconfirmed
@@ -74,7 +78,7 @@ are no generic entity-attribute-value tables.
 | Logical value | CockroachDB representation | Rule |
 |---|---|---|
 | Primary and foreign IDs | `UUID` | Generated server-side; never meaningful to players |
-| Idempotency and processing tokens | `UUID` | Random and opaque |
+| Idempotency and processing tokens | `UUID` | Random and opaque; join-attempt secrets are separate credentials |
 | Token and request fingerprints | `BYTES` | SHA-256 output; raw tokens are never stored |
 | Time | `TIMESTAMPTZ` | Written and compared in UTC |
 | Revisions, sequences, and counters | `INT8` | Non-negative |
@@ -89,7 +93,8 @@ primary key beginning with `town_id` or a unique constraint that includes
 `town_id`. Every foreign key between
 town-owned records includes `town_id`. Runtime deletes are not used; foreign
 keys use `RESTRICT`. History rows are append-only. Operational rows may change
-only in fields explicitly described as mutable.
+only in fields explicitly described as mutable. Expired `api_rate_limits` rows
+are the sole routine-delete exception and may be pruned after 24 hours.
 
 All mutable current-state rows have `updated_at`. All durable rows have
 `created_at`. Table descriptions omit those columns only where repeating them
@@ -99,11 +104,15 @@ would obscure the domain fields.
 
 ```mermaid
 erDiagram
+    TOWN_CREATION_REQUESTS ||--|| TOWNS : creates
     TOWNS ||--o{ STORY_ENTITIES : contains
     TOWNS ||--o{ ACTORS : contains
     ACTORS ||--|| PLAYERS : "player subtype"
     ACTORS ||--|| NPCS : "npc subtype"
     STORY_ENTITIES ||--o| NPCS : portrays
+    TOWNS ||--o{ JOIN_REQUESTS : accepts
+    JOIN_REQUESTS ||--|| PLAYERS : creates
+    PLAYERS ||--o{ PLAYER_SESSIONS : authenticates
     PLAYERS ||--o{ PLAYER_VISITS : makes
     PLAYER_VISITS ||--o{ PLAYER_ACTIONS : contains
 
@@ -149,11 +158,20 @@ remains readable. The table contracts below are authoritative.
 | `revision` | `INT8 NOT NULL DEFAULT 0` | Optimistic-concurrency revision |
 | `last_event_sequence` | `INT8 NOT NULL DEFAULT 0` | Last sequence allocated to a world event |
 | `ambient_scheduled_through_sequence` | `INT8 NOT NULL DEFAULT 0` | Highest event assigned to an ambient job |
+| `winning_case_attempt_id` | `UUID NULL` | Correct attempt that opened the final choice |
+| `resolution_owner_player_id` | `UUID NULL` | Player with the initial exclusive choice |
+| `resolution_reservation_expires_at` | `TIMESTAMPTZ NULL` | End of the owner's ten-minute reservation |
 | `created_at` | `TIMESTAMPTZ NOT NULL` | Creation time |
 | `resolved_at` | `TIMESTAMPTZ NULL` | Set only when the town becomes `resolved` |
 
 Valid transitions are `active -> awaiting_resolution -> resolved -> retired`
 and `active -> retired`. A failed accusation leaves the town `active`.
+The three resolution-reservation fields are null while `active`, are all
+present while `awaiting_resolution`, and remain as audit identity after
+resolution. Before expiry only the owner may choose; afterward any player with
+a visit whose `started_at` is no later than the winning correct attempt's event
+time may choose. A resolved town accepts read-only joins and views but no visits
+or gameplay. A retired town accepts neither joins nor player views.
 
 #### `story_entities`
 
@@ -181,8 +199,8 @@ application code.
 
 | Table | Required domain columns | Responsibility |
 |---|---|---|
-| `actors` | `town_id UUID`, `id UUID`, `actor_type STRING`, `display_name STRING` | Shared identity for a `player` or `npc` that can speak, receive claims, hold an item, or participate in an event |
-| `players` | `town_id UUID`, `id UUID`, `token_hash BYTES`, `display_name_normalized STRING`, `last_seen_at TIMESTAMPTZ` | Guest-player subtype of `actors` |
+| `actors` | `town_id UUID`, `id UUID`, `actor_type STRING`, `display_name STRING`, `display_name_normalized STRING` | Shared identity for a `player` or `npc` that can speak, receive claims, hold an item, or participate in an event |
+| `players` | `town_id UUID`, `id UUID`, `last_seen_at TIMESTAMPTZ` | Guest-player subtype of `actors`; authentication belongs to session rows |
 | `npcs` | `town_id UUID`, `id UUID`, `character_entity_id UUID`, `location_entity_id UUID`, `profile_key STRING`, `profile_version STRING` | Conversational-NPC subtype of `actors` |
 
 Subtype tables reuse the actor ID as their primary key and foreign key.
@@ -190,11 +208,113 @@ Each subtype stores its checked constant `actor_type` and references
 `actors(town_id, id, actor_type)`, which prevents a player actor from acquiring
 an NPC subtype or vice versa. Actor and subtype creation are one transaction,
 and an inspection invariant reports any parent without its required subtype.
-`players(town_id, token_hash)` and
-`players(town_id, display_name_normalized)` are unique. Display names are
-case-folded and trimmed before uniqueness is checked. `npcs.character_entity_id`
-is unique within a town; one authored character has at most one conversational
-actor. Lark has no `npcs` row.
+`actors(town_id, display_name_normalized)` is unique, preventing both duplicate
+player names and authored-NPC impersonation. Display names are normalized with
+Unicode NFKC, trimmed, whitespace-collapsed, and fully case-folded for
+comparison; the accepted display casing is immutable. Names contain 2 through
+24 grapheme clusters and use only letters, numbers, spaces, apostrophes, and
+hyphens. `npcs.character_entity_id` is unique within a town; one authored
+character has at most one conversational actor. Lark has no `npcs` row.
+
+#### `town_creation_requests`
+
+| Column group | Required values |
+|---|---|
+| Identity | `idempotency_key UUID` primary key, `request_hash BYTES`, `content_version STRING`, `security_key_version STRING` |
+| Processing claim | `status STRING`, `processing_token UUID NULL`, `processing_expires_at TIMESTAMPTZ NULL`, `attempt_count INT4` |
+| Saved result | `town_id UUID NULL`, `response_status INT4 NULL`, `response_payload JSONB NULL`, `error_code STRING NULL`, timestamps |
+
+Town creation happens before a town-owned player exists, so this global
+operational ledger is separate from `player_actions`. Every attempt and replay
+requires the valid judge code. The invite token is a versioned HMAC of the
+creation key using the application security secret; only its hash is stored on
+`towns`. The recorded key version permits exact invite replay after secret
+rotation without storing plaintext. Referenced historical security-key
+versions remain retrievable while any retained creation-request record uses
+them. A completed request that created a town remains through the town's
+lifetime.
+
+Status is `processing`, `completed`, or `failed`, with the same claim and
+terminal-field rules as other request ledgers. The MVP request body is exactly
+`{}` because the server selects the sole authored mystery. Its fingerprint
+includes the API version, operation kind, and canonical empty body but excludes
+the judge code and idempotency key. The first claim freezes `content_version`
+and `security_key_version`; all retries use those values even after deployment
+or rotation. A completed request references exactly one town and remains
+through that town's lifetime. Its `response_payload` contains only the safe town
+ID and status, never the invite token or URL; the API derives the invite on each
+initial response or replay from the request key and recorded security-key
+version.
+
+#### `join_requests` and `player_sessions`
+
+| Table | Required domain columns | Responsibility |
+|---|---|---|
+| `join_requests` | `town_id UUID`, `idempotency_key UUID`, `request_hash BYTES`, `join_secret_hash BYTES NULL`, `status STRING`, processing-claim fields, `player_id UUID NULL`, `initial_visit_id UUID NULL`, `replay_expires_at TIMESTAMPTZ NULL`, `bootstrap_confirmed_at TIMESTAMPTZ NULL`, `replay_closed_at TIMESTAMPTZ NULL`, `replay_closed_reason STRING NULL`, `session_issue_count INT4`, safe response fields, timestamps | Make first-time guest creation retry-safe without turning an ordinary idempotency key into a lasting credential |
+| `player_sessions` | `town_id UUID`, `id UUID`, `player_id UUID`, `join_request_id UUID`, `token_hash BYTES`, `status STRING`, `last_cookie_issued_at TIMESTAMPTZ`, `created_at TIMESTAMPTZ` | Authenticate one browser session for one town and close its bootstrap replay path |
+
+`join_requests(town_id, idempotency_key)` and
+`player_sessions(town_id, token_hash)` are unique. A join request also requires
+a separate 256-bit join-attempt secret; only its hash is stored and it is never
+logged. Processing claims last 30 seconds.
+
+A completed join maps permanently to one player. Before both
+`bootstrap_confirmed_at` and `replay_expires_at`, the same request, key, and
+join secret may mint another session row for that player if the initial response
+was lost. The first successful authenticated player-view conditionally sets
+`bootstrap_confirmed_at` through the session's join request and atomically
+clears `join_secret_hash`. Later replay
+returns `410 JOIN_REPLAY_CLOSED`; time expiry returns
+`410 JOIN_REPLAY_EXPIRED`. Neither can issue a session. Losing all session
+cookies after bootstrap means losing the identity; there is no recovery flow.
+`session_issue_count` starts at one and is conditionally incremented when a
+cookie is minted. It may not exceed three; the next replay closes with
+`410 JOIN_REPLAY_EXHAUSTED`. Thus one request can own at most three
+simultaneously active bootstrap sessions.
+
+Closing for confirmation, time expiry, or issue exhaustion sets
+`replay_closed_at` and the matching reason and clears `join_secret_hash`; open
+completed requests have none of those closure fields. A processing request has
+`session_issue_count = 0`; a completed request has a count from one through
+three. Recovery scans expired open requests once per minute and performs this
+conditional closure; an incoming replay performs it synchronously if the sweep
+has not run. This cleanup cannot authenticate a player or issue a session.
+
+Session tokens are random, stored only as hashes, and may coexist for the small
+number of response replays. Sessions use `active` or `revoked` and have no
+inactivity expiry; an active row is accepted until revocation or town
+retirement. The browser cookie has a one-year `Max-Age` and is reissued on the
+first authenticated response at least thirty days after its prior issuance,
+including for a resolved-town view. A conditional timestamp update elects one
+concurrent response to emit `Set-Cookie`. This changes
+`last_cookie_issued_at`, not a server expiry.
+Loss of the cookie remains unrecoverable. Each town cookie is independently
+named and path-scoped, so one browser can retain several town identities.
+
+Every join atomically creates the player actor, zeroed NPC relationships, and a
+session. An active-town join additionally creates a Festival Square visit and
+an internally completed `start_visit` action; the join request references that
+visit. Joining an `awaiting_resolution` or `resolved` town creates no visit.
+
+#### `api_rate_limits`
+
+| Column | Type and nullability | Meaning |
+|---|---|---|
+| `scope_kind`, `scope_key`, `bucket_kind` | `STRING, BYTES, STRING NOT NULL` | Composite identity for IP hash, player, or town and the protected operation |
+| `tokens_milli` | `INT8 NOT NULL` | Remaining token-bucket capacity in thousandths |
+| `last_refill_at` | `TIMESTAMPTZ NOT NULL` | Last atomic refill calculation |
+| `updated_at` | `TIMESTAMPTZ NOT NULL` | Operational pruning timestamp |
+
+The server atomically refills and consumes every applicable bucket before it
+creates a new operation record. A rejection therefore does not consume an
+idempotency key. Source IPs use rotating HMAC hashes, never raw addresses.
+Expired buckets may be pruned after 24 hours. The exact rates live in the HTTP
+API contract. The model-backed player-action bucket covers exactly `ask`,
+`normalize_claim`, `tell`, `show`, `give`, and `accept_promise`; ambient work is
+accounted for separately. Processing and terminal same-input replays bypass
+model quota because they execute no model. Reclaiming a `retryable` action
+consumes the applicable attempt buckets before returning it to `processing`; a
+rejected attempt leaves the existing record retryable under the same key.
 
 #### `npc_contact_edges`
 
@@ -224,9 +344,14 @@ implied by `relationships`.
 
 A partial unique index permits at most one active visit for a player. Travel
 conditionally updates `current_location_entity_id` and the town revision.
-Ending a visit and creating its departure event and outbox row are one
-transaction. Starting while an active visit exists returns that visit rather
-than creating another.
+Ending a visit, creating its departure event, allocating the next ambient
+range, and conditionally creating an outbox row are one transaction. Starting
+while an active visit exists returns that visit rather than creating another.
+Every visit begins at Festival Square. The first active-town join creates an
+internal completed `start_visit` action before inserting the visit, then links
+that action back to the new visit in the same transaction; later starts use the
+ordinary authenticated action flow. No visit may start unless the town is
+`active` and the player's prior ambient transition is terminal or absent.
 
 ### Authored truth, evidence, and current state
 
@@ -280,7 +405,9 @@ inspectable is available only at that custody location.
 `supports` or `contradicts`. `clue_discoveries(town_id, clue_id, player_id)` is
 unique, so repeated inspection by one player does not create contribution spam.
 The first discovery creates the shared verified-evidence board entry; later
-player discoveries remain visible in contribution history.
+player discoveries remain visible in contribution history. Once that shared
+entry exists, any player may submit the clue through `show`; a personal
+discovery row is not required.
 
 `clue_kind` is `physical_trace`, `document`, or `object_state`. These labels
 control presentation only; the signed claim effects remain authoritative.
@@ -356,7 +483,7 @@ contradictions without a separate case-board link table.
 | Lifecycle | `status STRING`, `expires_at TIMESTAMPTZ`, `normalization_action_id UUID`, `confirmed_by_action_id UUID NULL`, `confirmed_claim_id UUID NULL` |
 
 The state machine is `pending -> confirmed`, `pending -> cancelled`, or
-`pending -> expired`. Drafts expire 30 minutes after creation. Only the creating
+`pending -> expired`. Drafts expire 10 minutes after creation. Only the creating
 player may confirm a pending, unexpired draft, and one draft may be confirmed
 once. Confirmation creates or reuses `claims` and creates the player-to-NPC
 transmission in the same transaction as the completed Tell action. A pending,
@@ -375,7 +502,7 @@ scheduled cleanup is required. A stale pending row may be lazily marked
 | Table | Required domain columns | Responsibility |
 |---|---|---|
 | `npc_interactions` | `town_id UUID`, `id UUID`, `player_action_id UUID`, `visit_id UUID`, `player_id UUID`, `npc_id UUID`, `event_id UUID`, `input_kind STRING`, `player_text STRING NULL`, `npc_text STRING`, `response_mode STRING` | Immutable accepted NPC turn and player-visible response |
-| `claim_transmissions` | `town_id UUID`, `id UUID`, `claim_id UUID`, `speaker_actor_id UUID`, `recipient_actor_id UUID`, `parent_transmission_id UUID NULL`, `root_transmission_id UUID`, `source_episode_id UUID NULL`, `alleged_source_actor_id UUID NULL`, `source_kind STRING`, `hop_count INT4`, `event_id UUID`, `interaction_id UUID NULL`, `ordinal INT4` | One actual act of communicating a structured claim |
+| `claim_transmissions` | `town_id UUID`, `id UUID`, `claim_id UUID`, `speaker_actor_id UUID`, `recipient_actor_id UUID`, `parent_transmission_id UUID NULL`, `root_transmission_id UUID`, `source_episode_id UUID NULL`, `alleged_source_actor_id UUID NULL`, `source_kind STRING`, `hop_count INT4`, `event_id UUID`, `interaction_id UUID NULL`, `ordinal INT4`, `created_at TIMESTAMPTZ` | One actual act of communicating a structured claim |
 
 `npc_interactions.player_action_id` is unique. `input_kind` is `ask`, `tell`,
 `show`, `give`, or `promise`. `response_mode` is `generated`, `repaired`,
@@ -402,7 +529,12 @@ Speaker and recipient must differ. `(town_id, event_id, ordinal)` is unique.
 transmission sets it to the parent's hop count plus one. Alleged hearsay starts
 at one. An originating transmission names itself as `root_transmission_id`; a
 repeat copies its parent's root. Provenance and independent-source identity are
-therefore explicit and are not inferred from prose.
+therefore explicit and are not inferred from prose. A player-visible
+provenance path starts at the displayed transmission, repeatedly follows
+`parent_transmission_id` to the root, reverses that chain, and emits the root
+speaker followed by each recipient. `hop_count` and `root_transmission_id` are
+consistency checks, not sort keys; `ordinal` distinguishes claims spoken in one
+event and never orders hearsay hops.
 
 #### `episodes` and `episode_references`
 
@@ -568,6 +700,24 @@ are fulfilled by `restore_bell_quietly` and broken by `expose_cover_up` when the
 protected claim is part of the public resolution. All resulting promise and
 relationship changes commit with the resolution event.
 
+Promise offers do not own a separate lifecycle table. The source
+`player_actions.response_payload` is their durable record and contains an
+ordered `promiseOffers` array. Each canonical descriptor stores zero-based
+`ordinal`, `npcId`, `kind`, `termsVersion`, player-safe summary, and exactly one
+`subject` variant: `{ kind: "claim", claimId, text }` or
+`{ kind: "item", itemId, displayName }`. Referenced entities must already be
+visible to that player. A player-visible offer ID is deterministically encoded
+as base64url UTF-8 of `promise-offer:v1`, the source action ID, and the ordinal,
+with newline separators, exactly as defined by the HTTP contract.
+
+`accept_promise` loads the saved source action, validates the ordinal against
+that immutable descriptor, verifies the same town, player, visit, and NPC,
+loads the matching retained authored terms version, and re-evaluates current
+gates. It never reconstructs an old offer from current dialogue or the newest
+content version. The offer ID is a reference, not authority; stale context
+produces a completed gameplay denial. Content cleanup may not remove a terms
+evaluator while a retained offer or active promise references its version.
+
 #### `case_board_entries`
 
 | Column group | Required values |
@@ -577,6 +727,7 @@ relationship changes commit with the resolution event.
 | Structured content | `clue_id UUID NULL`, `claim_id UUID NULL`, `transmission_id UUID NULL` |
 | Player content | `note_text STRING NULL` |
 | Classification | `verification_status STRING` |
+| Ordering | `created_at TIMESTAMPTZ` |
 
 `entry_kind` is `verified_evidence`, `testimony`, `hearsay`, or `note`.
 `verification_status` is `verified_physical`, `attributed_testimony`,
@@ -585,8 +736,8 @@ Column-presence checks enforce:
 
 - Verified evidence has one `clue_id` and no note text.
 - Testimony or hearsay has one `claim_id` and `transmission_id`.
-- A note has a contributor and 1–500 characters of `note_text`, with no clue,
-  claim, or transmission.
+- A note has a contributor and 1–280 Unicode grapheme clusters of `note_text`
+  after trimming, with no clue, claim, or transmission.
 
 There is at most one verified-evidence entry per clue and one testimony/hearsay
 entry per transmission. Notes are append-only. Contradiction badges are derived
@@ -608,8 +759,10 @@ later hears them or deliberately writes a note.
 
 One case attempt exists per Accuse action. Its outcome is `incorrect` or
 `correct`. A correct attempt conditionally changes the town from `active` to
-`awaiting_resolution`; simultaneous later attempts cannot win. An incorrect
-attempt has no permanent-failure effect.
+`awaiting_resolution`, installs its attempt and player as the resolution
+reservation, and sets expiry ten minutes later; simultaneous later attempts
+cannot win. An incorrect attempt has no permanent-failure effect and remains
+visible in shared contribution history.
 
 `case_attempts.player_action_id` is unique. Suspect, motive, and location use
 the same checked entity-type foreign keys as `case_solutions`. The outcome is a
@@ -618,7 +771,19 @@ server comparison with that private row, never a model judgment.
 `town_resolutions.town_id` is its primary key. `choice` is `expose_cover_up` or
 `restore_bell_quietly`. It must reference the correct attempt that put the town
 into `awaiting_resolution`. Inserting it and changing the town to `resolved`
-happen in one transaction.
+happen in one transaction. Before reservation expiry, only the correct
+accuser may choose. After expiry, a player may choose only if they have a
+`player_visits` row whose `started_at` is no later than the winning correct
+attempt's event time; a currently active visit is not required. This excludes
+invite holders who first join after the reservation begins. The first
+conditional insert wins; a concurrent loser returns the stored ending as
+`no_change`.
+
+While `awaiting_resolution`, all gameplay and ambient effects are frozen;
+player views, read-only joins, action-status reads, and `resolve` remain
+available. On resolution, all active visits end with `town_resolved`, queued
+ambient jobs become no-ops or quarantine, promises and relationships resolve,
+and the town becomes permanently read-only until retirement.
 
 ### History, operations, idempotency, and ambient ranges
 
@@ -629,33 +794,69 @@ happen in one transaction.
 | Identity | `town_id UUID`, `id UUID`, `player_id UUID`, `visit_id UUID NULL`, `idempotency_key UUID` |
 | Request | `action_kind STRING`, `request_hash BYTES`, `request_payload JSONB`, `target_actor_id UUID NULL`, `target_entity_id UUID NULL` |
 | Processing claim | `status STRING`, `processing_token UUID NULL`, `processing_expires_at TIMESTAMPTZ NULL`, `attempt_count INT4` |
-| Saved result | `outcome STRING NULL`, `response_status INT4 NULL`, `response_payload JSONB NULL`, `error_code STRING NULL`, `completed_at TIMESTAMPTZ NULL` |
+| Saved result | `outcome STRING NULL`, `response_status INT4 NULL`, `response_payload JSONB NULL`, `error_code STRING NULL`, `retry_after_at TIMESTAMPTZ NULL`, `completed_at TIMESTAMPTZ NULL` |
 
 `(town_id, player_id, idempotency_key)` is unique. Action kinds are
 `start_visit`, `travel`, `inspect`, `ask`, `normalize_claim`, `tell`, `show`,
 `give`, `accept_promise`, `add_note`, `leave`, `accuse`, and `resolve`.
 
-Status is `processing`, `completed`, or `failed`. A completed outcome is
-`applied`, `no_change`, or `denied`. Rule denials are completed and replayable.
-A terminal failure stores its safe error response and is also replayable; a
-player intentionally retries it with a new key.
+Status is `processing`, `retryable`, `completed`, or `failed`. A completed
+outcome is `applied`, `no_change`, or `denied`. Rule denials are completed and
+replayable. A terminal failure stores its safe error response and is also
+replayable; a player intentionally retries it with a new key. `retryable` is
+reserved for a second relevant town-revision conflict: it stores
+`409 ACTION_CONFLICT`, `retry_after_at = now + 1 second`, and no effects. After
+that time, the identical request may conditionally return to `processing` under
+the same idempotency key. That transition atomically installs a new processing
+claim, increments `attempt_count`, and clears the saved conflict response,
+`error_code`, and `retry_after_at`.
 
 Column-presence checks require a processing token and expiry only while
-`processing`. `completed` requires outcome, response status, response payload,
-and completion time. `failed` requires response status, safe response payload,
-error code, and completion time. Both terminal states clear the processing
-claim.
+`processing`; all saved-result fields are null in that state. `retryable`
+requires response status `409`, error code
+`ACTION_CONFLICT`, safe response payload, and `retry_after_at`, while outcome
+and completion time remain null. `completed` requires outcome, response status,
+response payload, and completion time. `failed` requires response status, safe
+response payload, error code, and completion time. Every non-processing state
+clears the processing claim; terminal states also clear `retry_after_at`.
 
 `request_payload` is canonical versioned JSON and is retained for the life of
 the town. `request_hash` is SHA-256 over the API version, action kind, relational
 targets, and canonical payload. Tokens, cookies, the idempotency key, and
 transport headers are excluded.
 
-Player-action processing claims last 90 seconds and are renewed at 45 seconds if
-work remains. A stale claim may be replaced. Completion conditionally matches
+Completed `response_payload` conforms to the exact kind-specific
+`CompletedActionResponse` union in the HTTP contract. Its promise offers and
+other nested arrays use that contract's canonical order; the row's `outcome`
+must equal the envelope outcome. A database check cannot validate the full JSON
+shape, so repository writes pass the versioned Zod schema before entering the
+completion transaction.
+
+`start_visit` and `resolve` may have no visit at request creation; ordinary
+gameplay requires an active visit, and NPC actions require co-location.
+`normalize_claim` stores `no_change` with a `needs_revision` result when input
+is unsupported. `show` targets either one authored clue discovered anywhere in
+the town or one item currently held by that player. A held item can produce
+dialogue or `no_change`; deterministic clue and belief effects apply only when
+the item has an authored evidence link through its linked inspectable and clue.
+Showing never transfers custody. Saved API responses exclude `towns.revision`;
+player freshness uses the projection-derived view version defined by the HTTP
+contract.
+
+Player-action processing claims last 60 seconds and are renewed every 20 seconds
+if work remains. A stale claim may be replaced. Completion conditionally matches
 the current token. After three claimed attempts without a committed result, the
 next owner stores a terminal `ACTION_PROCESSING_EXHAUSTED` response without
-effects.
+effects. API work has a 24-second application completion budget inside the
+30-second HTTP integration limit. The final four seconds are reserved for
+validation, fallback, and commit. Pre-commit reads and model calls end before
+that reserve; the final transaction uses the remaining application time while
+preserving 500 milliseconds for response serialization. Dialogue may use an authored
+fallback at the budget; normalization stores a terminal retry-with-new-action
+`503` because it has no safe semantic fallback. If `ask` query embedding fails,
+retrieval uses only deterministic, already-authorized recent or important
+episodes, unresolved promises, and public disclosures before falling back to
+authored dialogue; it never widens the visibility boundary.
 
 #### `world_events`
 
@@ -694,8 +895,8 @@ workers consider only eligible events inside their assigned sequence range.
 | Column group | Required values |
 |---|---|
 | Causal source | `town_id UUID`, `id UUID`, `player_action_id UUID NULL`, `ambient_job_execution_id UUID NULL`, `world_event_id UUID NULL` |
-| Invocation | `purpose STRING`, `model STRING`, `prompt_version STRING` |
-| Measures | `input_tokens INT8`, `output_tokens INT8`, `latency_ms INT8`, `estimated_cost DECIMAL(12,6)` |
+| Invocation | `purpose STRING`, `model STRING`, `inference_profile STRING`, `prompt_version STRING` |
+| Measures | `input_tokens INT8`, `output_tokens INT8`, `cache_read_tokens INT8`, `cache_write_tokens INT8`, `latency_ms INT8`, `estimated_cost DECIMAL(12,6)` |
 | Result | `outcome STRING`, `validation_error_code STRING NULL`, `created_at TIMESTAMPTZ` |
 
 `purpose` is `claim_normalization`, `intent_classification`,
@@ -708,14 +909,16 @@ because a revision retry rebuilt the context.
 Each run is appended in a short telemetry transaction after validation, so a
 later state conflict cannot erase incurred cost or a rejected attempt. It is
 not a game-state effect and need not share the final effect transaction.
-Prompts, raw invalid output, credentials, tokens, and connection strings are not
-stored.
+The inference-profile scope and cache-token dimensions are included in the
+cost calculation because in-region and global rates differ. Prompts, raw
+invalid output, credentials, authentication tokens, and connection strings are
+not stored.
 
 #### `outbox` and `ambient_job_executions`
 
 | Table | Required domain columns | Responsibility |
 |---|---|---|
-| `outbox` | `town_id UUID`, `id UUID`, `source_event_id UUID`, `visit_id UUID`, `job_type STRING`, `job_key UUID`, `payload JSONB`, `payload_hash BYTES`, `after_event_sequence INT8`, `through_event_sequence INT8`, `not_before TIMESTAMPTZ`, `next_send_at TIMESTAMPTZ`, `delivery_status STRING`, `send_token UUID NULL`, `send_expires_at TIMESTAMPTZ NULL`, `send_attempt_count INT4`, `last_error_code STRING NULL`, `sent_at TIMESTAMPTZ NULL` | Transactional, retry-safe handoff to SQS |
+| `outbox` | `town_id UUID`, `id UUID`, `source_event_id UUID`, `visit_id UUID`, `job_type STRING`, `job_key UUID`, `payload JSONB`, `payload_hash BYTES`, `after_event_sequence INT8`, `through_event_sequence INT8`, `not_before TIMESTAMPTZ`, `transition_deadline_at TIMESTAMPTZ`, `next_send_at TIMESTAMPTZ`, `delivery_status STRING`, `send_token UUID NULL`, `send_expires_at TIMESTAMPTZ NULL`, `send_attempt_count INT4`, `last_error_code STRING NULL`, `sent_at TIMESTAMPTZ NULL` | Transactional, retry-safe handoff to SQS with a bounded player transition |
 | `ambient_job_executions` | `town_id UUID`, `id UUID`, `outbox_id UUID`, `job_key UUID`, `payload_hash BYTES`, `status STRING`, `processing_token UUID NULL`, `processing_expires_at TIMESTAMPTZ NULL`, `attempt_count INT4`, `action_count INT4 NULL`, `error_code STRING NULL`, `completed_at TIMESTAMPTZ NULL` | Durable execution identity and processing claim |
 
 `outbox(town_id, job_key)`, `outbox(town_id, visit_id, job_type)`,
@@ -725,11 +928,12 @@ and payload hash must match its outbox row. The only MVP `job_type` is
 `ambient_tick`. The authoritative payload is canonical JSON
 `{version, visitId, afterEventSequence, throughEventSequence}` and must match the
 same relational columns; SQS carries only `town_id`, `outbox_id`, and `job_key`.
-`not_before` is set to 20 seconds after the departure commit. The initial sender
+`not_before` is set to 20 seconds after the departure commit and
+`transition_deadline_at` to five minutes after that commit. The initial sender
 publishes immediately with the corresponding SQS delay; a recovery publication
 uses only the remaining delay.
 
-Outbox delivery states are `pending`, `sending`, and `sent`:
+Outbox delivery states are `pending`, `sending`, `sent`, and `abandoned`:
 
 1. A sender conditionally moves `pending` or expired `sending` to `sending`,
    installs a 30-second send token, and increments the attempt count.
@@ -739,22 +943,27 @@ Outbox delivery states are `pending`, `sending`, and `sent`:
    the same job key, making the uncertain send safe.
 
 Only `sending` has a send token and expiry. `sent` requires `sent_at`. A failed
-send returns to `pending` with `next_send_at` set using one-, two-, four-,
-eight-, then fifteen-minute backoff; later attempts remain capped at fifteen
-minutes.
+send returns to `pending` with `next_send_at` set using one- then two-minute
+backoff within the transition deadline. `abandoned` is terminal, clears any
+send claim, records an error code, and is never published again.
 
-Recovery runs every five minutes and attempts only due rows. It never abandons or
-changes the key of a pending row. After ten failed or expired sends it raises an
-alert while the fifteen-minute retry continues.
+Recovery runs every minute and publishes only due rows. It also scans every
+nonterminal transition at or after its deadline regardless of send state,
+conditionally moves pending or expired-sending delivery to `abandoned`,
+ensures the matching execution is `quarantined`, and raises an alert. A sent
+row remains historical `sent`, but its quarantined execution rejects the late
+message. Recovery never changes a job key. A `start_visit` action may perform
+the same conditional terminalization when the deadline has passed before
+Recovery runs.
 
 Ambient execution states are `processing`, `completed`, and `quarantined`.
-Claims last 180 seconds and renew at 90 seconds. Completion must match the
+Claims last 120 seconds and renew every 30 seconds. Completion must match the
 current token. A valid no-op completes with `action_count = 0`. Payload mismatch,
-outbox identity corruption, or five expired/failed processing claims moves the
-job to `quarantined` with no effects and raises an alert. The hidden demo
-recovery control is not part of the settled MVP schema. Any deliberate operator
-release must preserve the outbox row and job key and be recorded before it is
-implemented.
+outbox identity corruption, five expired/failed processing claims, transition
+deadline, or a non-active town moves the job to `quarantined` with no effects
+and raises an alert where appropriate. A worker may commit only before the
+deadline while it owns the current claim and the town remains `active`. The
+hidden demo recovery control is not part of the settled MVP schema.
 
 Only `processing` has a processing token and expiry. `completed` requires
 `completed_at` and `action_count` from 0 through 2. `quarantined` requires an
@@ -769,17 +978,23 @@ When Leave Town commits:
 
 1. It locks or conditionally updates the town revision.
 2. It appends the departure event and allocates its `sequence_no`.
-3. It creates an outbox row whose range is
-   `(ambient_scheduled_through_sequence, last_event_sequence]`.
-4. It advances `ambient_scheduled_through_sequence` to the new upper bound.
-5. It ends the visit and commits all of the above atomically.
+3. It inspects that range for at least one `ambient_eligible` event.
+4. If one exists, it creates an outbox row whose range is
+   `(ambient_scheduled_through_sequence, last_event_sequence]`; otherwise it
+   creates no job.
+5. It advances `ambient_scheduled_through_sequence` to the new upper bound in
+   either case.
+6. It ends the visit and commits all of the above atomically.
 
-Concurrent departures therefore receive non-overlapping ranges. Events created
-by a tick have sequence numbers above that tick's upper bound, so they cannot
-cause another action in the same tick. A later Leave Town job includes them.
-Range assignment prevents two different jobs from reacting to the same event;
-the job idempotency record prevents two deliveries of one job from applying its
-range twice.
+Concurrent departures therefore receive non-overlapping ranges. An empty or
+ineligible range is consumed without spending a model call. Events created by a
+tick have sequence numbers above that tick's upper bound, so they cannot cause
+another action in the same tick. A later Leave Town range includes them. Range
+assignment prevents two different jobs from reacting to the same event; the job
+idempotency record prevents two deliveries of one job from applying its range
+twice. A completed or quarantined execution, or a departure with no job,
+permits the player to start another visit. Late delivery of an abandoned job is
+a no-op.
 
 ### Transaction retry policy
 
@@ -787,7 +1002,8 @@ range twice.
   with jittered delays of approximately 25 ms, 75 ms, and 225 ms.
 - A model-backed player action that loses its town revision reloads relevant
   state and reruns model work once. A second relevant revision conflict returns
-  a saved `409 TOWN_CHANGED_RETRY_ACTION` response with no effects.
+  a saved nonterminal `409 ACTION_CONFLICT` response with no effects; after
+  `retry_after_at`, the same request and key may reclaim the action.
 - Unique-item transfers and town resolution use conditional updates and never
   rely only on an earlier read.
 - Bedrock calls, embedding calls, and SQS publications never occur inside a
@@ -802,7 +1018,19 @@ range twice.
 
 In addition to primary keys and uniqueness constraints, migrations must provide:
 
-- `players(town_id, token_hash)` for cookie authentication.
+- `actors(town_id, display_name_normalized)` for race-safe player and NPC name
+  uniqueness.
+- `town_creation_requests(idempotency_key)` and a partial stale-work index on
+  processing claim expiry.
+- `join_requests(town_id, idempotency_key)`,
+  `join_requests(town_id, player_id)`, and a partial index on
+  `replay_expires_at` where `join_secret_hash IS NOT NULL` and
+  `bootstrap_confirmed_at IS NULL` for the cleanup sweep.
+- `player_sessions(town_id, token_hash)` for cookie authentication and
+  `player_sessions(town_id, player_id, status)` for session administration, and
+  `player_sessions(town_id, join_request_id)` for bootstrap confirmation.
+- `api_rate_limits(scope_kind, scope_key, bucket_kind)` and an
+  `updated_at` pruning index.
 - A partial index for active `player_visits(town_id, player_id)`.
 - `world_events(town_id, sequence_no)` and
   `world_events(town_id, event_type, occurred_at DESC)`.
@@ -812,8 +1040,10 @@ In addition to primary keys and uniqueness constraints, migrations must provide:
 - `relationship_changes(town_id, npc_id, player_id, created_at)`.
 - `case_board_entries(town_id, created_at)`.
 - `player_actions(town_id, player_id, idempotency_key)` and a partial stale-work
-  index on `status = 'processing'` and `processing_expires_at`.
-- `outbox(town_id, delivery_status, next_send_at, send_expires_at)`.
+  index on `status = 'processing'` and `processing_expires_at`, plus a partial
+  retry index on `status = 'retryable'` and `retry_after_at`.
+- `outbox(town_id, delivery_status, next_send_at, send_expires_at,
+  transition_deadline_at)`.
 - A partial stale-work index on
   `ambient_job_executions(status, processing_expires_at)`.
 - A CockroachDB vector index on `episodes(embedding)` with `town_id` and `npc_id`
@@ -889,11 +1119,22 @@ the job record is already completed, and the event's
 
 - All town-owned queries require `town_id`.
 - Composite foreign keys prevent cross-town references.
-- Guest player tokens live in secure, HTTP-only cookies; only hashes are stored.
+- Guest session tokens live in secure, HTTP-only, town-scoped cookies; only
+  hashes are stored in `player_sessions`.
+- Join-attempt secrets are short-lived credentials, stored only as hashes and
+  accepted only until the first authenticated view or the ten-minute replay
+  limit, whichever comes first. Ordinary idempotency keys never authenticate a
+  player.
 - Town creation requires a shared judge code stored in Secrets Manager.
+- Invite derivation and IP privacy hashing use a separate versioned application
+  security secret stored in Secrets Manager.
 - Database connections use `sslmode=verify-full`.
 - `migration_admin`, `app_runtime`, and inspection access use separate
   credentials and least privilege.
+- Only `app_runtime` is deployed in AWS Secrets Manager. The operator retains
+  `migration_admin` locally for manual migrations, and the read-only inspection
+  credential remains inside the CockroachDB Cloud Managed MCP connection;
+  neither is readable by a Lambda role.
 - SQL is parameterized and connections have strict query, pool, and concurrency
   limits.
 - Models receive no database credentials or tools.
@@ -919,13 +1160,15 @@ normal player requests.
 | `inspection.agent_runs` | Model, prompt version, tokens, latency, validation, and fallback outcomes |
 | `inspection.idempotency_status` | Player and ambient keys, fingerprints, statuses, attempts, processing claims, and numbered event effects |
 | `inspection.ambient_jobs` | Disjoint event ranges, outbox delivery, execution outcome, and quarantine state |
+| `inspection.access_operations` | Town creation, join replay-window outcomes, active session counts, and rate-limit decisions without credential material |
 
 These views reveal causal information for evaluation without granting mutation
 access. Player-facing case-board projections remain spoiler-safe.
 Inspection views never expose player or invite token hashes, database secrets,
-raw processing tokens, cookies, or unvalidated model text. Idempotency views may
-show opaque operation keys and claim-expiry times because those values do not
-authenticate a player or authorize completion.
+join-secret hashes, raw processing tokens, session hashes, cookies, or
+unvalidated model text. Idempotency views may show ordinary opaque operation
+keys and claim-expiry times because those values do not authenticate a player
+or authorize completion; join-attempt secrets never appear.
 
 ## Verification priorities
 
@@ -957,6 +1200,39 @@ The minimum high-risk tests are:
 15. The inspection views reconstruct the exact belief and provenance path.
 16. Only one correct accusation can move a town to `awaiting_resolution`, and
     only one irreversible resolution can be stored.
+17. Town-creation replay returns the same town and derivable invite only when
+    the judge code remains valid.
+18. Join replay within ten minutes creates one player and may issue a fresh
+    session only before bootstrap confirmation; confirmation or expiry closes
+    replay and cannot recover the identity, and the request never issues more
+    than three sessions.
+19. Independent town cookies authenticate only their own town, and session
+    hashes never appear in inspection views.
+20. Player and authored-NPC names cannot collide after Unicode normalization.
+21. A departure with no eligible event advances the ambient boundary without
+    an outbox row.
+22. Completion, quarantine, or the five-minute deadline always permits another
+    visit, and late delivery cannot apply abandoned work.
+23. Awaiting resolution freezes gameplay and ambient effects while enforcing
+    the ten-minute owner reservation; an earlier participant but not a
+    post-accusation newcomer may resolve after expiry.
+24. Player projections and saved action responses never expose the canonical
+    town revision.
+25. Claim drafts expire after ten minutes, notes enforce the 280-grapheme
+    bound, and showing a held item applies structured evidence only through an
+    authored linkage; a town-discovered clue is showable by another player.
+26. A second relevant revision conflict leaves one retryable action; retrying
+    the same request and key can complete it without duplicate effects.
+27. Player claims renew on the 60/20-second schedule and ambient claims on the
+    120/30-second schedule; expired or replaced workers cannot commit.
+28. A server session survives inactivity until revocation or town retirement,
+    while cookie loss remains unrecoverable and issuance is refreshed at most
+    monthly.
+29. A stored town-creation response contains no invite capability, and replay
+    derives the same invite using its retained security-key version.
+30. Promise acceptance loads the ordered descriptor saved on its source action;
+    a content deployment, forged ordinal, or mismatched source cannot reinterpret
+    it.
 
 ## Related decisions
 
@@ -964,3 +1240,4 @@ The minimum high-risk tests are:
 - [Decision 002: MVP System Architecture](002-mvp-system-architecture.md)
 - [Technical Architecture and Runtime Flows](003-technical-architecture-and-schema.md)
 - [Infrastructure Cost Estimate](004-infrastructure-cost-estimate.md)
+- [HTTP API Contract](006-http-api-contract.md)

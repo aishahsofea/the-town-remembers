@@ -3,7 +3,7 @@
 - **Project:** The Town Remembers
 - **Status:** Accepted
 - **Date:** 2026-07-26
-- **Updated:** 2026-08-01
+- **Updated:** 2026-08-02
 - **Scope:** Application stack, agent loop, data flow, deployment, security, cost, and hackathon proof
 
 ## Purpose
@@ -79,11 +79,16 @@ flowchart LR
 
     EventBridge["EventBridge schedule"] -->|"invoke"| Recovery["Recovery Lambda"]
     Recovery -->|"find pending or stale sends"| Outbox
+    Recovery -->|"clear expired join-secret hashes"| State
     Recovery -->|"republish with stored key"| Queue
 
     MCP["Managed MCP: read-only inspection"] --> State
     MCP --> Memory
 ```
+
+CloudFront does not share-cache `/api/*`. Player views use private,
+cookie-varying conditional caching; mutations, action status, invite preview,
+town creation, and join use `no-store`.
 
 ## Main technology choices
 
@@ -190,6 +195,14 @@ Bedrock calls happen outside database transactions. This avoids holding a transa
 
 Before committing, Lambda checks the town revision. If relevant state changed, it reloads and tries once more.
 
+The HTTP API has a 30-second integration limit, so application work uses a
+24-second completion budget inside a 28-second Lambda timeout. The last four
+seconds are reserved for validation, fallback, and commit; dependency calls
+receive earlier abort deadlines. Dialogue falls back safely within that budget.
+Claim normalization may store a safe terminal response requiring a new action.
+A second relevant town change instead stores retryable `409 ACTION_CONFLICT`
+with no effects, waits one second, and reuses the same logical action key.
+
 The browser creates one random UUID when it creates a pending action.
 Double-clicks and network retries reuse it; an intentional new action gets a new
 UUID.
@@ -202,6 +215,7 @@ response.
 |---|---|
 | No request record exists | Create one and process the action |
 | The action is still being processed | Return `202 Accepted`; do not start another copy |
+| The action hit a retryable conflict | Before the delay, replay `409`; afterward the same key may resume it |
 | The action is complete | Return the saved response |
 | The action terminally failed | Return the saved safe failure response |
 | The key is attached to different input | Return `409 IDEMPOTENCY_KEY_REUSED` |
@@ -212,13 +226,19 @@ recover the action if the first one crashes. Only the worker named by the
 current claim may save the result. The completed response and all game effects
 are saved in one transaction.
 
+`202` includes `Retry-After: 2` and a dedicated action-status location. The
+browser polls that `GET` route; repeating the identical `POST` remains safe.
+Player processing claims last 60 seconds and renew every 20 seconds.
+
 ## Ambient tick flow
 
-Pressing **Leave Town** creates an ambient tick.
+Pressing **Leave Town** allocates an ambient range and creates a tick only when
+that range contains an ambient-eligible event.
 
-1. The Game Lambda atomically ends the visit, writes a departure event, assigns
-   a disjoint range of as-yet-unscheduled events, and creates an outbox row with
-   one stable job key.
+1. The Game Lambda atomically ends the visit, writes a departure event, and
+   assigns a disjoint range of as-yet-unscheduled events. An eligible range
+   creates an outbox row with one stable job key; an ineligible range advances
+   the scheduling boundary without a job.
 2. The outbox job is sent to SQS with a 20-second delay.
 3. SQS wakes the Ambient Tick Lambda with the outbox ID and job key.
 4. The tick creates or reads the job's `ambient_job_executions` record.
@@ -242,9 +262,17 @@ numbered `world_events`. This prevents a retry from confusing two valid actions
 with duplicate work.
 
 The Recovery Lambda checks for unsent or uncertain outbox rows. EventBridge runs
-it once every five minutes. It republishes the stored outbox row with the original
+it once every minute. It republishes the stored outbox row with the original
 job key, repairing both a stop before send and a send whose success was not
-recorded. A duplicate publication is safe.
+recorded. A duplicate publication is safe. The same invocation clears hashes
+for unconfirmed join requests after their ten-minute transport-replay window;
+it never issues a session or recovers an identity.
+
+Every player-facing ambient transition has a five-minute deadline. At the
+deadline, undelivered work becomes abandoned and nonterminal execution becomes
+quarantined with no effects. Completion or quarantine permits the player to
+start another visit; late delivery cannot apply abandoned work. Ambient claims
+last 120 seconds and renew every 30 seconds.
 
 ## CockroachDB as persistent memory
 
@@ -287,6 +315,8 @@ append-only. New evidence never erases old evidence.
 
 ### Operational tables
 
+- `town_creation_requests` and `join_requests`
+- `player_sessions` and `api_rate_limits`
 - `player_actions` and `claim_drafts`
 - `outbox` and `ambient_job_executions`
 
@@ -390,6 +420,9 @@ These views make the system explainable without granting write access.
 - Validate all model output.
 - Retry one invalid model result.
 - Use an authored fallback if the retry fails.
+- If an Ask query embedding fails, retrieve only already-authorized recent or
+  important memories, unresolved promises, and public disclosures before using
+  authored dialogue; never widen the NPC or town boundary.
 - Do not commit a claim that failed normalization.
 - Do nothing if an ambient choice remains invalid.
 - Store model name, prompt version, token use, latency, and outcome in `agent_runs`.
@@ -401,8 +434,25 @@ These views make the system explainable without granting write access.
 - A shared judge code is required to create a town.
 - The code lives in AWS Secrets Manager.
 - Joining an existing town only requires its unguessable invite link.
-- A secure, HTTP-only cookie identifies a guest player.
-- Only a hash of the player token is stored.
+- A separate application security secret derives retry-safe invite tokens and
+  privacy-preserving IP hashes.
+- Historical application-security key versions remain available while any
+  retained creation-request record references them; a completed request remains
+  through the created town's lifetime.
+- A secure, HTTP-only, path-scoped cookie identifies a guest player in one
+  town; a browser may hold independent cookies for several towns.
+- Only session-token hashes are stored in `player_sessions`.
+- Server sessions do not expire from inactivity; an active session lasts until
+  revocation or town retirement. The browser cookie has a one-year `Max-Age`
+  and is reissued on the first authenticated response at least thirty days
+  after its prior issuance.
+- First-time join replay additionally requires a hashed, short-lived
+  join-attempt secret. The first authenticated view or ten minutes, whichever
+  comes first, closes reissuance permanently and clears that hash. At most three
+  session cookies can be issued before closure, so an ordinary idempotency key
+  never becomes an identity-recovery credential.
+- Losing all valid cookies means losing the identity; there is no account or
+  recovery flow.
 
 ### Database access
 
@@ -413,7 +463,12 @@ This is acceptable for a temporary, low-sensitivity demo. It is not the intended
 Required controls:
 
 - Use `sslmode=verify-full`.
-- Store database credentials in Secrets Manager.
+- Store only the `app_runtime` database credential in AWS Secrets Manager and
+  grant only the Game, Ambient, and Recovery roles access to that secret.
+- Keep `migration_admin` in the operator's local encrypted credential store for
+  manual migrations; never deploy it to AWS or expose it to Lambda.
+- Provision read-only inspection access through CockroachDB Cloud Managed MCP;
+  its credential remains in CockroachDB's managed connection, not AWS.
 - Use a random 256-bit password.
 - Use separate `migration_admin`, `app_runtime`, and read-only inspection access.
 - Give `app_runtime` only required DML permissions.
@@ -422,7 +477,14 @@ Required controls:
 - Keep database pools small.
 - Cap Lambda concurrency.
 - Rate-limit API and access-code attempts.
-- Never log secrets or connection strings.
+- Send `Referrer-Policy: no-referrer`, load no third-party resources on invite
+  pages, and remove invite capabilities from browser history after invite
+  resolution.
+- Disable CloudFront and S3 access logs that would record raw invite paths. Keep
+  only a custom API Gateway access log with request ID, route template, status,
+  and latency.
+- Never log secrets, raw request URLs or events, headers, cookies, join secrets,
+  invite tokens, or connection strings.
 - Rotate credentials after recording and after judging.
 
 A production version should use private networking.
@@ -435,12 +497,12 @@ The application records estimated model cost from actual input and output tokens
 
 Cost modes:
 
-| Estimated monthly use | Behavior |
+| Internal monthly model-cost ledger | Behavior |
 |---|---|
 | Below $8 | Sonnet dialogue; Haiku mechanics |
-| $8 to $10 | Haiku handles all dialogue |
-| $10 to $11.50 | Stop new towns and tighten action limits |
-| $11.50 and above | Use authored fallbacks; keep data readable |
+| $8 to $9.50 | Haiku handles all dialogue |
+| $9.50 to $10.35 | Stop new towns and tighten action limits |
+| $10.35 and above | Use authored fallbacks; keep data readable |
 
 AWS Budget alerts are set at:
 
@@ -456,7 +518,7 @@ Other controls:
 - Retrieve at most ten memories.
 - Keep dialogue short.
 - Embed each episode once.
-- Apply per-player, per-town, and global action limits.
+- Apply per-player and per-town model-action limits.
 - Set a CockroachDB Basic resource limit.
 
 ## Deployment
@@ -469,7 +531,9 @@ Deployment is run from the developer's laptop.
 2. Configure AWS credentials.
 3. Run `pnpm cdk:bootstrap`.
 4. Run `pnpm cdk:deploy`.
-5. Add the database credentials and judge code to Secrets Manager.
+5. Add the runtime database credential, judge code, and application security
+   key to Secrets Manager. Keep migration administration local and inspection
+   access inside the CockroachDB managed connection.
 
 ### Before submission
 
@@ -498,9 +562,14 @@ The minimum test set is:
 - Database tests for actor/entity subtype rules, claim drafts, event-range
   disjointness, relationship ledgers, case resolution, and every cross-town
   foreign key.
+- API tests for creation and join replay windows, town-scoped sessions,
+  normalized display-name uniqueness, hidden-state-safe ETags, retryable
+  same-key action conflicts, invite-token log/referrer suppression, and
+  structured errors.
 - Agent evaluations for valid structure and allowed claims.
 - Two-browser tests for asynchronous multiplayer behavior.
-- Queue tests for duplicate delivery and uncertain-send republishing.
+- Queue tests for duplicate delivery, uncertain-send republishing, deadline
+  quarantine, and guaranteed re-entry.
 - A production smoke test.
 - A repeatable demo seed.
 
@@ -566,6 +635,8 @@ All shown actions are live. The mystery data is pre-seeded for reliability.
 
 ## References
 
+- [HTTP API Contract](006-http-api-contract.md)
+- [Logical Data Model and Schema Contract](005-logical-data-model-and-schema-contract.md)
 - [CockroachDB vector indexes](https://www.cockroachlabs.com/docs/stable/vector-indexes)
 - [CockroachDB Cloud Managed MCP Server](https://www.cockroachlabs.com/docs/cockroachcloud/connect-to-the-cockroachdb-cloud-mcp-server)
 - [CockroachDB Basic clusters](https://www.cockroachlabs.com/docs/cockroachcloud/plan-your-cluster-basic)

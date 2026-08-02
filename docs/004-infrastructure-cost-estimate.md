@@ -4,16 +4,23 @@ Current-state monthly operating estimate for **The Town Remembers** MVP architec
 
 | Estimate detail | Value |
 |---|---|
-| Estimate date | 1 August 2026 |
+| Estimate date | 2 August 2026 |
 | Region | AWS `us-east-1`; CockroachDB Basic in `us-east-1` |
 | Currency | USD, excluding tax, foreign exchange, and paid support |
 | Confidence | Planning estimate; implementation and measured traffic are not yet available |
 
-> **Planning result: approximately $10.25 per month at 250 player visits.**
+> **Planning result: approximately $10.65 per month at 250 player visits.**
 >
-> This assumes the accepted cost mode switches dialogue from Claude Sonnet 4.6 to Claude Haiku 4.5 when the internal model-cost ledger reaches $8. If that switch fails and Sonnet remains active, the same traffic is approximately $12.15 after ongoing allowances.
+> This assumes the accepted cost mode switches dialogue from Claude Sonnet 4.6
+> to Claude Haiku 4.5 when the internal model-cost ledger reaches $8. If that
+> switch fails and Sonnet remains active, the same traffic is approximately
+> $12.55 after ongoing allowances.
 
-The architecture is economically viable for a small judging or demo workload, but the **$12.50 monthly ceiling is tight**. Bedrock accounts for about 92% of the governed baseline. Two Secrets Manager secrets create an approximately $0.80 monthly floor, while the remaining serverless services should stay within low-volume allowances.
+The architecture is economically viable for a small judging or demo workload,
+but the **$12.50 monthly ceiling is tight**. Bedrock remains the main variable
+cost. Three Secrets Manager secrets create an approximately $1.20 monthly
+floor, while the remaining serverless services should stay within low-volume
+allowances.
 
 ## 1. Scope and estimation basis
 
@@ -28,15 +35,15 @@ The repository currently contains accepted architecture and logical-schema decis
 
 | Driver | Baseline | Assumption |
 |---|---:|---|
-| Player traffic | 250 visits/month | 10–15 minutes per visit; 12 API actions per visit |
+| Player traffic | 250 visits/month | 10–15 minutes per visit; 12 actions plus about 120 conditional player-view polls per visit |
 | Sonnet dialogue | 6 calls/visit | 1,200 input and 120 output tokens per call |
 | Haiku mechanics | 5 calls/visit | 600 input and 80 output tokens per call, including ambient work |
 | Titan embeddings | 1,200 input tokens/visit | Query plus newly stored episode embeddings; 256 dimensions |
 | Repair/retry reserve | +10% model cost | Covers bounded repair attempts and occasional retries |
-| Lambda | ~3,250 traffic invocations | 1 GB/3 s Game, 1 GB/4 s Ambient; Recovery every 5 minutes |
+| Lambda | ~77,000 invocations; ~20K GB-s | Actions, conditional views, Ambient, and Recovery every minute for outbox repair plus expired join-secret cleanup |
 | Observability | 0.25 GB logs/month | Short retention; standard service metrics only |
 | CockroachDB | 1.25M RU; 0.25 GiB | Directional until vector queries and migrations are benchmarked |
-| Secrets | 2 secrets | Database credentials and judge code |
+| Secrets | 3 secrets | Runtime database credential, judge code, and versioned application security key; migration admin is operator-held and inspection auth is CockroachDB-managed |
 
 ## 2. Cost model
 
@@ -60,8 +67,8 @@ The visit estimates then add a 10% repair and retry reserve.
 | Normal visit | Sonnet dialogue + Haiku mechanics + Titan | $0.04528 |
 | Reduced-cost visit | Haiku dialogue + Haiku mechanics + Titan | $0.01914 |
 | Normal-to-Haiku switch | $8.00 / $0.04528 | ~177 visits |
-| Tighten/stop-new-towns point | $10.00 with reduced mode after $8 | ~281 visits |
-| Authored-fallback point | $11.50 with reduced mode after $8 | ~360 visits |
+| Tighten/stop-new-towns point | $9.50 with reduced mode after $8 | ~255 visits |
+| Authored-fallback point | $10.35 with reduced mode after $8 | ~300 visits |
 
 ### Baseline monthly estimate by component
 
@@ -70,44 +77,49 @@ The visit estimates then add a 10% repair and retry reserve.
 | Bedrock — Claude Sonnet 4.6 | Dialogue until the $8 switch | $6.93 | $6.93 | Variable; [2] |
 | Bedrock — Claude Haiku 4.5 | Mechanics plus post-switch dialogue | $2.47 | $2.47 | Variable; [2] |
 | Bedrock — Titan V2 | ~300K embedding tokens | $0.01 | $0.01 | Rounded up; [3] |
-| Secrets Manager | 2 secrets; low API volume | $0.80 | $0.80 | Fixed floor; [10] |
+| Secrets Manager | 3 secrets; low API volume | $1.20 | $1.20 | Fixed floor; [10] |
 | S3 + CDK assets | ~0.6 GiB plus requests | $0.02 | $0.02 | Static and deployment assets; [7] |
 | CloudFront | Free plan; <1M requests and <100 GB | $0.00 | $0.00 | Plan must be selected; [4] |
-| API Gateway HTTP API | ~3,000 calls | <$0.01 | <$0.01 | $1/M calls; [6] |
-| Lambda — Game, Ambient, Recovery | ~10K GB-s; ~12K invocations | $0.18 | $0.00 | Within ongoing allowance; [5] |
+| API Gateway HTTP API | ~35,000 calls | ~$0.04 | ~$0.04 | $1/M calls; [6] |
+| Lambda — Game, Ambient, Recovery | ~20K GB-s; ~77K invocations | ~$0.35 | $0.00 | Within ongoing allowance; [5] |
 | SQS | ~1,000 Standard requests | <$0.01 | $0.00 | First 1M free; [8] |
-| EventBridge Scheduler | 8,640 invocations | $0.01 | $0.00 | First 14M free; [9] |
+| EventBridge Scheduler | 43,200 invocations | ~$0.04 | $0.00 | One-minute recovery; first 14M free; [9] |
 | CloudWatch | 0.25 GB logs; standard metrics | $0.13 | $0.00 | First 5 GB logs free; [11] |
 | CockroachDB Basic + vector + MCP | 1.25M RU; 0.25 GiB | $0.38 | $0.00 | Monthly resource benefit; [12–13] |
 | AWS Budgets | 1 monitoring budget; 3 alerts | $0.00 | $0.00 | Monitoring is free; [14] |
-| **Total** | **Governed baseline** | **$10.92** | **~$10.23** | Rounded planning total |
+| **Total** | **Governed baseline** | **~$11.60** | **~$10.65** | Rounded planning total |
 
-> **Allowance risk:** if the AWS Lambda and CloudWatch allowances are already consumed by other workloads and the CockroachDB organization is not eligible for its monthly benefit, the governed baseline rises to roughly **$10.90**. The Sonnet-only sensitivity rises to roughly **$12.85**.
+> **Allowance risk:** if the AWS Lambda and CloudWatch allowances are already
+> consumed by other workloads and the CockroachDB organization is not eligible
+> for its monthly benefit, the governed baseline rises by roughly another
+> dollar. The hard model ledger remains the controlling guardrail.
 
 ## 3. Monthly scenarios
 
 | Visits | Cost mode | Model cost | Other cost | Expected total | Interpretation |
 |---:|---|---:|---:|---:|---|
-| 0 | Idle deployment | $0.00 | $0.82 | $0.82 | Two secrets dominate |
-| 50 | Normal Sonnet mode | $2.26 | $0.82 | ~$3.09 | Low-volume demo |
-| 100 | Normal Sonnet mode | $4.53 | $0.82 | ~$5.36 | Comfortable buffer |
-| 250 | Switch to Haiku after ~$8 | $9.40 | $0.82 | **~$10.23** | Planning baseline |
-| 350 | Tightened action limits | $11.32 | $0.82 | ~$12.14 | Little headroom |
-| 500+ | Authored fallback after ~$11.50 | $11.50 cap* | $0.82+ | ~$12.33+* | Depends on cutoff |
+| 0 | Idle deployment | $0.00 | $1.22 | $1.22 | Three secrets dominate |
+| 50 | Normal Sonnet mode | $2.26 | $1.25 | ~$3.51 | Low-volume demo |
+| 100 | Normal Sonnet mode | $4.53 | $1.25 | ~$5.78 | Comfortable buffer |
+| 250 | Switch to Haiku after ~$8 | $9.40 | $1.25 | **~$10.65** | Planning baseline |
+| 350 | Authored fallback after ~$10.35 | $10.35 cap* | $1.25+ | ~$11.60+* | Controlled mode |
+| 500+ | Authored fallback after ~$10.35 | $10.35 cap* | $1.25+ | ~$11.60+* | Depends on cutoff |
 
 \* The cap is an application control, not a real-time billing guarantee. In-flight requests, retry bursts, delayed provider metering, and non-model costs can produce small overruns.
 
 ### Sensitivity if the Sonnet switch fails
 
-- 250 visits: approximately **$12.15** after ongoing allowances.
-- 500 visits with uncapped Sonnet: approximately **$23.50**.
-- 1,000 visits with uncapped Sonnet: approximately **$46.10**.
+- 250 visits: approximately **$12.55** after ongoing allowances.
+- 500 visits with uncapped Sonnet: approximately **$23.90**.
+- 1,000 visits with uncapped Sonnet: approximately **$46.50**.
 
 The cost-mode implementation and token ledger are therefore budget-critical, not optional optimizations.
 
 ## 4. Findings and recommendations
 
-1. **Reserve non-model spend explicitly.** The current $11.50 model fallback plus $0.80 of secrets leaves only about $0.20 before the $12.50 total ceiling. Lower the hard model fallback to **$10.75**, or raise the total ceiling.
+1. **Reserve non-model spend explicitly.** Three AWS secrets consume $1.20 before
+   traffic. The accepted hard model fallback is therefore **$10.35**, leaving
+   $0.95 for platform variance, CockroachDB overage, and contingency.
 2. **Track the invoice dimension, not only the model name.** Record model, inference-profile scope, input tokens, output tokens, cache tokens, retries, and calculated cost in `agent_runs`; global and in-region Claude rates differ.
 3. **Prefer global cross-region inference when data-routing requirements allow it.** Current global Claude rates are about 9% below in-region rates and would reduce the 250-visit Sonnet-only sensitivity by about $1.00.
 4. **Select the CloudFront Free flat-rate plan deliberately.** Attach the distribution and confirm its 1M-request, 100 GB transfer, and 5 GB S3 allowances.
@@ -119,8 +131,8 @@ The cost-mode implementation and token ledger are therefore budget-critical, not
 
 | Budget bucket | Monthly allocation | Purpose |
 |---|---:|---|
-| Bedrock model ledger | $10.75 | Hard authored-fallback threshold |
-| Secrets Manager | $0.80 | Two secrets |
+| Bedrock model ledger | $10.35 | Hard authored-fallback threshold |
+| Secrets Manager | $1.20 | Runtime database credential, judge code, and application security key |
 | AWS platform reserve | $0.45 | S3, API, logging, Lambda variance, or shared allowance usage |
 | CockroachDB paid overage | $0.25 | Separate vendor cap; monthly benefit should normally cover usage |
 | Unallocated contingency | $0.25 | Token drift, retries, and delayed metering |
@@ -141,7 +153,7 @@ The following are not present in the accepted MVP architecture and are excluded 
 
 Prices are public list prices and allowances accessed on 1 August 2026. They can change, may vary by account agreement, and are not a vendor quote. Repository scope comes from the local architecture documents.
 
-1. [Repository README](../README.md), [Decision 002](002-mvp-system-architecture.md), [runtime architecture](003-technical-architecture-and-schema.md), and [schema contract](005-logical-data-model-and-schema-contract.md) — services, region, models, data responsibilities, and the $12.50 ceiling.
+1. [Repository README](../README.md), [Decision 002](002-mvp-system-architecture.md), [runtime architecture](003-technical-architecture-and-schema.md), [schema contract](005-logical-data-model-and-schema-contract.md), and [HTTP API contract](006-http-api-contract.md) — services, region, models, traffic, data responsibilities, and the $12.50 ceiling.
 2. [Anthropic model prices — all platforms](https://www-cdn.anthropic.com/files/4zrzovbb/website/3684c2faafb97418665782cea0001f439f74b1d2.pdf) — AWS Bedrock global and in-region rates for Claude Sonnet 4.6 and Haiku 4.5.
 3. [AWS Titan Text Embeddings V2](https://aws.amazon.com/blogs/machine-learning/get-started-with-amazon-titan-text-embeddings-v2-a-new-state-of-the-art-embeddings-model-on-amazon-bedrock/) — $0.02 per million input tokens and 256-dimension support.
 4. [Amazon CloudFront pricing](https://aws.amazon.com/cloudfront/pricing/) — Free flat-rate plan allowances.
@@ -158,4 +170,7 @@ Prices are public list prices and allowances accessed on 1 August 2026. They can
 
 ## Decision summary
 
-Proceed with the architecture for the MVP, with one budget correction: **treat $10.75 as the hard model-cost fallback** until measured operating data proves that the remaining $1.75 safely covers secrets, platform variance, and CockroachDB overage.
+Proceed with the architecture for the MVP and treat **$10.35 as the hard
+model-cost fallback** until measured operating data proves that a higher limit
+still leaves enough room for three secrets, platform variance, and CockroachDB
+overage.

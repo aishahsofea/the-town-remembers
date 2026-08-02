@@ -12,9 +12,9 @@ requires more than finding clues: players must understand who observed what,
 who trusts whom, how rumours spread, and which parts of the public story are
 actually true.
 
-> **Project status:** the MVP product direction, system architecture, and
-> implementation-ready logical schema are accepted. SQL migrations and
-> application implementation are the next phase.
+> **Project status:** the MVP product direction, system architecture, logical
+> schema, and HTTP API contract are accepted. SQL migrations and application
+> implementation are the next phase.
 
 ## The three-minute explanation
 
@@ -42,7 +42,7 @@ They can:
 - Inspect authored objects and areas.
 - Ask NPCs natural-language questions.
 - Tell truths or deliberate lies.
-- Show verified evidence.
+- Show discovered clues or physical items you currently carry.
 - Give unique items.
 - Accept mechanically verifiable promises.
 - Leave attributed notes on a shared case board.
@@ -154,6 +154,9 @@ All interactions are intended to run live against a pre-seeded mystery.
 - [Logical data model and schema contract](docs/005-logical-data-model-and-schema-contract.md)
   — table responsibilities, value domains, invariants, indexes, inspection
   views, and database verification priorities.
+- [HTTP API contract](docs/006-http-api-contract.md) — routes, sessions,
+  player-safe projections, actions, idempotency, rate limits, errors, visits,
+  and ambient transition behavior.
 
-The schema contract is implementation-ready. SQL migrations and local
-development commands will be added with the implementation.
+The schema and HTTP API contracts are implementation-ready. SQL migrations and
+local development commands will be added with the implementation.
