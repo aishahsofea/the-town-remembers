@@ -1,15 +1,16 @@
-# Technical Architecture and Logical Schema
+# Technical Architecture and Runtime Flows
 
 - **Project:** The Town Remembers
-- **Status:** Design reference; implementation pending
+- **Status:** Accepted technical design; implementation pending
 - **Date:** 2026-07-26
+- **Updated:** 2026-08-01
 - **Audience:** Judges, reviewers, and implementers
 
 This document expands the accepted
-[MVP system architecture](002-mvp-system-architecture.md) into concrete request
-flows, information boundaries, and a logical CockroachDB schema. It is not yet a
-SQL migration specification; column types and secondary indexes may be refined
-during implementation without changing the responsibilities described here.
+[MVP system architecture](002-mvp-system-architecture.md) into concrete runtime
+flows, information boundaries, model responsibilities, and reliability
+behavior. The implementation-ready database design is maintained separately in
+the [Logical Data Model and Schema Contract](005-logical-data-model-and-schema-contract.md).
 
 ## Architectural goals
 
@@ -74,7 +75,7 @@ CockroachDB is the durable source for both current state and causal history.
 | CockroachDB | Store canonical state, history, provenance, beliefs, vectors, and outbox jobs | Decide what a model should say |
 | Bedrock models | Interpret bounded input, embed text, and render approved dialogue | Access the database or mutate state |
 | SQS | Delay, redeliver, and buffer ambient jobs | Guarantee exactly-once delivery |
-| EventBridge + Recovery Lambda | Find committed outbox jobs that were not sent | Re-run completed jobs |
+| EventBridge + Recovery Lambda | Find committed outbox jobs whose delivery is pending or uncertain | Re-run completed jobs or generate replacement keys |
 | Managed MCP | Expose authenticated read-only inspection views | Participate in player requests or mutate state |
 
 ## Information boundaries
@@ -140,37 +141,152 @@ These layers must remain distinct:
 
 A valid claim is not necessarily true. Validation confirms that it uses
 canonical entities, a supported predicate, valid polarity, and a
-player-confirmed normalization. It does not compare the claim with objective
-state and reject lies.
+player-confirmed normalization or authored seed record. It does not compare the
+claim with objective state and reject lies.
 
 ## Player `Ask` flow
 
-1. React sends an explicit `Ask` action with an idempotency key and secure
-   player cookie.
+1. React creates one UUID idempotency key for the logical `Ask` action, keeps it
+   with the pending action, and sends it in the `Idempotency-Key` header with the
+   secure player cookie. Transport retries reuse both the key and request.
 2. CloudFront routes `/api` to API Gateway, which invokes Game Lambda.
-3. Lambda validates the schema, player token, town membership, NPC target,
-   action limits, and tenant scope.
-4. Lambda loads the town revision and the NPC-scoped current snapshot.
-5. Titan embeds the question. The temporary query vector is not normally
+3. Lambda validates the basic schema, player token, town membership, NPC target,
+   and tenant scope.
+4. Lambda applies the [player-action idempotency rules](#player-actions).
+   Completed or already-processing requests return here; new or recoverable work
+   continues.
+5. Lambda loads the town revision and the NPC-scoped current snapshot.
+6. Titan embeds the question. The temporary query vector is not normally
    persisted.
-6. CockroachDB vector search retrieves candidate episodes using `town_id` and
+7. CockroachDB vector search retrieves candidate episodes using `town_id` and
    `npc_id` prefix columns.
-7. Application code reranks candidates using similarity, recency, importance,
+8. Application code reranks candidates using similarity, recency, importance,
    directness, contradictions, and unresolved commitments.
-8. Deterministic rules calculate belief stance, access gates, and the allowed
-   and required disclosure sets.
-9. Sonnet renders short dialogue from the approved bundle.
-10. Lambda validates structure, canonical entities, referenced IDs, and
+9. Deterministic rules calculate action limits, belief stance, access gates, and
+   the allowed and required disclosure sets.
+10. Sonnet renders short dialogue from the approved bundle.
+11. Lambda validates structure, canonical entities, referenced IDs, and
     expressed claims.
-11. An invalid result receives at most one bounded repair attempt; another
+12. An invalid result receives at most one bounded repair attempt; another
     failure uses an authored fallback.
-12. Lambda opens a short transaction, checks the town revision, and commits the
-    interaction and causal records.
-13. If relevant state changed during model calls, Lambda reloads and retries
-    once.
-14. The player receives the response only after persistence succeeds.
+13. Lambda opens a short transaction, checks that it still owns the processing
+    claim and that the town revision is current, and saves the interaction,
+    causal records, response, and completed status together.
+14. If relevant state changed during model calls, Lambda reloads and retries
+    once while retaining or renewing its processing claim.
+15. The player receives the response only after persistence succeeds.
 
 Bedrock calls happen outside database transactions.
+
+## Idempotency contract
+
+An idempotency key names one player action or background job. Every retry of
+that action uses the same key.
+
+The design stores two simple things:
+
+| Stored information | How long it lasts | Purpose |
+|---|---|---|
+| **Request record** | For the lifetime of the town | Remembers the key, input, status, and final response |
+| **Processing claim** | Until a short expiry time | Names the worker currently allowed to finish the work |
+
+A request record is sometimes called an operation ledger. A processing claim is
+sometimes called a lease. The plainer terms are used here because they describe
+their roles more directly.
+
+### Player actions
+
+The browser creates one random UUID when an action becomes pending.
+Double-clicks and automatic retries reuse it. Editing or intentionally repeating
+an action creates a new UUID.
+
+After authentication and basic validation, Lambda calculates a fingerprint of
+the input and creates or reads the matching `player_actions` record. The
+fingerprint is a fixed-size hash used only to detect whether the same key was
+accidentally attached to different input.
+
+| Existing record | Server behavior |
+|---|---|
+| None | Create a `processing` record, take the processing claim, and begin |
+| Same input, still processing | Return `202 Accepted` with `Retry-After` |
+| Same input, completed | Return the saved status and response |
+| Same input, terminally failed | Return the saved safe failure response |
+| Different input | Return `409 IDEMPOTENCY_KEY_REUSED` |
+| Processing claim expired | Replace the claim and retry the work |
+
+The MVP uses `Retry-After: 2`; the browser resends the identical request and key
+after two seconds rather than creating a second action.
+
+The processing claim contains a random token and an expiry time. The final
+database transaction succeeds only if its token still matches the request
+record. Therefore, if a retry replaces an expired claim, the old worker can no
+longer save a late result.
+
+The winning worker saves all game effects, the safe response, and the completed
+status in one transaction. If the response is lost on the network, the next
+retry reads and returns the saved result instead of applying the action again.
+
+Implementation details:
+
+- A player key is unique within `(town_id, player_id)`.
+- `request_hash` is SHA-256 over canonical JSON containing the API version,
+  action kind, target IDs, and action input. Cookies, the key itself, and
+  transport-only headers are excluded.
+- Authentication and malformed-request failures happen before a request record
+  is created. Rule-based denials for a valid request are saved as completed
+  responses.
+- Completed and terminally failed request records and fingerprints remain for
+  the lifetime of the town.
+- Keys identify retries; they are not secrets or authentication credentials.
+
+### Ambient jobs
+
+The same pattern protects background work:
+
+1. Game Lambda creates an outbox row with one server-generated job key.
+2. Every SQS publication and retry carries that same job key.
+3. Ambient Tick Lambda creates or reads the matching
+   `ambient_job_executions` record.
+4. A completed job stops immediately. A new or recoverable job takes the
+   temporary processing claim.
+5. The worker saves all tick effects and the completed status in one
+   transaction.
+
+The SQS message contains only `town_id`, `outbox_id`, and the job key. The worker
+loads the authoritative payload from the outbox row. A fingerprint mismatch for
+an existing outbox ID or job key is treated as corruption and is not applied.
+
+One tick can produce two legitimate actions, so two levels of identity are
+needed:
+
+- The **job key** identifies the whole tick.
+- `ambient:<job-key>:0` and `ambient:<job-key>:1` identify its numbered
+  `world_events`.
+
+The completed job record prevents the whole tick from running again. Unique
+event effect keys provide a second database safeguard and keep the two valid
+actions distinct. Player actions use `player:<action-key>:<index>`.
+
+### What this guarantees
+
+It protects against:
+
+- Coalesced double-clicks and HTTP retries.
+- A response being lost after the database commit.
+- Two workers receiving the same request at the same time.
+- SQS redelivery and Recovery Lambda republishing.
+- A crashed worker returning after another worker has taken over.
+
+It does not:
+
+- Merge equivalent requests that use different keys.
+- Authenticate or authorize a player.
+- Guarantee that SQS will eventually deliver a job.
+- Resolve conflicts between different actions.
+
+Town revisions and conditional item updates handle conflicts between different
+actions. The outbox and SQS retries handle delivery. A future external side
+effect must accept the same key or use an equivalent transactional outbox.
 
 ## Output validation and bounded repair
 
@@ -197,17 +313,21 @@ claim transmission, belief, or player-visible response.
 NPC-to-NPC communication is an off-screen claim transmission, not physical
 movement or an ongoing autonomous conversation.
 
-1. A consequential player action and an outbox job are committed together.
-2. The outbox job is sent to SQS with a short delay.
+1. A consequential player action and its outbox job are committed together.
+2. The outbox job is sent to SQS with a short delay. Recovery republishes the
+   same row if delivery status is uncertain.
 3. SQS invokes Ambient Tick Lambda at least once.
-4. The tick loads newly committed events and relevant NPC memories.
+4. The worker applies the [ambient-job idempotency rules](#ambient-jobs).
+   Completed jobs stop here; new or recoverable jobs load ambient-eligible
+   events from the outbox row's disjoint sequence range and relevant NPC
+   memories.
 5. Application code constructs allowed `(existing claim, contactable NPC)`
    choices plus `do_nothing`.
-6. Haiku selects one supplied choice.
+6. Haiku selects supplied choices.
 7. Application code validates contactability, disclosure rules, promise
-   constraints, provenance, hop limits, tick limits, and idempotency.
-8. A valid share appends a transmission, recipient episode, belief evidence,
-   event, and agent-run record in one transaction.
+   constraints, provenance, hop limits, and tick limits.
+8. The worker saves the transmissions, recipient episodes, belief evidence,
+   events, agent-run records, and completed job status in one transaction.
 
 Hard bounds:
 
@@ -215,7 +335,6 @@ Hard bounds:
 - At most one new gossip hop per claim during a tick.
 - Tick-created events cannot trigger another action until a later tick.
 - No new facts, entities, items, locations, or promises.
-- One unique idempotency key per tick job.
 - An invalid choice becomes `do_nothing`.
 
 ### Authored NPC contact graph
@@ -246,202 +365,48 @@ override secrecy, trust, promise, cover-story, or claim-disclosure rules.
 For an explicit `Ask`, Titan and Sonnet are part of the normal path. Haiku is
 conditional unless separate semantic validation requires it.
 
-## Logical data model
+## Logical schema contract
 
-### Shared conventions
+The accepted 35-table model now lives in
+[Logical Data Model and Schema Contract](005-logical-data-model-and-schema-contract.md).
+That reference owns:
 
-- Every town-owned row includes `town_id`.
-- Composite primary and foreign keys preserve tenant isolation.
-- Identifiers are opaque and generated server-side.
-- Times use UTC timestamps.
-- Player and invite tokens are stored only as hashes.
-- History rows are append-only unless explicitly identified as operational.
-- Player actions, world events, transmissions, and jobs carry idempotency keys.
-- JSON payloads may contain event-specific detail but do not replace relational
-  keys for important entities.
+- SQL value conventions and subtype-safe identities
+- Every table, relationship, state machine, and column-presence rule
+- Belief, relationship, disclosure, access, and recall constants
+- Event effects, idempotency records, outbox delivery, and ambient ranges
+- Required indexes, inspection views, and database verification priorities
 
-### Town and identity
+This runtime document intentionally keeps only the information needed to
+understand how requests, models, queues, and transactions interact.
 
-| Table | Key fields | Responsibility |
-|---|---|---|
-| `towns` | `id`, `invite_token_hash`, `revision`, `status`, `created_at` | Isolated mystery instance and optimistic-concurrency revision |
-| `players` | `town_id`, `id`, `display_name`, `token_hash`, `created_at`, `last_seen_at` | Guest identity within one town |
-| `locations` | `town_id`, `id`, `location_key`, `display_name` | Authored canonical locations copied into each town |
-| `npcs` | `town_id`, `id`, `npc_key`, `location_id`, `profile_version` | NPC identity and authored location |
-| `npc_contact_edges` | `town_id`, `from_npc_id`, `to_npc_id`, `enabled` | Directed off-screen contact opportunities |
+## Runtime consistency summary
 
-Important constraints:
+- Bedrock and embedding calls never run inside database transactions.
+- Player effects and the saved response commit atomically against the current
+  processing claim and town revision.
+- Ambient effects and completed job execution commit atomically.
+- World events provide stable numbered effect identities.
+- Leave Town assigns disjoint event ranges before publishing the outbox job.
+- Unique-item transfers and town resolution use conditional updates.
+- All town-owned access is scoped by `town_id`; cross-town foreign keys are
+  impossible under the schema contract.
 
-- `players(town_id, token_hash)` is unique.
-- `npc_contact_edges(town_id, from_npc_id, to_npc_id)` is unique.
-- Both NPCs in a contact edge belong to the same town.
+## Runtime verification focus
 
-### Canonical simulation state
+- Model prompts never receive hidden objective truth.
+- Unsupported generated claims are rejected, repaired once, then replaced by
+  an authored fallback.
+- A retry cannot duplicate a player effect or ambient action.
+- Tick-created events cannot trigger another action inside their own tick.
+- A false claim may change belief evidence but never authoritative item state.
+- Read-only inspection reconstructs the complete action, provenance, belief,
+  relationship, and queue path.
 
-| Table | Key fields | Responsibility |
-|---|---|---|
-| `items` | `town_id`, `id`, `item_key`, `location_id`, `held_by_player_id`, `held_by_npc_id`, `revision` | Authoritative location or custodian of each unique item |
-| `relationships` | `town_id`, actor IDs, `trust_score`, `suspicion_score`, `updated_at` | Current player-to-NPC stance and authored NPC-to-NPC trust |
-| `promises` | `town_id`, `id`, `kind`, requester/accepter IDs, `claim_id`, `item_id`, `status`, `resolving_event_id` | Mechanically verifiable commitments |
-| `case_board_entries` | `town_id`, `id`, `entry_kind`, `claim_id`, `event_id`, `author_player_id`, `verification_status`, `created_at` | Player-visible evidence, testimony, hearsay, contradictions, and notes |
-
-Exactly one item custody location is active: physical location, player holder, or
-NPC holder. Unique-item transfers use conditional updates against the item or
-town revision.
-
-`verification_status` describes how an entry was acquired; it never turns
-testimony into objective truth.
-
-### Claims, memories, and beliefs
-
-| Table | Key fields | Responsibility |
-|---|---|---|
-| `claims` | `town_id`, `id`, subject, `predicate`, object, `polarity`, `normalized_key`, `created_at` | Canonical proposition, independent of truth and source |
-| `claim_transmissions` | `town_id`, `id`, `claim_id`, communicator, recipient, `parent_transmission_id`, alleged source, `hop_count`, `event_id`, `idempotency_key` | Actual communication and provenance chain |
-| `episodes` | `town_id`, `id`, `npc_id`, `event_id`, `summary`, `importance`, `occurred_at`, `embedding VECTOR(256)` | Immutable NPC experience and vector memory |
-| `npc_beliefs` | `town_id`, `npc_id`, `claim_id`, `score`, `label`, `updated_at` | Current deterministic belief aggregate |
-| `belief_evidence` | `town_id`, `id`, `npc_id`, `claim_id`, `episode_id`, `transmission_id`, `kind`, `weight`, `trust_snapshot`, `hop_count`, `created_at` | Append-only explanation for belief changes |
-
-Important constraints:
-
-- `claims(town_id, normalized_key)` is unique. Repeating the same proposition
-  reuses the claim.
-- A new act of communication always creates a new transmission, even when it
-  references an existing claim.
-- A retry of the same action cannot create another transmission because its
-  idempotency key is unique.
-- `npc_beliefs(town_id, npc_id, claim_id)` is unique.
-- Belief labels are derived from integer score thresholds; they are not model
-  probabilities.
-- Trust is copied into `belief_evidence` at transmission time. Later relationship
-  changes do not rewrite historical evidence.
-
-The vector index prefixes `town_id` and `npc_id` before the episode embedding.
-Vector similarity generates candidates; deterministic application code reranks
-them. Usually six to ten episodes enter a prompt.
-
-### History and operations
-
-| Table | Key fields | Responsibility |
-|---|---|---|
-| `world_events` | `town_id`, `id`, `event_type`, actor/target IDs, `payload`, `idempotency_key`, `occurred_at` | Append-only objective and consequential event log |
-| `agent_runs` | `town_id`, `id`, action/job ID, `model`, `prompt_version`, token counts, `latency_ms`, `outcome`, `validation_error_code`, `estimated_cost`, `created_at` | Model audit, validation, latency, and cost telemetry |
-| `outbox` | `town_id`, `id`, `event_id`, `job_type`, `payload`, `not_before`, `status`, `attempt_count`, `idempotency_key`, timestamps | Transactional handoff from CockroachDB to SQS |
-
-`agent_runs` records whether generation was accepted, repaired, rejected, or
-replaced by a fallback. Rejected model text does not enter the knowledge model.
-Sensitive prompts, tokens, credentials, and connection strings are not logged.
-
-The outbox is operationally mutable as delivery status changes. The event that
-created it remains append-only.
-
-## Example: one false rumour
-
-Objective state:
-
-```text
-items
-  bell.location = Old Chapel
-```
-
-A player tells Nessa, "The bell is in Reed's Garden":
-
-```text
-claims
-  #42  bell is_at Reed's Garden
-
-claim_transmissions
-  #100  player → Nessa, claim #42
-
-episodes
-  #200  Nessa heard the player assert claim #42
-
-belief_evidence
-  #300  Nessa received player testimony for claim #42
-```
-
-The `items` row does not change.
-
-If a later ambient tick makes Nessa repeat it to Mara, claim `#42` is reused:
-
-```text
-claim_transmissions
-  #101  Nessa → Mara, claim #42, parent #100
-
-episodes
-  #201  Mara heard Nessa assert claim #42
-
-provenance
-  player → Nessa → Mara
-```
-
-The new transmission and episode are not duplicates; they record a new
-communication and a new personal experience. An SQS retry cannot recreate them
-because transmission `#101` is protected by the tick idempotency key.
-
-## Concurrency and transaction boundaries
-
-- No Bedrock call runs inside a database transaction.
-- Game Lambda loads a town revision, performs model work, then conditionally
-  commits against that revision.
-- A relevant revision conflict causes one bounded reload and retry.
-- CockroachDB serialization conflicts receive bounded retries.
-- Unique-item transfers use conditional updates.
-- A player action idempotency key prevents double submission.
-- An ambient job idempotency key prevents SQS redelivery from advancing the
-  town twice.
-- Departure event and outbox job are written in one transaction.
-- Recovery Lambda sends committed but unsent outbox jobs.
-
-## Tenant isolation and security
-
-- All town-owned queries require `town_id`.
-- Composite foreign keys prevent cross-town references.
-- Guest player tokens live in secure, HTTP-only cookies; only hashes are stored.
-- Town creation requires a shared judge code stored in Secrets Manager.
-- Database connections use `sslmode=verify-full`.
-- `migration_admin`, `app_runtime`, and inspection access use separate
-  credentials and least privilege.
-- SQL is parameterized and connections have strict query, pool, and concurrency
-  limits.
-- Models receive no database credentials or tools.
-- The player API exposes explicit safe projections rather than raw tables.
-- The Managed MCP connection is separately authenticated and read-only.
-
-## Inspection schema
-
-The read-only `inspection` schema is intended for judges and developers, not
-normal player requests.
-
-| View | Shows |
-|---|---|
-| `inspection.npc_beliefs` | Current labels and scores by NPC and claim |
-| `inspection.belief_evidence` | Evidence weights, trust snapshots, and contradictions |
-| `inspection.claim_paths` | Ordered claim provenance paths |
-| `inspection.relationship_timeline` | Trust and suspicion changes |
-| `inspection.promise_status` | Promise conditions and resolving events |
-| `inspection.object_history` | Authoritative item transitions |
-| `inspection.agent_runs` | Model, prompt version, tokens, latency, validation, and fallback outcomes |
-
-These views reveal causal information for evaluation without granting mutation
-access. Player-facing case-board projections remain spoiler-safe.
-
-## Verification priorities
-
-The minimum high-risk tests are:
-
-1. A false claim changes belief evidence but never changes `items`.
-2. Mara's initial dialogue prompt does not contain the hidden chapel location.
-3. Unsupported model claims are rejected, repaired once, then replaced by a
-   fallback.
-4. Two towns cannot read or reference each other's rows.
-5. Two simultaneous unique-item transfers cannot both succeed.
-6. Replaying a player action or SQS job produces no duplicate effects.
-7. A player-A rumour changes player-B dialogue only after a valid ambient
-   transmission.
-8. The inspection views reconstruct the exact belief and provenance path.
 
 ## Related decisions
 
 - [Decision 001: MVP Product Direction](001-mvp-product-direction.md)
 - [Decision 002: MVP System Architecture](002-mvp-system-architecture.md)
+- [Infrastructure Cost Estimate](004-infrastructure-cost-estimate.md)
+- [Logical Data Model and Schema Contract](005-logical-data-model-and-schema-contract.md)

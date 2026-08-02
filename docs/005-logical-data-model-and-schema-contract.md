@@ -1,0 +1,966 @@
+# Logical Data Model and Schema Contract
+
+- **Project:** The Town Remembers
+- **Status:** Accepted logical design; SQL implementation pending
+- **Date:** 2026-08-01
+- **Scope:** Entity boundaries, table contracts, value domains, invariants, indexes, inspection views, and schema verification
+
+This document is the implementation contract for the CockroachDB data model.
+It is intentionally separate from the runtime architecture so implementers can
+work from a focused schema reference without reading request-flow and model-role
+explanations on every visit.
+
+## How to use this document
+
+- Start with [Technical Architecture and Runtime Flows](003-technical-architecture-and-schema.md) to understand system behavior and model boundaries.
+- Use this document when designing migrations, Kysely types, repositories, seed data, inspection views, and database tests.
+- The entity boundaries, value domains, nullability, relationships, uniqueness rules, and required indexes are accepted decisions.
+- Migration syntax and constraint names may change without changing this contract.
+
+## Contents
+
+- [Logical data model](#logical-data-model)
+  - [Settled modelling decisions](#settled-modelling-decisions)
+  - [SQL value conventions](#sql-value-conventions)
+  - [Relationship map](#relationship-map)
+  - [Town and identity](#town-and-identity)
+  - [Authored truth, evidence, and current state](#authored-truth-evidence-and-current-state)
+  - [Claims, memories, and beliefs](#claims-memories-and-beliefs)
+  - [Relationships, promises, and player-visible progress](#relationships-promises-and-player-visible-progress)
+  - [History, operations, idempotency, and ambient ranges](#history-operations-idempotency-and-ambient-ranges)
+  - [Transaction retry policy](#transaction-retry-policy)
+  - [Required indexes](#required-indexes)
+- [Example: one false rumour](#example-one-false-rumour)
+- [Concurrency and transaction boundaries](#concurrency-and-transaction-boundaries)
+- [Tenant isolation and security](#tenant-isolation-and-security)
+- [Inspection schema](#inspection-schema)
+- [Verification priorities](#verification-priorities)
+
+## Logical data model
+
+The settled model contains 35 tables. Each exists because it owns a distinct
+identity, lifecycle, consistency boundary, or append-only causal record; there
+are no generic entity-attribute-value tables.
+
+### Settled modelling decisions
+
+- The MVP has one authored mystery. Authored content lives in versioned
+  TypeScript seed data; `towns.content_version` records exactly which version
+  was copied into a town. There is no multi-mystery CMS in the MVP.
+- Authored people, locations, items, and motives share one `story_entities`
+  identity space. Claims therefore use real foreign keys instead of
+  polymorphic, unvalidated IDs. Lark is a `character` entity but not an NPC.
+- Players and conversational NPCs share one `actors` identity space. This makes
+  player-to-NPC, NPC-to-NPC, and NPC-to-player communication use one provenance
+  model without nullable speaker and recipient columns.
+- Every visit is explicit. Current player location belongs to an active
+  `player_visits` row rather than to the persistent player identity.
+- Physical evidence is authored as `clues` attached to `inspectables`. Discovery
+  is recorded separately and attributed to the player who found it.
+- Claim normalization and confirmation are separate operations. Unconfirmed
+  normalized text lives in `claim_drafts` and cannot affect beliefs.
+- `world_events` is the stable effect ledger. One action or ambient job may
+  create several numbered events; downstream records link to those events
+  instead of carrying duplicate idempotency keys.
+- Player-to-NPC trust and suspicion use dedicated current and history tables.
+  Authored directional NPC-to-NPC trust lives on `npc_contact_edges`.
+- Accusation attempts and the irreversible shared ending are explicit records.
+- JSON is reserved for versioned request, response, event-detail, and queue
+  payloads. Canonical entities, actors, claims, clues, promises, and causal
+  sources use relational foreign keys.
+
+### SQL value conventions
+
+| Logical value | CockroachDB representation | Rule |
+|---|---|---|
+| Primary and foreign IDs | `UUID` | Generated server-side; never meaningful to players |
+| Idempotency and processing tokens | `UUID` | Random and opaque |
+| Token and request fingerprints | `BYTES` | SHA-256 output; raw tokens are never stored |
+| Time | `TIMESTAMPTZ` | Written and compared in UTC |
+| Revisions, sequences, and counters | `INT8` | Non-negative |
+| Scores, weights, and hop counts | `INT4` | Range checks described below |
+| Closed value domains | `STRING` plus `CHECK` | Easier to evolve than database enum types |
+| Versioned flexible payloads | `JSONB` | Must have a Zod schema and version field |
+| Model cost | `DECIMAL(12,6)` | USD estimate, never floating point |
+| Episode embedding | `VECTOR(256)` | Nullable until the embedding attempt finishes |
+
+Except for the root `towns` table, every town-owned table has a composite
+primary key beginning with `town_id` or a unique constraint that includes
+`town_id`. Every foreign key between
+town-owned records includes `town_id`. Runtime deletes are not used; foreign
+keys use `RESTRICT`. History rows are append-only. Operational rows may change
+only in fields explicitly described as mutable.
+
+All mutable current-state rows have `updated_at`. All durable rows have
+`created_at`. Table descriptions omit those columns only where repeating them
+would obscure the domain fields.
+
+### Relationship map
+
+```mermaid
+erDiagram
+    TOWNS ||--o{ STORY_ENTITIES : contains
+    TOWNS ||--o{ ACTORS : contains
+    ACTORS ||--|| PLAYERS : "player subtype"
+    ACTORS ||--|| NPCS : "npc subtype"
+    STORY_ENTITIES ||--o| NPCS : portrays
+    PLAYERS ||--o{ PLAYER_VISITS : makes
+    PLAYER_VISITS ||--o{ PLAYER_ACTIONS : contains
+
+    STORY_ENTITIES ||--o| ITEMS : "item subtype"
+    STORY_ENTITIES ||--o{ INSPECTABLES : locates
+    INSPECTABLES ||--o{ CLUES : reveals
+    CLUES ||--o{ CLUE_DISCOVERIES : discovered
+
+    STORY_ENTITIES ||--o{ CLAIMS : subject
+    STORY_ENTITIES ||--o{ CLAIMS : object
+    PLAYER_ACTIONS ||--o{ CLAIM_DRAFTS : normalizes
+    CLAIMS ||--o{ CLAIM_TRANSMISSIONS : communicated
+    ACTORS ||--o{ CLAIM_TRANSMISSIONS : speaks
+    ACTORS ||--o{ CLAIM_TRANSMISSIONS : receives
+    NPCS ||--o{ EPISODES : remembers
+    NPCS ||--o{ NPC_BELIEFS : holds
+    CLAIMS ||--o{ NPC_BELIEFS : concerns
+    NPC_BELIEFS ||--o{ BELIEF_EVIDENCE : explains
+
+    PLAYER_ACTIONS ||--o{ WORLD_EVENTS : produces
+    AMBIENT_JOB_EXECUTIONS ||--o{ WORLD_EVENTS : produces
+    WORLD_EVENTS ||--o{ CLAIM_TRANSMISSIONS : records
+    WORLD_EVENTS ||--o{ EPISODES : causes
+    WORLD_EVENTS ||--o{ RELATIONSHIP_CHANGES : causes
+    WORLD_EVENTS ||--o{ BELIEF_EVIDENCE : causes
+    WORLD_EVENTS ||--o{ OUTBOX : queues
+    OUTBOX ||--|| AMBIENT_JOB_EXECUTIONS : executes
+```
+
+The diagram intentionally omits supporting links so the main causal path
+remains readable. The table contracts below are authoritative.
+
+### Town and identity
+
+#### `towns`
+
+| Column | Type and nullability | Meaning |
+|---|---|---|
+| `id` | `UUID NOT NULL` | Town identifier and primary key |
+| `invite_token_hash` | `BYTES NOT NULL UNIQUE` | Hash of the unguessable invite token |
+| `content_version` | `STRING NOT NULL` | Version of the authored seed and deterministic rules |
+| `status` | `STRING NOT NULL` | `active`, `awaiting_resolution`, `resolved`, or `retired` |
+| `revision` | `INT8 NOT NULL DEFAULT 0` | Optimistic-concurrency revision |
+| `last_event_sequence` | `INT8 NOT NULL DEFAULT 0` | Last sequence allocated to a world event |
+| `ambient_scheduled_through_sequence` | `INT8 NOT NULL DEFAULT 0` | Highest event assigned to an ambient job |
+| `created_at` | `TIMESTAMPTZ NOT NULL` | Creation time |
+| `resolved_at` | `TIMESTAMPTZ NULL` | Set only when the town becomes `resolved` |
+
+Valid transitions are `active -> awaiting_resolution -> resolved -> retired`
+and `active -> retired`. A failed accusation leaves the town `active`.
+
+#### `story_entities`
+
+| Column | Type and nullability | Meaning |
+|---|---|---|
+| `town_id`, `id` | `UUID NOT NULL` | Composite primary key |
+| `entity_type` | `STRING NOT NULL` | `character`, `location`, `item`, or `motive` |
+| `entity_key` | `STRING NOT NULL` | Stable authored key within the content version |
+| `display_name` | `STRING NOT NULL` | Safe public name |
+| `content_key` | `STRING NOT NULL` | Lookup key into versioned authored content |
+
+`(town_id, entity_key)` is unique. A story entity never represents a player.
+Type-specific rules are validated whenever another table references an entity:
+NPCs portray characters, locations use location entities, and item state uses
+item entities.
+
+`story_entities(town_id, id, entity_type)` is also unique. References whose
+allowed type matters carry the expected discriminator as a checked constant and
+use this three-column foreign key. Claims additionally store checked
+`subject_entity_type` and `object_entity_type` columns, so the predicate/type
+matrix below is enforced by the database rather than merely trusted to
+application code.
+
+#### `actors`, `players`, and `npcs`
+
+| Table | Required domain columns | Responsibility |
+|---|---|---|
+| `actors` | `town_id UUID`, `id UUID`, `actor_type STRING`, `display_name STRING` | Shared identity for a `player` or `npc` that can speak, receive claims, hold an item, or participate in an event |
+| `players` | `town_id UUID`, `id UUID`, `token_hash BYTES`, `display_name_normalized STRING`, `last_seen_at TIMESTAMPTZ` | Guest-player subtype of `actors` |
+| `npcs` | `town_id UUID`, `id UUID`, `character_entity_id UUID`, `location_entity_id UUID`, `profile_key STRING`, `profile_version STRING` | Conversational-NPC subtype of `actors` |
+
+Subtype tables reuse the actor ID as their primary key and foreign key.
+Each subtype stores its checked constant `actor_type` and references
+`actors(town_id, id, actor_type)`, which prevents a player actor from acquiring
+an NPC subtype or vice versa. Actor and subtype creation are one transaction,
+and an inspection invariant reports any parent without its required subtype.
+`players(town_id, token_hash)` and
+`players(town_id, display_name_normalized)` are unique. Display names are
+case-folded and trimmed before uniqueness is checked. `npcs.character_entity_id`
+is unique within a town; one authored character has at most one conversational
+actor. Lark has no `npcs` row.
+
+#### `npc_contact_edges`
+
+| Column | Type and nullability | Meaning |
+|---|---|---|
+| `town_id`, `from_npc_id`, `to_npc_id` | `UUID NOT NULL` | Composite primary key |
+| `trust_score` | `INT4 NOT NULL` | Authored directional trust from -100 to 100 |
+| `enabled` | `BOOL NOT NULL DEFAULT true` | Whether off-screen contact is currently possible |
+
+The two NPCs must be different and in the same town. Contact and trust are
+directional. This table replaces the ambiguous NPC-to-NPC rows previously
+implied by `relationships`.
+
+#### `player_visits`
+
+| Column | Type and nullability | Meaning |
+|---|---|---|
+| `town_id`, `id` | `UUID NOT NULL` | Composite primary key |
+| `player_id` | `UUID NOT NULL` | Visiting player |
+| `current_location_entity_id` | `UUID NOT NULL` | Current authored location |
+| `status` | `STRING NOT NULL` | `active` or `ended` |
+| `start_revision` | `INT8 NOT NULL` | Town revision observed at entry |
+| `end_revision` | `INT8 NULL` | Town revision after Leave Town completes |
+| `started_by_action_id`, `ended_by_action_id` | `UUID NOT NULL`, `UUID NULL` | Start action and, once ended, the action that closed the visit |
+| `end_reason` | `STRING NULL` | `left_town` or `town_resolved` |
+| `started_at`, `ended_at` | `TIMESTAMPTZ` | Visit bounds; `ended_at` is nullable while active |
+
+A partial unique index permits at most one active visit for a player. Travel
+conditionally updates `current_location_entity_id` and the town revision.
+Ending a visit and creating its departure event and outbox row are one
+transaction. Starting while an active visit exists returns that visit rather
+than creating another.
+
+### Authored truth, evidence, and current state
+
+#### `world_facts` and `case_solutions`
+
+| Table | Required domain columns | Responsibility |
+|---|---|---|
+| `world_facts` | `town_id UUID`, `id UUID`, `fact_key STRING`, `claim_id UUID`, `visibility STRING` | Immutable authored propositions known to be objectively true; visibility is `hidden`, `discoverable`, or `public` |
+| `case_solutions` | `town_id UUID`, `culprit_entity_id UUID`, `motive_entity_id UUID`, `location_entity_id UUID`, `required_item_id UUID` | One private answer row per town |
+
+`world_facts(town_id, fact_key)` and `world_facts(town_id, claim_id)` are unique.
+`case_solutions.town_id` is its primary key, so there is exactly one solution.
+Claims remain truth-neutral: objective truth exists only in `world_facts`,
+`case_solutions`, and canonical current-state tables such as `items`. Neither
+table is exposed to the player API or placed wholesale in a model prompt.
+The solution's culprit is a character, motive is a motive entity, location is a
+location entity, and required item is an item entity; constant type
+discriminators and composite foreign keys enforce those roles.
+
+#### `inspectables`, `items`, and `player_capabilities`
+
+| Table | Required domain columns | Responsibility |
+|---|---|---|
+| `inspectables` | `town_id UUID`, `id UUID`, `inspectable_key STRING`, `location_entity_id UUID`, `linked_entity_id UUID NULL`, `display_name STRING`, `content_key STRING`, `gate_key STRING NULL`, `enabled BOOL` | Authored areas and objects that accept Inspect |
+| `items` | `town_id UUID`, `id UUID`, `location_entity_id UUID NULL`, `held_by_actor_id UUID NULL`, `revision INT8`, `revealed_event_id UUID NULL` | Current location, custodian, and discovery state of a unique item; `id` is also an item `story_entities` ID |
+| `player_capabilities` | `town_id UUID`, `id UUID`, `player_id UUID`, `capability_key STRING`, `status STRING`, `granted_event_id UUID`, `revoked_event_id UUID NULL` | Persistent authored permissions such as `enter_old_chapel` |
+
+`inspectables(town_id, inspectable_key)` and
+`player_capabilities(town_id, player_id, capability_key)` are unique. An item has
+exactly one custodian: precisely one of `location_entity_id` and
+`held_by_actor_id` is non-null. Transfers use a conditional update against
+`items.revision`. `revealed_event_id` is immutable once set. Capabilities move
+from `granted` to `revoked` only; access decisions that remain purely derived
+from an item or relationship do not create redundant capabilities.
+
+`inspectables.location_entity_id` must reference a location. A non-null
+`linked_entity_id` must reference an item; fixed scenery has no linked entity.
+When a linked item moves, its `items` custody is authoritative and the
+inspectable is available only at that custody location.
+
+#### `clues`, `clue_claim_effects`, and `clue_discoveries`
+
+| Table | Required domain columns | Responsibility |
+|---|---|---|
+| `clues` | `town_id UUID`, `id UUID`, `clue_key STRING`, `inspectable_id UUID`, `clue_kind STRING`, `content_key STRING`, `required_for_resolution BOOL` | Authored verified evidence revealed by inspection |
+| `clue_claim_effects` | `town_id UUID`, `clue_id UUID`, `claim_id UUID`, `effect_kind STRING`, `signed_weight INT4`, `rule_version STRING` | Deterministic support or contradiction applied when a clue is shown |
+| `clue_discoveries` | `town_id UUID`, `id UUID`, `clue_id UUID`, `player_id UUID`, `event_id UUID` | Append-only attribution that a player found a clue |
+
+`clues(town_id, clue_key)` is unique.
+`clue_claim_effects(town_id, clue_id, claim_id)` is unique and its effect kind is
+`supports` or `contradicts`. `clue_discoveries(town_id, clue_id, player_id)` is
+unique, so repeated inspection by one player does not create contribution spam.
+The first discovery creates the shared verified-evidence board entry; later
+player discoveries remain visible in contribution history.
+
+`clue_kind` is `physical_trace`, `document`, or `object_state`. These labels
+control presentation only; the signed claim effects remain authoritative.
+
+The final confrontation gate requires the `case_solutions.required_item_id` to
+be revealed and every clue marked `required_for_resolution` to have at least one
+discovery. This is deterministic and does not depend on dialogue.
+
+#### Deterministic disclosure and access gates
+
+Authored NPC disclosure bundles classify each claim as `public`, `guarded`,
+`confidential`, `cover_story`, or `final_truth`:
+
+| Tier | Required gate |
+|---|---|
+| `public` | Always disclosable when relevant |
+| `guarded` | Trust at least 20 and suspicion below 40, or presentation of a relevant verified clue |
+| `confidential` | Trust at least 40, suspicion below 20, and no broken promise with that NPC |
+| `cover_story` | Explicitly authored for Corin; permitted until the final confrontation and never treated as objective truth |
+| `final_truth` | The final-confrontation evidence gate is satisfied |
+
+For the MVP seed, Nessa's cart observation is guarded, Mara's knowledge of the
+accident and offer of help is confidential, and Corin's complete explanation is
+final truth. The dialogue model receives only claims whose tiers passed these
+rules.
+
+Nessa transfers the chapel key only when her trust is at least 40, suspicion is
+below 40, and the player accepts the authored return-item promise in the same
+action. A player may enter the Old Chapel when they hold the key or possess
+`enter_old_chapel`. Corin grants that capability at trust 40 or above,
+suspicion below 20, after the player presents a relevant required clue. These
+conditions are evaluated in application code and their resulting item,
+capability, promise, and relationship records are committed atomically.
+
+### Claims, memories, and beliefs
+
+#### `claims` and `claim_relations`
+
+| Column | Type and nullability | Meaning |
+|---|---|---|
+| `town_id`, `id` | `UUID NOT NULL` | Claim identity |
+| `subject_entity_id`, `subject_entity_type` | `UUID, STRING NOT NULL` | Canonical character or item plus checked type discriminator |
+| `predicate` | `STRING NOT NULL` | `was_at`, `moved`, `damaged`, `is_at`, or `acted_for` |
+| `object_entity_id`, `object_entity_type` | `UUID, STRING NOT NULL` | Canonical object plus checked type discriminator |
+| `polarity` | `STRING NOT NULL` | `positive` or `negative` |
+| `context_key` | `STRING NOT NULL` | Authored context such as `festival_night` or `current` |
+| `normalized_key` | `STRING NOT NULL` | Canonical serialization of the preceding fields |
+
+`claims(town_id, normalized_key)` is unique. Allowed entity combinations are:
+
+| Predicate | Subject type | Object type |
+|---|---|---|
+| `was_at` | `character` | `location` |
+| `moved` | `character` | `item` |
+| `damaged` | `character` | `item` |
+| `is_at` | `item` | `location` |
+| `acted_for` | `character` | `motive` |
+
+`claim_relations` contains `town_id`, two claim IDs, `relation_kind`
+(`contradicts` or `entails`), `rule_version`, and `created_at`. The ordered claim
+pair and relation kind are unique. Exact positive/negative opposites and
+mutually exclusive same-context locations are created deterministically;
+authored semantic relations may be seeded. This table drives visible
+contradictions without a separate case-board link table.
+
+#### `claim_drafts`
+
+| Column group | Required values |
+|---|---|
+| Identity | `town_id UUID`, `id UUID`, `player_id UUID`, `visit_id UUID`, `target_npc_id UUID` |
+| Original input | `original_text STRING` |
+| Proposed normalization | `subject_entity_id UUID`, `subject_entity_type STRING`, `predicate STRING`, `object_entity_id UUID`, `object_entity_type STRING`, `polarity STRING`, `context_key STRING`, `normalized_key STRING` |
+| Lifecycle | `status STRING`, `expires_at TIMESTAMPTZ`, `normalization_action_id UUID`, `confirmed_by_action_id UUID NULL`, `confirmed_claim_id UUID NULL` |
+
+The state machine is `pending -> confirmed`, `pending -> cancelled`, or
+`pending -> expired`. Drafts expire 30 minutes after creation. Only the creating
+player may confirm a pending, unexpired draft, and one draft may be confirmed
+once. Confirmation creates or reuses `claims` and creates the player-to-NPC
+transmission in the same transaction as the completed Tell action. A pending,
+cancelled, or expired draft has no belief or gameplay effect.
+
+Confirmation is bound to the draft's visit and target NPC. The visit must still
+be active and co-located with that NPC; changing target or editing the text
+requires a new draft and idempotency key.
+
+Expiration is enforced by `expires_at` during reads and confirmation; no
+scheduled cleanup is required. A stale pending row may be lazily marked
+`expired` for inspection, but its time check applies even before that update.
+
+#### `npc_interactions` and `claim_transmissions`
+
+| Table | Required domain columns | Responsibility |
+|---|---|---|
+| `npc_interactions` | `town_id UUID`, `id UUID`, `player_action_id UUID`, `visit_id UUID`, `player_id UUID`, `npc_id UUID`, `event_id UUID`, `input_kind STRING`, `player_text STRING NULL`, `npc_text STRING`, `response_mode STRING` | Immutable accepted NPC turn and player-visible response |
+| `claim_transmissions` | `town_id UUID`, `id UUID`, `claim_id UUID`, `speaker_actor_id UUID`, `recipient_actor_id UUID`, `parent_transmission_id UUID NULL`, `root_transmission_id UUID`, `source_episode_id UUID NULL`, `alleged_source_actor_id UUID NULL`, `source_kind STRING`, `hop_count INT4`, `event_id UUID`, `interaction_id UUID NULL`, `ordinal INT4` | One actual act of communicating a structured claim |
+
+`npc_interactions.player_action_id` is unique. `input_kind` is `ask`, `tell`,
+`show`, `give`, or `promise`. `response_mode` is `generated`, `repaired`,
+`fallback`, or `authored`.
+
+A player-facing turn creates one `npc_interaction` world event. Every structured
+claim actually spoken during that turn links to the same event and receives a
+zero-based transmission `ordinal`. An off-screen NPC-to-NPC communication
+creates a `claim_transmitted` world event, normally with one transmission at
+ordinal zero.
+
+Transmissions support player-to-NPC, NPC-to-NPC, and NPC-to-player speech.
+Speaker and recipient must differ. `(town_id, event_id, ordinal)` is unique.
+`source_kind` is one of:
+
+- `original_assertion`: no parent; the speaker originates the claim.
+- `direct_observation`: `source_episode_id` names the speaker's experience.
+- `repeated_testimony`: `parent_transmission_id` names the prior communication;
+  that prior recipient must be the new speaker and the claim must match.
+- `alleged_hearsay`: `alleged_source_actor_id` records an asserted source when
+  no observed parent transmission exists.
+
+`hop_count` is zero for original assertions and direct observations. Repeating a
+transmission sets it to the parent's hop count plus one. Alleged hearsay starts
+at one. An originating transmission names itself as `root_transmission_id`; a
+repeat copies its parent's root. Provenance and independent-source identity are
+therefore explicit and are not inferred from prose.
+
+#### `episodes` and `episode_references`
+
+| Table | Required domain columns | Responsibility |
+|---|---|---|
+| `episodes` | `town_id UUID`, `id UUID`, `npc_id UUID`, `event_id UUID`, `episode_kind STRING`, `summary STRING`, `importance INT4`, `occurred_at TIMESTAMPTZ`, `embedding VECTOR(256) NULL`, `embedding_status STRING` | Immutable NPC experience and vector memory |
+| `episode_references` | `town_id UUID`, `episode_id UUID`, `reference_kind STRING`, `entity_id UUID NULL`, `claim_id UUID NULL` | Structured people, places, items, motives, and claims used in deterministic reranking |
+
+`episodes(town_id, npc_id, event_id, episode_kind)` is unique. Importance is
+0–100. `embedding_status` is `pending`, `ready`, or `failed`; the vector is
+non-null only when ready. Each episode reference has exactly one of `entity_id`
+or `claim_id`. Duplicate references are forbidden.
+
+Episode identity, text, importance, event, and references are append-only. The
+derived `embedding` and `embedding_status` columns are the sole mutable
+exception and may move from `pending` or `failed` to `ready`; they never alter
+what the NPC experienced.
+
+`episode_kind` is `direct_observation`, `heard_claim`, `player_interaction`,
+`promise_consequence`, `item_transfer`, or `world_consequence`.
+`episode_references.reference_kind` is `participant`, `location`, `item`,
+`motive`, or `claim` and must agree with the populated foreign key.
+
+The vector index prefixes `town_id` and `npc_id` before `embedding` and includes
+only ready embeddings. Candidate recall returns at most 30 rows; deterministic
+reranking selects at most 10, normally 6–10, for a prompt. The initial
+normalized reranking score is:
+
+| Signal | Weight |
+|---|---|
+| Cosine similarity | 45% |
+| Recency with a seven-day exponential half-life | 15% |
+| Authored episode importance divided by 100 | 15% |
+| Directness: direct 1.0, testimony 0.6, hearsay 0.3 | 10% |
+| Unresolved promise or grievance match | 10% |
+| Contradiction with a current belief | 5% |
+
+Ties use newer `occurred_at` and then the opaque episode ID. Direct
+observations, promise resolutions, betrayals, unique-item transfers, and active
+contradictions receive importance of at least 80, so ordinary recency cannot
+erase them from a relevant recall set.
+
+An embedding failure never discards the episode. Recall unions vector
+candidates with up to ten recent or importance-80+ episodes selected through
+`episode_references`, so structured memory still works while Titan is
+unavailable. The failed vector may be retried during a later invocation, using
+a conditional `failed -> ready` update; the episode text and causal identity do
+not change.
+
+#### `npc_beliefs` and `belief_evidence`
+
+| Table | Required domain columns | Responsibility |
+|---|---|---|
+| `npc_beliefs` | `town_id UUID`, `npc_id UUID`, `claim_id UUID`, `score INT4`, `label STRING`, `revision INT8`, `updated_event_id UUID` | Current deterministic aggregate |
+| `belief_evidence` | `town_id UUID`, `id UUID`, `npc_id UUID`, `claim_id UUID`, `event_id UUID`, `episode_id UUID NULL`, `transmission_id UUID NULL`, `source_root_transmission_id UUID NULL`, `clue_id UUID NULL`, `evidence_kind STRING`, `signed_weight INT4`, `trust_snapshot INT4 NULL`, `hop_count INT4 NULL`, `reverses_evidence_id UUID NULL`, `rule_version STRING` | Append-only explanation for one score contribution |
+
+`npc_beliefs(town_id, npc_id, claim_id)` is the primary key. Scores are clamped
+to -100 through 100. Labels are derived:
+
+| Score | Label |
+|---|---|
+| 60 to 100 | `convinced` |
+| 20 to 59 | `leaning` |
+| -100 to 19 | `doubtful` |
+
+Initial evidence policy:
+
+| Evidence | Signed weight |
+|---|---|
+| NPC direct observation | +80 |
+| Verified physical clue | Value stored in `clue_claim_effects`; normally +70 or -70 |
+| Original player testimony | 35 + floor(current NPC-to-player trust / 10), yielding 25–45 |
+| NPC testimony | 40 + floor(authored directional trust / 10), yielding 30–50 |
+| Each hearsay hop after the first | -10 from the testimony weight, minimum absolute support 10 |
+| Independent corroboration | +15 once per independent source chain |
+
+`belief_evidence.evidence_kind` is `direct_observation`, `player_testimony`,
+`npc_testimony`, `physical_clue`, `corroboration`, `contradiction`, or
+`source_reversal`. Column-presence checks require the matching episode,
+transmission, clue, root transmission, or reversed evidence reference.
+
+Contradictory evidence applies its signed weight to the contradicted claim and
+the opposite sign to the supported claim where a `claim_relations` row exists.
+`trust_snapshot` and the final `signed_weight` are stored permanently. Caught
+lies, broken promises, and `source_discredited` events append reversal evidence
+that points to `reverses_evidence_id`; old evidence is never edited. A reversal
+uses the exact opposite weight, preventing repeated discrediting from subtracting
+the same evidence twice. `reverses_evidence_id` is unique when present.
+Corroboration is unique by NPC, claim, and independent root transmission. The
+aggregate score is the clamped sum of all ledger weights.
+
+### Relationships, promises, and player-visible progress
+
+#### `npc_player_relationships` and `relationship_changes`
+
+| Table | Required domain columns | Responsibility |
+|---|---|---|
+| `npc_player_relationships` | `town_id UUID`, `npc_id UUID`, `player_id UUID`, `trust_score INT4`, `suspicion_score INT4`, `revision INT8`, `updated_event_id UUID` | Current directional NPC stance toward one player |
+| `relationship_changes` | `town_id UUID`, `id UUID`, `npc_id UUID`, `player_id UUID`, `event_id UUID`, `trust_delta INT4`, `suspicion_delta INT4`, `reason_kind STRING`, `claim_id UUID NULL`, `promise_id UUID NULL`, `rule_version STRING` | Append-only relationship ledger |
+
+The current row is unique by `(town_id, npc_id, player_id)`. Both scores are
+clamped to -100 through 100. Player creation seeds one zeroed row for each NPC.
+The current score is reconstructed
+by applying history deltas in event order and clamping after each change.
+Initial qualitative UI labels are:
+
+- Trust: `trusting` at 40 or above, `neutral` from -19 to 39, `wary` at -20 or
+  below.
+- Suspicion: `suspicious` at 40 or above; otherwise it is not shown as a
+  separate warning.
+
+The single dialogue-bundle stance uses deterministic precedence:
+`suspicious` first, then `trusting`, then `wary`, otherwise `neutral`.
+
+Exact action deltas are versioned authored rules, but every applied delta and
+its reason are stored. NPC-to-NPC trust is not duplicated here.
+
+The initial relationship policy is:
+
+| Deterministic event | Trust delta | Suspicion delta |
+|---|---:|---:|
+| A player's earlier testimony is verified by physical evidence | +10 | -5 |
+| A player presents relevant verified evidence without having lied | +5 | -5 |
+| A player gives an NPC an item that NPC requested | +15 | -5 |
+| A promise is fulfilled | +25 | -15 |
+| A player's asserted claim is disproved and marked as their lie | -30 | +40 |
+| A promise is broken | -40 | +35 |
+| Unsupported or irrelevant dialogue | 0 | 0 |
+
+`relationship_changes.reason_kind` is `verified_testimony`,
+`evidence_presented`, `requested_item_given`, `promise_fulfilled`,
+`lie_established`, or `promise_broken`.
+
+One causal event applies each configured delta at most once. Evidence merely
+contradicting a player is not automatically a caught lie: the system requires
+an authored rule or explicit `source_discredited` event that establishes the
+player knowingly supplied the false claim. A zero-delta event creates no
+`relationship_changes` row.
+
+#### `promises`
+
+| Column | Type and nullability | Meaning |
+|---|---|---|
+| `town_id`, `id` | `UUID NOT NULL` | Promise identity |
+| `npc_id`, `player_id` | `UUID NOT NULL` | NPC requester and player accepter |
+| `kind` | `STRING NOT NULL` | `keep_secret` or `return_item` |
+| `protected_claim_id` | `UUID NULL` | Required only for `keep_secret` |
+| `item_id` | `UUID NULL` | Required only for `return_item` |
+| `status` | `STRING NOT NULL` | `active`, `fulfilled`, or `broken` |
+| `accepted_event_id` | `UUID NOT NULL` | Event that created the promise |
+| `resolved_event_id` | `UUID NULL` | Event that fulfilled or broke it |
+| `terms_version` | `STRING NOT NULL` | Deterministic evaluator version |
+
+Exactly one of `protected_claim_id` and `item_id` is set, matching `kind`.
+Transitions are `active -> fulfilled` or `active -> broken` and are irreversible.
+Repeating a protected normalized claim to an actor other than the requester
+breaks secrecy. Returning the item to the requester fulfills the return promise;
+an incompatible transfer configured by the authored rule breaks it.
+
+At town resolution, active return-item promises are fulfilled only if the
+requester holds the item and otherwise become broken. Active secrecy promises
+are fulfilled by `restore_bell_quietly` and broken by `expose_cover_up` when the
+protected claim is part of the public resolution. All resulting promise and
+relationship changes commit with the resolution event.
+
+#### `case_board_entries`
+
+| Column group | Required values |
+|---|---|
+| Identity | `town_id UUID`, `id UUID`, `entry_kind STRING` |
+| Attribution | `contributed_by_player_id UUID NULL`, `source_event_id UUID` |
+| Structured content | `clue_id UUID NULL`, `claim_id UUID NULL`, `transmission_id UUID NULL` |
+| Player content | `note_text STRING NULL` |
+| Classification | `verification_status STRING` |
+
+`entry_kind` is `verified_evidence`, `testimony`, `hearsay`, or `note`.
+`verification_status` is `verified_physical`, `attributed_testimony`,
+`attributed_hearsay`, or `unverified_player_note` and must match the entry kind.
+Column-presence checks enforce:
+
+- Verified evidence has one `clue_id` and no note text.
+- Testimony or hearsay has one `claim_id` and `transmission_id`.
+- A note has a contributor and 1–500 characters of `note_text`, with no clue,
+  claim, or transmission.
+
+There is at most one verified-evidence entry per clue and one testimony/hearsay
+entry per transmission. Notes are append-only. Contradiction badges are derived
+by joining board claims through `claim_relations`; objective truth is never
+inferred from an NPC statement.
+
+The first clue discoverer is the contributor for verified evidence. For an
+NPC-to-player transmission, the receiving player is the contributor and the
+speaker remains visible through the transmission. Player-to-NPC assertions do
+not automatically become shared board entries; they appear only if a player
+later hears them or deliberately writes a note.
+
+#### `case_attempts` and `town_resolutions`
+
+| Table | Required domain columns | Responsibility |
+|---|---|---|
+| `case_attempts` | `town_id UUID`, `id UUID`, `player_action_id UUID`, `player_id UUID`, `suspect_entity_id UUID`, `motive_entity_id UUID`, `location_entity_id UUID`, `outcome STRING`, `event_id UUID` | Immutable submitted culprit, motive, and location theory |
+| `town_resolutions` | `town_id UUID`, `case_attempt_id UUID`, `chosen_by_player_id UUID`, `choice STRING`, `event_id UUID`, `created_at TIMESTAMPTZ` | The one irreversible shared ending |
+
+One case attempt exists per Accuse action. Its outcome is `incorrect` or
+`correct`. A correct attempt conditionally changes the town from `active` to
+`awaiting_resolution`; simultaneous later attempts cannot win. An incorrect
+attempt has no permanent-failure effect.
+
+`case_attempts.player_action_id` is unique. Suspect, motive, and location use
+the same checked entity-type foreign keys as `case_solutions`. The outcome is a
+server comparison with that private row, never a model judgment.
+
+`town_resolutions.town_id` is its primary key. `choice` is `expose_cover_up` or
+`restore_bell_quietly`. It must reference the correct attempt that put the town
+into `awaiting_resolution`. Inserting it and changing the town to `resolved`
+happen in one transaction.
+
+### History, operations, idempotency, and ambient ranges
+
+#### `player_actions`
+
+| Column group | Required values |
+|---|---|
+| Identity | `town_id UUID`, `id UUID`, `player_id UUID`, `visit_id UUID NULL`, `idempotency_key UUID` |
+| Request | `action_kind STRING`, `request_hash BYTES`, `request_payload JSONB`, `target_actor_id UUID NULL`, `target_entity_id UUID NULL` |
+| Processing claim | `status STRING`, `processing_token UUID NULL`, `processing_expires_at TIMESTAMPTZ NULL`, `attempt_count INT4` |
+| Saved result | `outcome STRING NULL`, `response_status INT4 NULL`, `response_payload JSONB NULL`, `error_code STRING NULL`, `completed_at TIMESTAMPTZ NULL` |
+
+`(town_id, player_id, idempotency_key)` is unique. Action kinds are
+`start_visit`, `travel`, `inspect`, `ask`, `normalize_claim`, `tell`, `show`,
+`give`, `accept_promise`, `add_note`, `leave`, `accuse`, and `resolve`.
+
+Status is `processing`, `completed`, or `failed`. A completed outcome is
+`applied`, `no_change`, or `denied`. Rule denials are completed and replayable.
+A terminal failure stores its safe error response and is also replayable; a
+player intentionally retries it with a new key.
+
+Column-presence checks require a processing token and expiry only while
+`processing`. `completed` requires outcome, response status, response payload,
+and completion time. `failed` requires response status, safe response payload,
+error code, and completion time. Both terminal states clear the processing
+claim.
+
+`request_payload` is canonical versioned JSON and is retained for the life of
+the town. `request_hash` is SHA-256 over the API version, action kind, relational
+targets, and canonical payload. Tokens, cookies, the idempotency key, and
+transport headers are excluded.
+
+Player-action processing claims last 90 seconds and are renewed at 45 seconds if
+work remains. A stale claim may be replaced. Completion conditionally matches
+the current token. After three claimed attempts without a committed result, the
+next owner stores a terminal `ACTION_PROCESSING_EXHAUSTED` response without
+effects.
+
+#### `world_events`
+
+| Column group | Required values |
+|---|---|
+| Identity | `town_id UUID`, `id UUID`, `sequence_no INT8`, `event_type STRING`, `ambient_eligible BOOL`, `occurred_at TIMESTAMPTZ` |
+| Origin | `origin_kind STRING`, `player_action_id UUID NULL`, `ambient_job_execution_id UUID NULL`, `effect_index INT4`, `effect_key STRING` |
+| Typed participants | `actor_id UUID NULL`, `target_actor_id UUID NULL`, `subject_entity_id UUID NULL`, `location_entity_id UUID NULL`, `claim_id UUID NULL`, `clue_id UUID NULL`, `promise_id UUID NULL` |
+| Extra detail | `payload JSONB NOT NULL` |
+
+`(town_id, sequence_no)` and `(town_id, effect_key)` are unique. `origin_kind` is
+`player_action`, `ambient_job`, or `system_seed` and exactly the matching origin
+foreign key is present. Effect indexes start at zero and are unique within their
+origin. Effect keys are derived as `player:<action-key>:<index>`,
+`ambient:<job-key>:<index>`, or `seed:<content-version>:<key>`.
+Partial unique constraints on
+`(town_id, player_action_id, effect_index)` and
+`(town_id, ambient_job_execution_id, effect_index)` enforce the numbered
+origins directly.
+
+Initial event types are `visit_started`, `travelled`, `inspected`,
+`clue_discovered`, `npc_interaction`, `claim_transmitted`, `evidence_shown`,
+`item_transferred`, `promise_accepted`, `promise_fulfilled`, `promise_broken`,
+`capability_changed`, `note_added`, `visit_ended`, `relationship_changed`,
+`source_discredited`, `case_attempted`, and `case_resolved`. Belief evidence
+links to its causal event instead of creating redundant `belief_updated` events.
+
+Allocating event sequence numbers and advancing `towns.revision` happen in the
+same transaction as the effects. `world_events` is append-only. Typed columns
+hold important domain references; `payload` contains only event-specific,
+schema-versioned details. `ambient_eligible` is set by deterministic event rules;
+workers consider only eligible events inside their assigned sequence range.
+
+#### `agent_runs`
+
+| Column group | Required values |
+|---|---|
+| Causal source | `town_id UUID`, `id UUID`, `player_action_id UUID NULL`, `ambient_job_execution_id UUID NULL`, `world_event_id UUID NULL` |
+| Invocation | `purpose STRING`, `model STRING`, `prompt_version STRING` |
+| Measures | `input_tokens INT8`, `output_tokens INT8`, `latency_ms INT8`, `estimated_cost DECIMAL(12,6)` |
+| Result | `outcome STRING`, `validation_error_code STRING NULL`, `created_at TIMESTAMPTZ` |
+
+`purpose` is `claim_normalization`, `intent_classification`,
+`dialogue_rendering`, `ambient_choice`, `structured_repair`, `episode_embedding`,
+or `query_embedding`. At least one causal source is present. `outcome` is
+`accepted`, `repaired`, `rejected`, `fallback`, `failed`, or `superseded`. One
+action or job may have several runs. `superseded` records valid output discarded
+because a revision retry rebuilt the context.
+
+Each run is appended in a short telemetry transaction after validation, so a
+later state conflict cannot erase incurred cost or a rejected attempt. It is
+not a game-state effect and need not share the final effect transaction.
+Prompts, raw invalid output, credentials, tokens, and connection strings are not
+stored.
+
+#### `outbox` and `ambient_job_executions`
+
+| Table | Required domain columns | Responsibility |
+|---|---|---|
+| `outbox` | `town_id UUID`, `id UUID`, `source_event_id UUID`, `visit_id UUID`, `job_type STRING`, `job_key UUID`, `payload JSONB`, `payload_hash BYTES`, `after_event_sequence INT8`, `through_event_sequence INT8`, `not_before TIMESTAMPTZ`, `next_send_at TIMESTAMPTZ`, `delivery_status STRING`, `send_token UUID NULL`, `send_expires_at TIMESTAMPTZ NULL`, `send_attempt_count INT4`, `last_error_code STRING NULL`, `sent_at TIMESTAMPTZ NULL` | Transactional, retry-safe handoff to SQS |
+| `ambient_job_executions` | `town_id UUID`, `id UUID`, `outbox_id UUID`, `job_key UUID`, `payload_hash BYTES`, `status STRING`, `processing_token UUID NULL`, `processing_expires_at TIMESTAMPTZ NULL`, `attempt_count INT4`, `action_count INT4 NULL`, `error_code STRING NULL`, `completed_at TIMESTAMPTZ NULL` | Durable execution identity and processing claim |
+
+`outbox(town_id, job_key)`, `outbox(town_id, visit_id, job_type)`,
+`ambient_job_executions(town_id, outbox_id)`, and
+`ambient_job_executions(town_id, job_key)` are unique. The execution's job key
+and payload hash must match its outbox row. The only MVP `job_type` is
+`ambient_tick`. The authoritative payload is canonical JSON
+`{version, visitId, afterEventSequence, throughEventSequence}` and must match the
+same relational columns; SQS carries only `town_id`, `outbox_id`, and `job_key`.
+`not_before` is set to 20 seconds after the departure commit. The initial sender
+publishes immediately with the corresponding SQS delay; a recovery publication
+uses only the remaining delay.
+
+Outbox delivery states are `pending`, `sending`, and `sent`:
+
+1. A sender conditionally moves `pending` or expired `sending` to `sending`,
+   installs a 30-second send token, and increments the attempt count.
+2. It publishes `town_id`, `outbox_id`, and `job_key` to SQS.
+3. An acknowledged publish conditionally moves the same token to `sent`.
+4. A crash after publication leaves stale `sending`. Recovery republishes with
+   the same job key, making the uncertain send safe.
+
+Only `sending` has a send token and expiry. `sent` requires `sent_at`. A failed
+send returns to `pending` with `next_send_at` set using one-, two-, four-,
+eight-, then fifteen-minute backoff; later attempts remain capped at fifteen
+minutes.
+
+Recovery runs every five minutes and attempts only due rows. It never abandons or
+changes the key of a pending row. After ten failed or expired sends it raises an
+alert while the fifteen-minute retry continues.
+
+Ambient execution states are `processing`, `completed`, and `quarantined`.
+Claims last 180 seconds and renew at 90 seconds. Completion must match the
+current token. A valid no-op completes with `action_count = 0`. Payload mismatch,
+outbox identity corruption, or five expired/failed processing claims moves the
+job to `quarantined` with no effects and raises an alert. The hidden demo
+recovery control is not part of the settled MVP schema. Any deliberate operator
+release must preserve the outbox row and job key and be recorded before it is
+implemented.
+
+Only `processing` has a processing token and expiry. `completed` requires
+`completed_at` and `action_count` from 0 through 2. `quarantined` requires an
+error code, has no action count, and has no active claim.
+
+#### Disjoint ambient event ranges
+
+Ambient jobs process disjoint event ranges rather than asking each worker to
+independently guess what is "new."
+
+When Leave Town commits:
+
+1. It locks or conditionally updates the town revision.
+2. It appends the departure event and allocates its `sequence_no`.
+3. It creates an outbox row whose range is
+   `(ambient_scheduled_through_sequence, last_event_sequence]`.
+4. It advances `ambient_scheduled_through_sequence` to the new upper bound.
+5. It ends the visit and commits all of the above atomically.
+
+Concurrent departures therefore receive non-overlapping ranges. Events created
+by a tick have sequence numbers above that tick's upper bound, so they cannot
+cause another action in the same tick. A later Leave Town job includes them.
+Range assignment prevents two different jobs from reacting to the same event;
+the job idempotency record prevents two deliveries of one job from applying its
+range twice.
+
+### Transaction retry policy
+
+- CockroachDB serialization failures receive at most three transaction retries
+  with jittered delays of approximately 25 ms, 75 ms, and 225 ms.
+- A model-backed player action that loses its town revision reloads relevant
+  state and reruns model work once. A second relevant revision conflict returns
+  a saved `409 TOWN_CHANGED_RETRY_ACTION` response with no effects.
+- Unique-item transfers and town resolution use conditional updates and never
+  rely only on an earlier read.
+- Bedrock calls, embedding calls, and SQS publications never occur inside a
+  database transaction.
+- A player action's effects, response, terminal status, and town revision change
+  commit together.
+- An ambient job's events, transmissions, episodes, evidence, relationship
+  changes, action count, terminal status, and town revision change commit
+  together.
+
+### Required indexes
+
+In addition to primary keys and uniqueness constraints, migrations must provide:
+
+- `players(town_id, token_hash)` for cookie authentication.
+- A partial index for active `player_visits(town_id, player_id)`.
+- `world_events(town_id, sequence_no)` and
+  `world_events(town_id, event_type, occurred_at DESC)`.
+- `claim_transmissions(town_id, claim_id, created_at)` and
+  `claim_transmissions(town_id, parent_transmission_id)`.
+- `belief_evidence(town_id, npc_id, claim_id, created_at)`.
+- `relationship_changes(town_id, npc_id, player_id, created_at)`.
+- `case_board_entries(town_id, created_at)`.
+- `player_actions(town_id, player_id, idempotency_key)` and a partial stale-work
+  index on `status = 'processing'` and `processing_expires_at`.
+- `outbox(town_id, delivery_status, next_send_at, send_expires_at)`.
+- A partial stale-work index on
+  `ambient_job_executions(status, processing_expires_at)`.
+- A CockroachDB vector index on `episodes(embedding)` with `town_id` and `npc_id`
+  prefix columns, restricted to ready embeddings if the migration syntax
+  supports a predicate; otherwise pending and failed rows are excluded by the
+  query.
+
+## Example: one false rumour
+
+Objective state:
+
+```text
+items
+  bell.location = Old Chapel
+```
+
+A player tells Nessa, "The bell is in Reed's Garden":
+
+```text
+claims
+  #42  bell is_at Reed's Garden
+
+claim_transmissions
+  #100  player → Nessa, claim #42
+
+episodes
+  #200  Nessa heard the player assert claim #42
+
+belief_evidence
+  #300  Nessa received player testimony for claim #42
+```
+
+The `items` row does not change.
+
+If a later ambient tick makes Nessa repeat it to Mara, claim `#42` is reused:
+
+```text
+world_events
+  #500  claim_transmitted, effect_key ambient:<job-key>:0
+
+claim_transmissions
+  #101  Nessa → Mara, claim #42, parent #100, event #500
+
+episodes
+  #201  Mara heard Nessa assert claim #42, event #500
+
+provenance
+  player → Nessa → Mara
+```
+
+The new transmission and episode are not duplicates; they record a new
+communication and a new personal experience. An SQS retry cannot recreate them:
+the job record is already completed, and the event's
+`ambient:<job-key>:0` effect key is unique.
+
+## Concurrency and transaction boundaries
+
+- No Bedrock call runs inside a database transaction.
+- Game Lambda loads a town revision, performs model work, then conditionally
+  commits against that revision.
+- A relevant revision conflict causes one bounded reload and retry.
+- CockroachDB serialization conflicts receive the three bounded retries defined
+  above.
+- Unique-item transfers use conditional updates.
+- Duplicate copies of one action or job follow the
+  [idempotency contract](#idempotency-contract); revisions and conditional
+  updates handle different operations that conflict.
+- Departure event, disjoint event range, ended visit, and outbox job are written
+  in one transaction; Recovery republishes the same row and key when delivery
+  remains uncertain.
+
+## Tenant isolation and security
+
+- All town-owned queries require `town_id`.
+- Composite foreign keys prevent cross-town references.
+- Guest player tokens live in secure, HTTP-only cookies; only hashes are stored.
+- Town creation requires a shared judge code stored in Secrets Manager.
+- Database connections use `sslmode=verify-full`.
+- `migration_admin`, `app_runtime`, and inspection access use separate
+  credentials and least privilege.
+- SQL is parameterized and connections have strict query, pool, and concurrency
+  limits.
+- Models receive no database credentials or tools.
+- The player API exposes explicit safe projections rather than raw tables.
+- The Managed MCP connection is separately authenticated and read-only.
+
+## Inspection schema
+
+The read-only `inspection` schema is intended for judges and developers, not
+normal player requests.
+
+| View | Shows |
+|---|---|
+| `inspection.npc_beliefs` | Current labels and scores by NPC and claim |
+| `inspection.belief_evidence` | Evidence weights, trust snapshots, and contradictions |
+| `inspection.claim_paths` | Ordered claim provenance paths |
+| `inspection.relationship_timeline` | Trust and suspicion changes |
+| `inspection.promise_status` | Promise conditions and resolving events |
+| `inspection.object_history` | Authoritative item transitions |
+| `inspection.objective_truth` | Authored facts and the case solution, visible only to judge/developer inspection access |
+| `inspection.case_progress` | Clue discoveries, attempts, resolution gate, and final choice |
+| `inspection.world_event_timeline` | Ordered typed effects and their originating action or ambient job |
+| `inspection.agent_runs` | Model, prompt version, tokens, latency, validation, and fallback outcomes |
+| `inspection.idempotency_status` | Player and ambient keys, fingerprints, statuses, attempts, processing claims, and numbered event effects |
+| `inspection.ambient_jobs` | Disjoint event ranges, outbox delivery, execution outcome, and quarantine state |
+
+These views reveal causal information for evaluation without granting mutation
+access. Player-facing case-board projections remain spoiler-safe.
+Inspection views never expose player or invite token hashes, database secrets,
+raw processing tokens, cookies, or unvalidated model text. Idempotency views may
+show opaque operation keys and claim-expiry times because those values do not
+authenticate a player or authorize completion.
+
+## Verification priorities
+
+The minimum high-risk tests are:
+
+1. A false claim changes belief evidence but never changes `items`.
+2. Mara's initial dialogue prompt does not contain the hidden chapel location.
+3. Unsupported model claims are rejected, repaired once, then replaced by a
+   fallback.
+4. Two towns cannot read or reference each other's rows.
+5. Two simultaneous unique-item transfers cannot both succeed.
+6. Replaying a completed player action with the same key and request returns the
+   stored response and produces no duplicate effects.
+7. Reusing a player key with a different request returns
+   `409 IDEMPOTENCY_KEY_REUSED`.
+8. Two concurrent copies of one action produce one completed operation; an old
+   worker cannot commit after its processing claim is replaced.
+9. Replaying an SQS job that created two ambient actions creates neither action
+   again, and the original numbered event effect keys remain distinct.
+10. Republish after an uncertain SQS send reuses the original outbox key.
+11. Concurrent departures receive disjoint event ranges, and tick-created
+    events cannot be consumed by their own tick.
+12. An unconfirmed or expired claim draft creates no claim transmission,
+    belief evidence, or relationship change.
+13. NPC-to-player testimony retains its speaker, source chain, and receiving
+    player contribution on the case board.
+14. A player-A rumour changes player-B dialogue only after a valid ambient
+   transmission.
+15. The inspection views reconstruct the exact belief and provenance path.
+16. Only one correct accusation can move a town to `awaiting_resolution`, and
+    only one irreversible resolution can be stored.
+
+## Related decisions
+
+- [Decision 001: MVP Product Direction](001-mvp-product-direction.md)
+- [Decision 002: MVP System Architecture](002-mvp-system-architecture.md)
+- [Technical Architecture and Runtime Flows](003-technical-architecture-and-schema.md)
+- [Infrastructure Cost Estimate](004-infrastructure-cost-estimate.md)

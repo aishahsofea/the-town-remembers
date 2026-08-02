@@ -141,7 +141,7 @@ The following are not present in the accepted MVP architecture and are excluded 
 
 Prices are public list prices and allowances accessed on 1 August 2026. They can change, may vary by account agreement, and are not a vendor quote. Repository scope comes from the local architecture documents.
 
-1. [Repository README](../README.md), [Decision 002](002-mvp-system-architecture.md), and [Decision 003](003-technical-architecture-and-schema.md) — services, region, models, and the $12.50 ceiling.
+1. [Repository README](../README.md), [Decision 002](002-mvp-system-architecture.md), [runtime architecture](003-technical-architecture-and-schema.md), and [schema contract](005-logical-data-model-and-schema-contract.md) — services, region, models, data responsibilities, and the $12.50 ceiling.
 2. [Anthropic model prices — all platforms](https://www-cdn.anthropic.com/files/4zrzovbb/website/3684c2faafb97418665782cea0001f439f74b1d2.pdf) — AWS Bedrock global and in-region rates for Claude Sonnet 4.6 and Haiku 4.5.
 3. [AWS Titan Text Embeddings V2](https://aws.amazon.com/blogs/machine-learning/get-started-with-amazon-titan-text-embeddings-v2-a-new-state-of-the-art-embeddings-model-on-amazon-bedrock/) — $0.02 per million input tokens and 256-dimension support.
 4. [Amazon CloudFront pricing](https://aws.amazon.com/cloudfront/pricing/) — Free flat-rate plan allowances.

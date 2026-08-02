@@ -3,6 +3,7 @@
 - **Project:** The Town Remembers
 - **Status:** Accepted
 - **Date:** 2026-07-26
+- **Updated:** 2026-08-01
 - **Scope:** Application stack, agent loop, data flow, deployment, security, cost, and hackathon proof
 
 ## Purpose
@@ -77,8 +78,8 @@ flowchart LR
     Tick --> Memory
 
     EventBridge["EventBridge schedule"] -->|"invoke"| Recovery["Recovery Lambda"]
-    Recovery -->|"find and mark unsent jobs"| Outbox
-    Recovery -->|"publish missed jobs"| Queue
+    Recovery -->|"find pending or stale sends"| Outbox
+    Recovery -->|"republish with stored key"| Queue
 
     MCP["Managed MCP: read-only inspection"] --> State
     MCP --> Memory
@@ -173,14 +174,15 @@ sequenceDiagram
     participant C as CockroachDB
     participant B as Bedrock
 
-    P->>L: Ask, tell, show, give, or promise
+    P->>L: Action + stable idempotency key
+    L->>C: Create or read request record
     L->>C: Load town and NPC snapshot
     L->>B: Normalize intent or claim
     L->>C: Search relevant vector memories
     L->>L: Apply deterministic rules
     L->>B: Render approved dialogue
     L->>L: Validate result
-    L->>C: Check revision and commit
+    L->>C: Save effects and response together
     L-->>P: Return complete response
 ```
 
@@ -188,54 +190,110 @@ Bedrock calls happen outside database transactions. This avoids holding a transa
 
 Before committing, Lambda checks the town revision. If relevant state changed, it reloads and tries once more.
 
+The browser creates one random UUID when it creates a pending action.
+Double-clicks and network retries reuse it; an intentional new action gets a new
+UUID.
+
+The server keeps one `player_actions` request record for that UUID. The record
+remembers what was requested, whether it is still being processed, and the final
+response.
+
+| When the same key arrives | Result |
+|---|---|
+| No request record exists | Create one and process the action |
+| The action is still being processed | Return `202 Accepted`; do not start another copy |
+| The action is complete | Return the saved response |
+| The action terminally failed | Return the saved safe failure response |
+| The key is attached to different input | Return `409 IDEMPOTENCY_KEY_REUSED` |
+
+While an action is being processed, its record temporarily names the worker
+allowed to finish it. This **processing claim** expires, so another worker can
+recover the action if the first one crashes. Only the worker named by the
+current claim may save the result. The completed response and all game effects
+are saved in one transaction.
+
 ## Ambient tick flow
 
 Pressing **Leave Town** creates an ambient tick.
 
-1. The Game Lambda writes a departure event and an outbox row in one transaction.
+1. The Game Lambda atomically ends the visit, writes a departure event, assigns
+   a disjoint range of as-yet-unscheduled events, and creates an outbox row with
+   one stable job key.
 2. The outbox job is sent to SQS with a 20-second delay.
-3. SQS wakes the Ambient Tick Lambda.
-4. The tick loads new events and relevant NPC memories.
-5. Haiku chooses an allowed action or `do_nothing`.
-6. Application code validates and applies the choice.
-7. CockroachDB stores the new episode, provenance, and belief evidence.
+3. SQS wakes the Ambient Tick Lambda with the outbox ID and job key.
+4. The tick creates or reads the job's `ambient_job_executions` record.
+5. A completed duplicate stops immediately. Otherwise, the worker takes a
+   temporary processing claim and loads ambient-eligible events from its
+   assigned range plus relevant NPC memories.
+6. Haiku chooses allowed actions or `do_nothing`.
+7. Application code validates and applies the choices.
+8. CockroachDB atomically stores the episodes, provenance, belief evidence, and
+   completed job execution.
 
 A tick may perform at most two ambient actions.
 
-SQS may deliver a job more than once. Each job has a unique idempotency key, so duplicate delivery cannot advance the town twice.
+SQS may deliver a job more than once. The job key lets every delivery find the
+same job record, where a completed status prevents the town from advancing
+twice.
 
-The Recovery Lambda checks for unsent outbox rows. EventBridge runs it on a short schedule. This repairs the gap if Lambda stops after the database commit but before sending the SQS message.
+One tick may legitimately produce two actions. The job key identifies the whole
+tick, while `ambient:<job-key>:0` and `ambient:<job-key>:1` identify its
+numbered `world_events`. This prevents a retry from confusing two valid actions
+with duplicate work.
+
+The Recovery Lambda checks for unsent or uncertain outbox rows. EventBridge runs
+it once every five minutes. It republishes the stored outbox row with the original
+job key, repairing both a stop before send and a send whose success was not
+recorded. A duplicate publication is safe.
 
 ## CockroachDB as persistent memory
 
-CockroachDB stores both current state and history.
+CockroachDB stores authored identities, current state, causal history, and
+operational retry state.
+
+### Authored and identity tables
+
+- `story_entities`
+- `actors`, `players`, and `npcs`
+- `npc_contact_edges`
+- `inspectables` and `clues`
+- `world_facts` and `case_solutions`
+
+These tables answer: “What entities and authored rules exist in this version of
+the mystery?”
 
 ### Current-state tables
 
-- `towns`
-- `players`
-- `npcs`
-- `npc_beliefs`
-- `belief_evidence`
-- `relationships`
+- `towns` and `player_visits`
+- `items` and `player_capabilities`
+- `npc_beliefs` and `npc_player_relationships`
 - `promises`
-- `items`
-- `case_board_entries`
+- `case_board_entries` and `town_resolutions`
 
 These tables answer: “What is true now?”
 
-### History tables
+### Causal-history tables
 
 - `world_events`
-- `episodes`
-- `claims`
-- `claim_transmissions`
+- `npc_interactions`, `episodes`, and `episode_references`
+- `claims`, `claim_relations`, and `claim_transmissions`
+- `belief_evidence` and `relationship_changes`
+- `clue_discoveries` and `case_attempts`
 - `agent_runs`
-- `outbox`
 
-These tables answer: “How did we get here?”
+These tables answer: “How did we get here?” Event, interaction, episode,
+transmission, evidence, relationship-change, discovery, and attempt rows are
+append-only. New evidence never erases old evidence.
 
-Episodes and world events are append-only. New evidence does not erase old evidence.
+### Operational tables
+
+- `player_actions` and `claim_drafts`
+- `outbox` and `ambient_job_executions`
+
+These tables answer: “Has this request or job already run, what response did it
+produce, and has its queued work been delivered and applied?” Their working
+status, temporary processing claims, draft status, and delivery fields are
+mutable. Terminal identity and response fields do not change.
 
 ### Tenant isolation
 
@@ -312,16 +370,23 @@ The `inspection` schema exposes views such as:
 - `inspection.relationship_timeline`
 - `inspection.promise_status`
 - `inspection.object_history`
+- `inspection.objective_truth`
+- `inspection.case_progress`
+- `inspection.world_event_timeline`
 - `inspection.agent_runs`
+- `inspection.idempotency_status`
+- `inspection.ambient_jobs`
 
 These views make the system explainable without granting write access.
 
 ## Reliability rules
 
 - Use short CockroachDB transactions.
-- Retry bounded serialization conflicts.
+- Retry serialization conflicts at most three times.
 - Use conditional updates for unique items.
-- Add idempotency keys to player actions and queue jobs.
+- Allocate disjoint ambient event ranges when visits end.
+- Implement the player and ambient retry behavior above with durable records,
+  unique database constraints, processing claims, and atomic completion.
 - Validate all model output.
 - Retry one invalid model result.
 - Use an authored fallback if the retry fails.
@@ -428,9 +493,14 @@ The minimum test set is:
 
 - Unit tests for claims, beliefs, promises, gates, and reducers.
 - Database tests for town isolation and conflicting item transfers.
+- Database tests for idempotency uniqueness, mismatched request fingerprints,
+  processing-claim takeover, saved-response replay, and numbered event effects.
+- Database tests for actor/entity subtype rules, claim drafts, event-range
+  disjointness, relationship ledgers, case resolution, and every cross-town
+  foreign key.
 - Agent evaluations for valid structure and allowed claims.
 - Two-browser tests for asynchronous multiplayer behavior.
-- Queue tests for duplicate delivery.
+- Queue tests for duplicate delivery and uncertain-send republishing.
 - A production smoke test.
 - A repeatable demo seed.
 
@@ -478,11 +548,19 @@ All shown actions are live. The mystery data is pre-seeded for reliability.
 - **CloudFront:** The public web address and content delivery layer.
 - **CockroachDB:** The permanent town database and vector memory.
 - **Embedding:** A list of numbers used to find text with similar meaning.
+- **Idempotency key:** An opaque identifier reused for every attempt at one
+  logical operation so the database can return the prior result instead of
+  applying the operation twice.
 - **Idempotent:** Safe to run again without applying the same change twice.
 - **Lambda:** Temporary code that wakes for one task and then stops.
 - **MCP:** A standard way for an AI tool to inspect approved external data and tools.
-- **Outbox:** A database list of messages that still need to be sent.
+- **Outbox:** A transactional database list of queued messages and their
+  delivery-attempt status.
+- **Processing claim:** A temporary, expiring assignment that identifies the
+  worker currently allowed to finish a request or job.
 - **Provenance:** The recorded path showing where a claim came from.
+- **Request record:** A database row that remembers an idempotency key, request
+  status, input fingerprint, and completed response.
 - **SQS:** A reliable AWS queue that holds work until Lambda can process it.
 - **Vector index:** A database index used to find semantically similar memories.
 

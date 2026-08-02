@@ -12,8 +12,9 @@ requires more than finding clues: players must understand who observed what,
 who trusts whom, how rumours spread, and which parts of the public story are
 actually true.
 
-> **Project status:** the MVP product direction and system architecture are
-> accepted. Application implementation is the next phase.
+> **Project status:** the MVP product direction, system architecture, and
+> implementation-ready logical schema are accepted. SQL migrations and
+> application implementation are the next phase.
 
 ## The three-minute explanation
 
@@ -145,9 +146,14 @@ All interactions are intended to run live against a pre-seeded mystery.
 - [Accepted system architecture](docs/002-mvp-system-architecture.md) — AWS
   topology, CockroachDB usage, model responsibilities, security, costs,
   deployment, and testing decisions.
-- [Technical architecture and logical schema](docs/003-technical-architecture-and-schema.md)
-  — request flows, information boundaries, ambient propagation, table
-  responsibilities, constraints, and inspection views.
+- [Technical architecture and runtime flows](docs/003-technical-architecture-and-schema.md)
+  — request flows, information boundaries, model roles, idempotency, and
+  ambient propagation.
+- [Infrastructure cost estimate](docs/004-infrastructure-cost-estimate.md) —
+  workload assumptions, cost scenarios, budget controls, and deployment risks.
+- [Logical data model and schema contract](docs/005-logical-data-model-and-schema-contract.md)
+  — table responsibilities, value domains, invariants, indexes, inspection
+  views, and database verification priorities.
 
-The technical schema is currently a logical design. Exact migrations and local
+The schema contract is implementation-ready. SQL migrations and local
 development commands will be added with the implementation.
