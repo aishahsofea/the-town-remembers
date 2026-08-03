@@ -1,0 +1,126 @@
+{
+  "description": "A bounded interpretation of one player utterance as one canonical claim, a clarification request, or unsupported input.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": [
+        "normalized",
+        "needs_clarification",
+        "unsupported"
+      ]
+    },
+    "subject_entity_id": {
+      "description": "Canonical subject ID when status is normalized; otherwise null.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "predicate": {
+      "description": "Supported predicate when status is normalized; otherwise null.",
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "was_at",
+            "moved",
+            "damaged",
+            "is_at",
+            "acted_for"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "object_entity_id": {
+      "description": "Canonical object ID when status is normalized; otherwise null.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "polarity": {
+      "description": "Whether the player asserted or negated the proposition; null unless normalized.",
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "positive",
+            "negative"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "context_key": {
+      "description": "Supplied authored time or situation context when status is normalized; otherwise null.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "alleged_source_actor_id": {
+      "description": "Canonical actor explicitly alleged as the source, or null when no source was stated.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "reason_code": {
+      "description": "Why input needs clarification or is unsupported; null when normalized.",
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "ambiguous_subject",
+            "ambiguous_object",
+            "ambiguous_predicate",
+            "ambiguous_polarity",
+            "ambiguous_context",
+            "ambiguous_source",
+            "multiple_propositions",
+            "unknown_entity",
+            "unsupported_context",
+            "outside_claim_grammar",
+            "no_proposition"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "status",
+    "subject_entity_id",
+    "predicate",
+    "object_entity_id",
+    "polarity",
+    "context_key",
+    "alleged_source_actor_id",
+    "reason_code"
+  ]
+}

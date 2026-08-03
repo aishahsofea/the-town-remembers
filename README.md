@@ -167,7 +167,13 @@ All interactions are intended to run live against a pre-seeded mystery.
 - [Authored game content](docs/009-authored-game-content.md) — objective canon,
   versioned seed keys, NPC knowledge and voices, clue graph, access routes,
   promise offers, case-board visibility, fallbacks, confrontation, and endings.
+- [Bedrock prompt and structured-output contracts](docs/010-bedrock-prompt-contracts.md)
+  — versioned normalization, dialogue, ambient-choice, and repair prompts;
+  machine-readable schemas; validators; fallbacks; and evaluation gates.
+- [Interface and interaction design](docs/011-interface-and-interaction-design.md)
+  — screen hierarchy, visual system, claim confirmation, pending-action
+  recovery, time-passes transition, shared case board, and accessibility.
 
-The schema, HTTP API, deterministic rules, and authored content contracts are
-implementation-ready. SQL migrations and local development commands will be
-added with the implementation.
+The schema, HTTP API, deterministic rules, authored content, Bedrock prompt,
+and interface contracts are implementation-ready. SQL migrations and local
+development commands will be added with the implementation.

@@ -1,0 +1,53 @@
+{
+  "description": "Selection of zero, one, or two application-supplied ambient action candidates.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "decision": {
+      "type": "string",
+      "enum": [
+        "select_choices",
+        "do_nothing"
+      ]
+    },
+    "primary_choice_id": {
+      "description": "First supplied choice ID, or null.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "secondary_choice_id": {
+      "description": "Second supplied choice ID, or null.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "selection_reason": {
+      "type": "string",
+      "enum": [
+        "respond_to_new_event",
+        "share_salient_claim",
+        "address_contradiction",
+        "relationship_pressure",
+        "honor_or_protect_promise",
+        "nothing_safe_or_relevant"
+      ]
+    }
+  },
+  "required": [
+    "decision",
+    "primary_choice_id",
+    "secondary_choice_id",
+    "selection_reason"
+  ]
+}

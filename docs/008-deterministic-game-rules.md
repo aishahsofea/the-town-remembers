@@ -516,3 +516,4 @@ required.
 - [HTTP API Contract](006-http-api-contract.md)
 - [MVP Reliability Parameters](007-mvp-reliability-parameters.md)
 - [Decision 009: Authored Game Content](009-authored-game-content.md)
+- [Decision 010: Bedrock Prompt and Structured-Output Contracts](010-bedrock-prompt-contracts.md)

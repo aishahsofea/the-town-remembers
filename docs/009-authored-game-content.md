@@ -767,3 +767,5 @@ Those additions require a later product decision and a new content version.
 - [HTTP API Contract](006-http-api-contract.md)
 - [MVP Reliability Parameters](007-mvp-reliability-parameters.md)
 - [Decision 008: Deterministic Game Rules](008-deterministic-game-rules.md)
+- [Decision 010: Bedrock Prompt and Structured-Output Contracts](010-bedrock-prompt-contracts.md)
+- [Decision 011: Interface and Interaction Design](011-interface-and-interaction-design.md)

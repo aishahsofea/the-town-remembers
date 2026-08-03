@@ -77,7 +77,8 @@ flowchart LR
     Tick --> State
     Tick --> Memory
 
-    EventBridge["EventBridge schedule"] -->|"invoke"| Recovery["Recovery Lambda"]
+    EventBridge["EventBridge schedules"] -->|"invoke"| Recovery["Recovery Lambda"]
+    EventBridge -->|"warm structured-output schemas"| Game
     Recovery -->|"find pending or stale sends"| Outbox
     Recovery -->|"clear expired join-secret hashes"| State
     Recovery -->|"republish with stored key"| Queue
@@ -130,7 +131,6 @@ Lambda is temporary. A Lambda invocation starts, does this work, and ends. It ne
 Use Haiku for small, structured tasks:
 
 - Normalize a natural-language claim.
-- Classify player intent.
 - Choose a bounded ambient action.
 - Repair one invalid structured response.
 
@@ -169,6 +169,10 @@ Models may not:
 The application validates every model result before saving it.
 
 Responses are not streamed. The full response is generated, checked, saved, and then shown to the player.
+
+Exact prompt versions, Bedrock output schemas, semantic validators, repair
+rules, and evaluation gates are defined in
+[Decision 010: Bedrock Prompt and Structured-Output Contracts](010-bedrock-prompt-contracts.md).
 
 ## Player action flow
 
@@ -543,6 +547,7 @@ Deployment is run from the developer's laptop.
 5. Add the runtime database credential, judge code, and application security
    key to Secrets Manager. Keep migration administration local and inspection
    access inside the CockroachDB managed connection.
+6. Run `pnpm prompts:prewarm` for every configured model/schema pair.
 
 ### Before submission
 
@@ -551,6 +556,7 @@ pnpm test
 pnpm cdk:deploy
 pnpm db:migrate
 pnpm db:seed-demo
+pnpm prompts:prewarm
 pnpm smoke-test
 ```
 
@@ -649,6 +655,7 @@ All shown actions are live. The mystery data is pre-seeded for reliability.
 - [MVP Reliability Parameters](007-mvp-reliability-parameters.md)
 - [Decision 008: Deterministic Game Rules](008-deterministic-game-rules.md)
 - [Decision 009: Authored Game Content](009-authored-game-content.md)
+- [Decision 010: Bedrock Prompt and Structured-Output Contracts](010-bedrock-prompt-contracts.md)
 - [CockroachDB vector indexes](https://www.cockroachlabs.com/docs/stable/vector-indexes)
 - [CockroachDB Cloud Managed MCP Server](https://www.cockroachlabs.com/docs/cockroachcloud/connect-to-the-cockroachdb-cloud-mcp-server)
 - [CockroachDB Basic clusters](https://www.cockroachlabs.com/docs/cockroachcloud/plan-your-cluster-basic)

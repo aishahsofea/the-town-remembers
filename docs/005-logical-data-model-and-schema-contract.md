@@ -509,7 +509,7 @@ evidence row, making the result independent of claim-creation order.
 |---|---|
 | Identity | `town_id UUID`, `id UUID`, `player_id UUID`, `visit_id UUID`, `target_npc_id UUID` |
 | Original input | `original_text STRING` |
-| Proposed normalization | `subject_entity_id UUID`, `subject_entity_type STRING`, `predicate STRING`, `object_entity_id UUID`, `object_entity_type STRING`, `polarity STRING`, `context_key STRING`, `normalized_key STRING` |
+| Proposed normalization | `subject_entity_id UUID`, `subject_entity_type STRING`, `predicate STRING`, `object_entity_id UUID`, `object_entity_type STRING`, `polarity STRING`, `context_key STRING`, `normalized_key STRING`, `alleged_source_actor_id UUID NULL` |
 | Lifecycle | `status STRING`, `expires_at TIMESTAMPTZ`, `normalization_action_id UUID`, `confirmed_by_action_id UUID NULL`, `confirmed_claim_id UUID NULL` |
 
 The state machine is `pending -> confirmed`, `pending -> cancelled`, or
@@ -522,6 +522,10 @@ cancelled, or expired draft has no belief or gameplay effect.
 Confirmation is bound to the draft's visit and target NPC. The visit must still
 be active and co-located with that NPC; changing target or editing the text
 requires a new draft and idempotency key.
+
+When present, `alleged_source_actor_id` is a same-town canonical actor explicitly
+named in the original text. Confirmation copies it to the resulting
+transmission; application code never infers it from generated dialogue.
 
 Expiration is enforced by `expires_at` during reads and confirmation; no
 scheduled cleanup is required. A stale pending row may be lazily marked
@@ -963,16 +967,25 @@ workers consider only eligible events inside their assigned sequence range.
 | Column group | Required values |
 |---|---|
 | Causal source | `town_id UUID`, `id UUID`, `player_action_id UUID NULL`, `ambient_job_execution_id UUID NULL`, `world_event_id UUID NULL` |
-| Invocation | `purpose STRING`, `model STRING`, `inference_profile STRING`, `prompt_version STRING` |
+| Invocation | `purpose STRING`, `model STRING`, `inference_profile STRING`, `prompt_version STRING`, `target_prompt_version STRING NULL`, `prompt_sha256 BYTES NULL`, `task_input_version STRING NULL`, `output_schema_version STRING NULL`, `validation_policy_version STRING NULL` |
 | Measures | `input_tokens INT8`, `output_tokens INT8`, `cache_read_tokens INT8`, `cache_write_tokens INT8`, `latency_ms INT8`, `estimated_cost DECIMAL(12,6)` |
 | Result | `outcome STRING`, `validation_error_code STRING NULL`, `created_at TIMESTAMPTZ` |
 
-`purpose` is `claim_normalization`, `intent_classification`,
-`dialogue_rendering`, `ambient_choice`, `structured_repair`, `episode_embedding`,
-or `query_embedding`. At least one causal source is present. `outcome` is
+`purpose` is `claim_normalization`, `dialogue_rendering`, `ambient_choice`,
+`structured_repair`, `episode_embedding`, or `query_embedding`. At least one
+causal source is present. `outcome` is
 `accepted`, `repaired`, `rejected`, `fallback`, `failed`, or `superseded`. One
 action or job may have several runs. `superseded` records valid output discarded
 because a revision retry rebuilt the context.
+
+For generative calls, `prompt_version` is the complete immutable identifier such
+as `npc-dialogue/1.0.0`; the prompt hash, input contract, output schema, and
+semantic validator versions make an accepted or rejected run reproducible
+without storing the prompt or raw model output. Embedding runs use the stable
+non-generative version identifiers defined by their model adapter.
+`target_prompt_version` is present only for `structured_repair` and names the
+generation prompt whose output is being repaired. The hash and contract-version
+fields are required for generative purposes and null for embedding purposes.
 
 Each run is appended in a short telemetry transaction after validation, so a
 later state conflict cannot erase incurred cost or a rejected attempt. It is
@@ -1332,6 +1345,11 @@ The minimum high-risk tests are:
     it.
 31. One player cannot have two processing actions; clearing an expired blocker
     conditionally removes its token before a different action can start.
+32. A normalization draft stores only an explicitly named same-town alleged
+    source, and confirmation copies that exact actor to the transmission.
+33. Every generative `agent_runs` row identifies the immutable prompt, exact
+    prompt hash, input contract, output schema, validator, and resolved model;
+    repair rows also identify their target prompt.
 
 ## Related decisions
 
@@ -1343,3 +1361,4 @@ The minimum high-risk tests are:
 - [MVP Reliability Parameters](007-mvp-reliability-parameters.md)
 - [Decision 008: Deterministic Game Rules](008-deterministic-game-rules.md)
 - [Decision 009: Authored Game Content](009-authored-game-content.md)
+- [Decision 010: Bedrock Prompt and Structured-Output Contracts](010-bedrock-prompt-contracts.md)

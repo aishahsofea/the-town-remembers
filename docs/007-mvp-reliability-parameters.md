@@ -86,6 +86,7 @@ completion.
 | Town revision | Model-backed reload and rerun | At most 1 |
 | Model transport | Retryable throttling/5xx retry | At most 1 |
 | Model validation | Semantic repair | At most 1 |
+| Model schemas | Structured-output warmup | Four model/schema pairs every 20 hours during live judging |
 
 ## Player-action execution
 
@@ -101,6 +102,13 @@ The model client must receive an abort deadline rather than merely relying on
 the Lambda timeout. Dialogue that cannot finish safely uses the authored
 fallback. Claim normalization has no semantic fallback and stores the accepted
 terminal `503 MODEL_UNAVAILABLE_RETRY_ACTION` response.
+
+Bedrock structured-output schemas are stable and prewarmed because first-time
+grammar compilation can exceed the application budget. Deployment and smoke
+testing warm Haiku with normalization, ambient, and dialogue schemas and Sonnet
+with the dialogue schema. During live judging, EventBridge invokes the Game
+Lambda's non-player warmup path every 20 hours. Warmups create no town or
+`agent_runs` rows; CloudWatch records their cost, latency, and failures.
 
 ### Claim and browser recovery
 
@@ -292,3 +300,4 @@ Before deployment, automated tests must prove:
 - [Infrastructure Cost Estimate](004-infrastructure-cost-estimate.md)
 - [Logical Data Model and Schema Contract](005-logical-data-model-and-schema-contract.md)
 - [HTTP API Contract](006-http-api-contract.md)
+- [Decision 010: Bedrock Prompt and Structured-Output Contracts](010-bedrock-prompt-contracts.md)

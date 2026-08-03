@@ -8,7 +8,9 @@
 
 This document is the implementation contract for the MVP HTTP API. The
 [runtime architecture](003-technical-architecture-and-schema.md) owns model and
-queue behavior, while the
+queue behavior, the
+[Bedrock prompt contract](010-bedrock-prompt-contracts.md) owns prompt inputs,
+structured outputs, validation, and repair, while the
 [logical schema contract](005-logical-data-model-and-schema-contract.md) owns
 database identities and invariants. If a transport detail and a database detail
 appear to conflict, they must be reconciled in both documents before either is
@@ -132,6 +134,8 @@ reconstructs that field from the creation key and recorded secret version.
 {
   "townId": "town_123",
   "mysteryTitle": "The Missing Festival Bell",
+  "tagline": "The bell is gone. The town remembers a different story in every mouth.",
+  "description": "Visit a shared town, question its residents, trace its rumours, and discover what happened before the festival begins.",
   "townStatus": "active",
   "joinMode": "play"
 }
@@ -263,6 +267,8 @@ type PublicActor = {
 type LocationView = {
   id: Id;
   displayName: string;
+  description: string;
+  sceneKey: string;
   mapOrder: number;
   access:
     | { state: "open" }
@@ -277,6 +283,9 @@ type InspectableView = {
 
 type EncounterView = {
   npc: PublicActor & { actorType: "npc" };
+  roleLabel: string;
+  portraitKey: string;
+  openingLine: string;
   stance: "suspicious" | "trusting" | "wary" | "neutral";
   availableActionKinds: Array<
     "ask" | "normalize_claim" | "tell" | "show" | "give" |
@@ -350,6 +359,11 @@ type CaseBoardEntryView =
       text: string;
     };
 
+type CaseBoardContradictionView = {
+  firstEntryId: Id;
+  secondEntryId: Id;
+};
+
 type CaseAttemptView = {
   attemptId: Id;
   contributedBy: PublicActor & { actorType: "player" };
@@ -402,6 +416,8 @@ type PlayerView = {
   town: {
     id: Id;
     mysteryTitle: string;
+    contentVersion: string;
+    tagline: string;
     status: "active" | "awaiting_resolution" | "resolved";
   };
   player: {
@@ -422,6 +438,7 @@ type PlayerView = {
   discoveredClues: DiscoveredClueView[];
   activePromises: ActivePromiseView[];
   caseBoard: CaseBoardEntryView[];
+  caseBoardContradictions: CaseBoardContradictionView[];
   caseAttempts: CaseAttemptView[];
   resolution: ResolutionView;
   ambientTransition: null | {
@@ -431,18 +448,24 @@ type PlayerView = {
 };
 ```
 
-The projection contains player-safe display strings resolved from the town's
-frozen content version. Locked-access and accusation messages are generic and
-never enumerate hidden missing evidence. A locked accusation gate contains no
+The projection contains player-safe display strings and presentation keys
+resolved from the town's frozen content version. `sceneKey` and `portraitKey`
+are opaque lookups into that version's bundled illustration manifest, never
+arbitrary URLs. Locked-access and accusation messages are generic and never
+enumerate hidden missing evidence. A locked accusation gate contains no
 candidate IDs or labels. An open gate contains only the frozen content
 version's authored suspect, motive, and location options. `currentLocation` is null while away;
 `encounters` contains only enabled NPCs at the current location.
 `discoveredClues` contains the town-wide verified clues this player may submit
 through `show`; the original discoverer retains contribution credit. The board
 and attempt history are shared contributions, subject to their spoiler-safe
-projections. Resolution
-`canResolve` applies the owner/expiry/prior-participant rule in this contract and
-does not require a currently active visit. For an ambient transition,
+projections. A contradiction pair is returned only when both referenced claim
+entries are visible on this board. Each pair puts the lexically smaller entry
+ID first; it means that the accounts conflict, never that either is objectively
+false.
+
+Resolution `canResolve` applies the owner/expiry/prior-participant rule in this
+contract and does not require a currently active visit. For an ambient transition,
 `canStartVisit` is false for `waiting` and `processing` and true for `complete`;
 when the transition is null, an away player may start only while the town is
 `active`.
@@ -455,6 +478,8 @@ Projection builders apply these stable orders before hashing or returning JSON:
 - `availableActionKinds`: the enum order shown in its type;
 - `activePromises`: `(acceptedAt, promiseId)`;
 - `caseBoard`: `(createdAt, entryId)`;
+- each `caseBoardContradictions` pair: lexical entry ID, with the array ordered
+  by `(firstEntryId, secondEntryId)`;
 - `caseAttempts`: `(createdAt, attemptId)`;
 - open accusation `suspects`, `motives`, and `locations`: the frozen authored
   order for their content version, then ID as a defensive tie-breaker;
@@ -1082,4 +1107,6 @@ The API test suite must prove:
 - [MVP Reliability Parameters](007-mvp-reliability-parameters.md)
 - [Decision 008: Deterministic Game Rules](008-deterministic-game-rules.md)
 - [Decision 009: Authored Game Content](009-authored-game-content.md)
+- [Decision 010: Bedrock Prompt and Structured-Output Contracts](010-bedrock-prompt-contracts.md)
+- [Decision 011: Interface and Interaction Design](011-interface-and-interaction-design.md)
 - [AWS API Gateway v2 integration timeout](https://docs.aws.amazon.com/cli/latest/reference/apigatewayv2/create-integration.html)

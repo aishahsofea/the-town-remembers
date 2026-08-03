@@ -41,6 +41,7 @@ flowchart LR
     Queue["Amazon SQS FIFO"]
     Tick["Ambient Tick Lambda"]
     Recovery["EventBridge +<br/>Recovery Lambda"]
+    Warmup["EventBridge<br/>prompt warmup"]
     MCP["Managed MCP<br/>read-only inspection"]
 
     Browser --> CloudFront
@@ -58,6 +59,7 @@ flowchart LR
     Tick --> Database
     Recovery --> Database
     Recovery --> Queue
+    Warmup --> Game
     MCP --> Database
 ```
 
@@ -80,6 +82,7 @@ CockroachDB is the durable source for both current state and causal history.
 | Bedrock models | Interpret bounded input, embed text, and render approved dialogue | Access the database or mutate state |
 | SQS FIFO | Delay, order per-town work, redeliver, and buffer ambient jobs | Guarantee exactly-once effects without the database ledger |
 | EventBridge + Recovery Lambda | Find committed outbox jobs whose delivery is pending or uncertain, and clear expired join-replay secrets | Re-run completed jobs, recover a player identity, or generate replacement keys |
+| EventBridge prompt warmup | Keep stable Bedrock structured-output grammars compiled during live judging | Create town state or weaken a task fallback |
 | Managed MCP | Expose authenticated read-only inspection views | Participate in player requests or mutate state |
 
 ## Information boundaries
@@ -438,10 +441,14 @@ override secrecy, trust, promise, cover-story, or claim-disclosure rules.
 |---|---|---|
 | Titan Text Embeddings V2 | Embed episodes once and embed retrieval queries | Episode vectors are stored; query vectors normally are not |
 | Claude Sonnet 4.6 | Render short player-facing dialogue from approved information | Output is stored only after validation |
-| Claude Haiku 4.5 | Normalize claims, classify unclear intent, select a bounded ambient action, or attempt one structured repair | Structured output is stored only after application validation |
+| Claude Haiku 4.5 | Normalize claims, select a bounded ambient action, or attempt one structured repair | Structured output is stored only after application validation |
 
 For an explicit `Ask`, Titan and Sonnet are part of the normal path. Haiku is
 conditional unless separate semantic validation requires it.
+
+The exact system prompts, output schemas, cross-field validators, and prompt
+evaluation gates are defined in
+[Decision 010: Bedrock Prompt and Structured-Output Contracts](010-bedrock-prompt-contracts.md).
 
 ## Logical schema contract
 
@@ -500,3 +507,4 @@ understand how requests, models, queues, and transactions interact.
 - [MVP Reliability Parameters](007-mvp-reliability-parameters.md)
 - [Decision 008: Deterministic Game Rules](008-deterministic-game-rules.md)
 - [Decision 009: Authored Game Content](009-authored-game-content.md)
+- [Decision 010: Bedrock Prompt and Structured-Output Contracts](010-bedrock-prompt-contracts.md)

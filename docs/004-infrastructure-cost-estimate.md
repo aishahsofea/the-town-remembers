@@ -40,6 +40,7 @@ The repository currently contains accepted architecture and logical-schema decis
 | Haiku mechanics | 5 calls/visit | 600 input and 80 output tokens per call, including ambient work |
 | Titan embeddings | 1,200 input tokens/visit | Query plus newly stored episode embeddings; 256 dimensions |
 | Repair/retry reserve | +10% model cost | Covers bounded repair attempts and occasional retries |
+| Structured-output grammar warmup | 4 minimal model/schema calls every 20 hours during live judging | Included inside the 10% model reserve |
 | Lambda | ~77,000 invocations; ~20K GB-s | Actions, conditional views, Ambient, and Recovery every minute for outbox repair plus expired join-secret cleanup |
 | Observability | 0.25 GB logs/month | Short retention; standard service metrics only |
 | CockroachDB | 1.25M RU; 0.25 GiB | Directional until vector queries and migrations are benchmarked |

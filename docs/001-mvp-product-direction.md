@@ -344,3 +344,7 @@ in the [HTTP API Contract](006-http-api-contract.md).
 The complete mystery canon, seed state, NPC voices, clue graph, access routes,
 promise offers, case-board visibility, and endings are recorded in
 [Decision 009: Authored Game Content](009-authored-game-content.md).
+
+The screen hierarchy, claim confirmation, pending-action recovery, time-passes
+transition, case board, and accessibility behavior are recorded in
+[Decision 011: Interface and Interaction Design](011-interface-and-interaction-design.md).
