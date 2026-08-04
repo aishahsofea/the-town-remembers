@@ -174,6 +174,9 @@ All interactions are intended to run live against a pre-seeded mystery.
 - [Interface and interaction design](docs/011-interface-and-interaction-design.md)
   — screen hierarchy, visual system, claim confirmation, pending-action
   recovery, time-passes transition, shared case board, and accessibility.
+- [Phased MVP implementation plan](implementation-plans/README.md) —
+  implementation sequence, dependencies, outcomes, and phase exit gates from
+  engineering foundation through demo readiness.
 
 The schema, HTTP API, deterministic rules, authored content, Bedrock prompt,
 and interface contracts are implementation-ready. SQL migrations and local
