@@ -1,5 +1,5 @@
 {
-  "description": "One short NPC utterance plus an auditable declaration of the approved information it expresses or references.",
+  "description": "Selection of one or more exact application-supplied NPC renderings.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
@@ -14,34 +14,9 @@
         "react"
       ]
     },
-    "utterance": {
-      "type": "string",
-      "description": "Player-visible in-character dialogue without IDs, stage directions, or metadata."
-    },
-    "expressed_disclosure_ids": {
+    "rendering_ids": {
       "type": "array",
-      "description": "Ordered IDs of application-approved disclosure records expressed in the utterance; each record fixes claim, stance, and provenance.",
-      "items": {
-        "type": "string"
-      }
-    },
-    "referenced_episode_ids": {
-      "type": "array",
-      "description": "Approved NPC episodes materially used in the utterance.",
-      "items": {
-        "type": "string"
-      }
-    },
-    "referenced_entity_ids": {
-      "type": "array",
-      "description": "Every canonical character, location, item, or motive named in the utterance.",
-      "items": {
-        "type": "string"
-      }
-    },
-    "referenced_actor_ids": {
-      "type": "array",
-      "description": "Every approved player or NPC actor explicitly named as a speaker, listener, or source in the utterance.",
+      "description": "Ordered distinct IDs of exact application-supplied rendering records. Application code concatenates their immutable text and derives all disclosure, outcome, episode, entity, and actor grounding from those records.",
       "items": {
         "type": "string"
       }
@@ -49,10 +24,6 @@
   },
   "required": [
     "response_kind",
-    "utterance",
-    "expressed_disclosure_ids",
-    "referenced_episode_ids",
-    "referenced_entity_ids",
-    "referenced_actor_ids"
+    "rendering_ids"
   ]
 }

@@ -121,7 +121,8 @@ read-only client operation unless a button explicitly names a game action.
 
 | Route | Screen | Availability |
 |---|---|---|
-| `/join/:inviteToken` | Invite and join | Until town retirement |
+| `/join/:inviteToken` | Invite bootstrap | Initial capability navigation only |
+| `/join` | Invite and join | Current tab after bootstrap; refresh requires reopening the invite until authenticated |
 | `/town/:townId/map` | Town map | Active visit; readable while frozen |
 | `/town/:townId/location/:locationId` | Location scene | Active visit at that location |
 | `/town/:townId/encounter/:npcId` | NPC encounter | Active, co-located visit |
@@ -129,10 +130,15 @@ read-only client operation unless a button explicitly names a game action.
 | `/town/:townId/between-visits` | Time passes / away | After leaving |
 | `/town/:townId/resolution` | Final choice or epilogue | Awaiting choice or resolved |
 
-After a successful join, `history.replaceState` removes the invite token from
-the address bar and opens the town route. The current `player-view` is the
-router guard: a stale encounter URL redirects to the current location, an away
-player redirects to between-visits, and a resolved town redirects to the
+Invite bootstrap copies the route token into page memory and immediately uses
+`history.replaceState` to show tokenless `/join` before preview or
+authentication requests begin. The token remains only in that current tab until
+an existing cookie authenticates, first-time join succeeds, or the page closes.
+Refreshing `/join` before authentication shows `Reopen the invite link to
+continue`; it never tries to recover the capability from storage. After
+authentication, navigation opens the town route. The current `player-view` is
+the router guard: a stale encounter URL redirects to the current location, an
+away player redirects to between-visits, and a resolved town redirects to the
 epilogue.
 
 ```mermaid
@@ -304,9 +310,13 @@ The scene contains:
 
 An inspect result replaces the selected inspectable's action area with a result
 card. A new clue uses the verified-evidence treatment and contribution credit.
-An item reveal uses the inventory treatment. `Already known` says
-`The town has already recorded what matters here` without manufacturing a new
-discovery.
+An item reveal uses inventory treatment only when `custody.kind` is
+`player_inventory`; a location-held reveal states where the object remains and
+does not appear in the Satchel. `new_to_player` says
+`The town already knew this evidence; your examination was added to its history.`
+`already_discovered_by_player` says
+`You have already recorded what matters here` without manufacturing a new
+discovery row.
 
 The result is rendered only from the completed action response. The following
 player-view refresh may add the shared board card and update inventory.
@@ -417,7 +427,7 @@ A valid draft opens this confirmation sheet:
 |                                                          |
 | THE TOWN WILL REMEMBER                                   |
 | The festival bell is at Reed's Garden.                   |
-| Source named: You                                        |
+| Recorded source: You                                     |
 |                                                          |
 | Tell Nessa · Interpretation expires in 09:42             |
 | This may change beliefs and may be repeated by others.   |
@@ -430,8 +440,10 @@ Rules:
 
 - The raw text and canonical sentence receive equal visual weight; the
   canonical sentence is never hidden behind an expandable detail.
-- `Source named` appears only when present. It says `You` for an original
-  assertion.
+- Source attribution always appears. It says `Recorded source: You` for an
+  original assertion and `Alleged source: {name}` when the normalizer returned
+  `allegedSource`. The latter is an attribution, not proof that the named actor
+  actually spoke.
 - The target NPC is repeated beside the primary button.
 - `Edit statement` discards the draft from the current client flow and returns
   the raw text to the composer. The server draft may remain harmlessly pending
@@ -646,7 +658,10 @@ and show `3 new contributions · Jump to newest`.
 
 - Gold seal icon and explicit label `Verified physical evidence`.
 - Exact authored clue title and description.
-- `Found by {player}` and absolute local date/time in accessible metadata.
+- `Found by {player}` for the first contributor and absolute local date/time in
+  accessible metadata. When later players also examined it, an expandable
+  `Also examined by` list follows the API's contributor order without changing
+  first-finder credit.
 - Never labels a suspect, claim, or motive true unless the clue copy itself
   states an observed fact.
 
@@ -806,7 +821,9 @@ When a changed projection arrives:
 | Illustration manifest | Versioned web bundle | Build artifact |
 
 Never put session cookies, invite tokens, join-attempt secrets, model prompts,
-exact scores, hidden entity IDs, or raw database rows in client state or logs.
+exact scores, hidden entity IDs, or raw database rows in persistent client state
+or logs. The invite page may hold its route token in ephemeral memory only until
+authentication or join succeeds.
 
 ## Required player-view presentation fields
 
@@ -833,8 +850,8 @@ the necessary identity.
 
 - Every board entry union renders the correct label, attribution, and source
   path without implying objective truth.
-- Claim confirmation always displays raw and canonical text, target NPC, source
-  when present, expiry, and the warning before Tell can be sent.
+- Claim confirmation always displays raw and canonical text, target NPC,
+  recorded or alleged source, expiry, and the warning before Tell can be sent.
 - Pending mutation state disables every mutation entry point while leaving
   Board, Map, Satchel, and prior results readable.
 - Focus, keyboard order, dialog behavior, live regions, reduced motion, and
@@ -842,6 +859,9 @@ the necessary identity.
 
 ### Recovery tests
 
+- Invite bootstrap replaces the capability URL with `/join` before the first
+  fetch; a pre-authentication refresh cannot recover the token and shows the
+  reopen-invite message.
 - A lost POST response reloads the journal and recovers through the status URL.
 - A 35-second takeover resends the identical body and key once.
 - A 70-second timeout exposes only same-key manual retry.

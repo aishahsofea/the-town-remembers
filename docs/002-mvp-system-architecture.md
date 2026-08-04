@@ -12,7 +12,7 @@ This document explains how the MVP works.
 
 The short version is:
 
-> Lambda runs the work. Bedrock provides language. CockroachDB remembers. SQS waits and retries.
+> Lambda runs the work. Bedrock selects the voice. CockroachDB remembers. SQS waits and retries.
 
 The system is small on purpose. One developer must be able to build it in ten days and keep it online through judging.
 
@@ -30,6 +30,7 @@ It uses two required CockroachDB tools:
    - Runs inside CockroachDB. There is no separate vector database.
 
 2. **CockroachDB Cloud Managed MCP Server**
+   - Uses the Cloud Console configuration for `https://cockroachlabs.cloud/mcp`.
    - Gives judges a read-only inspection path.
    - Shows beliefs, evidence, provenance, promises, relationships, and agent runs.
    - Does not take part in normal player requests.
@@ -138,9 +139,9 @@ Use Haiku for small, structured tasks:
 
 Use Sonnet for player-facing dialogue:
 
-- Speak in the NPC's voice.
-- Express doubt, trust, fear, or suspicion.
-- Mention only approved memories and claims.
+- Select and order exact application-supplied voiced renderings.
+- Prefer renderings that fit the NPC's voice and current relationship stance.
+- Cover only approved memories, claims, and deterministic outcomes.
 
 ### Titan Text Embeddings V2
 
@@ -156,7 +157,7 @@ Models may:
 
 - Interpret language.
 - Select from allowed choices.
-- Render short dialogue.
+- Select short dialogue from approved renderings.
 
 Models may not:
 
@@ -168,7 +169,8 @@ Models may not:
 
 The application validates every model result before saving it.
 
-Responses are not streamed. The full response is generated, checked, saved, and then shown to the player.
+Responses are not streamed. The full response is assembled from selected
+renderings, checked, saved, and then shown to the player.
 
 Exact prompt versions, Bedrock output schemas, semantic validators, repair
 rules, and evaluation gates are defined in
@@ -189,7 +191,7 @@ sequenceDiagram
     L->>B: Normalize intent or claim
     L->>C: Search relevant vector memories
     L->>L: Apply deterministic rules
-    L->>B: Render approved dialogue
+    L->>B: Select approved dialogue renderings
     L->>L: Validate result
     L->>C: Save effects and response together
     L-->>P: Return complete response
@@ -295,7 +297,7 @@ operational retry state.
 - `story_entities`
 - `actors`, `players`, and `npcs`
 - `npc_contact_edges`
-- `inspectables` and `clues`
+- `inspectables`, `clues`, and `clue_claim_effects`
 - `world_facts` and `case_solutions`
 
 These tables answer: “What entities and authored rules exist in this version of
@@ -365,7 +367,7 @@ Vector similarity only finds candidates. Application code reranks them using:
 - Open promises or grievances
 - Contradictions
 
-Usually, only six to ten memories enter a prompt.
+Exactly the top eight authorized memories enter a prompt, or every authorized memory when fewer than eight exist.
 
 ## Beliefs and provenance
 
@@ -430,7 +432,7 @@ These views make the system explainable without granting write access.
   unique database constraints, processing claims, and atomic completion.
 - Apply the concrete timeouts, retry bounds, FIFO settings, and recovery limits
   in [MVP Reliability Parameters](007-mvp-reliability-parameters.md).
-- Validate all model output.
+- Validate all model output and derive dialogue grounding only from selected, application-supplied renderings.
 - Retry one invalid model result.
 - Use an authored fallback if the retry fails.
 - If an Ask query embedding fails, retrieve only already-authorized recent or
@@ -491,8 +493,9 @@ Required controls:
 - Cap Lambda concurrency.
 - Rate-limit API and access-code attempts.
 - Send `Referrer-Policy: no-referrer`, load no third-party resources on invite
-  pages, and remove invite capabilities from browser history after invite
-  resolution.
+  pages, copy the route token into ephemeral page memory during bootstrap, and
+  immediately replace the current history entry with tokenless `/join` before
+  preview or authentication requests begin.
 - Disable CloudFront and S3 access logs that would record raw invite paths. Keep
   only a custom API Gateway access log with request ID, route template, status,
   and latency.
@@ -528,7 +531,7 @@ AWS billing alerts can be delayed. The internal ledger is the immediate control.
 Other controls:
 
 - Keep prompts short.
-- Retrieve at most ten memories.
+- Retrieve at most eight memories into a prompt.
 - Keep dialogue short.
 - Embed each episode once.
 - Apply per-player and per-town model-action limits.

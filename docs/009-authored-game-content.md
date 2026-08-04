@@ -29,7 +29,7 @@ behavior. This document supplies the authored values those contracts require.
 ## Content principles
 
 - The mystery is solvable from verified evidence and deterministic gates. A
-  generated line of dialogue is never the only route to a required fact.
+  model-selected line of dialogue is never the only route to a required fact.
 - Social play makes the route shorter and more expressive, but a model failure
   cannot make the town unsolvable.
 - Every NPC has a partial perspective. Only Corin begins with the complete
@@ -154,8 +154,10 @@ presence is not evidence that any of them is true.
 | `nessas_field_lens` | Nessa's Field Lens | Festival Square, hidden | Yes | Optional requested item that builds trust with Nessa |
 | `guard_dispatch_seal` | Guard Dispatch Seal | Reed's Garden, hidden | Yes | Optional requested item that builds trust with Corin |
 
-The bell remains at the Old Chapel when revealed. Discovering it sets
-`items.revealed_event_id`; it does not put the heavy bell in player inventory.
+The bell remains at the Old Chapel when revealed and until the town resolves.
+Discovering it sets `items.revealed_event_id`; it does not put the heavy bell in
+player inventory. Either ending later relocates it to Festival Square as one
+authored resolution consequence.
 The key, lens, and seal use ordinary conditional item transfers.
 
 ## Stable claim catalog
@@ -164,7 +166,7 @@ The seed creates these claims because they participate in canon, initial
 knowledge, authored disclosure, physical evidence, or the repeatable demo.
 Players may create other valid claims through the accepted bounded grammar.
 
-| Claim key | Canonical sentence | Context | Objectively true | Initial role |
+| Claim key | Canonical sentence | Context | Objectively true at seed | Initial role |
 |---|---|---|---|---|
 | `bell_not_at_square` | At dawn, the Festival Bell was not at Festival Square. | `festival_morning` | Yes | Public premise |
 | `lark_was_at_square` | Lark Venn was at Festival Square. | `festival_night` | Yes | Discoverable history |
@@ -173,6 +175,7 @@ Players may create other valid claims through the accepted bounded grammar.
 | `corin_moved_bell` | Corin Hale moved the Festival Bell. | `festival_night` | Yes | Hidden core fact |
 | `corin_was_at_chapel` | Corin Hale was at the Old Chapel. | `festival_night` | Yes | Guarded observation |
 | `bell_at_chapel` | The Festival Bell was at the Old Chapel on festival night. | `festival_night` | Yes | Hidden location during the disappearance |
+| `bell_at_chapel_current` | The Festival Bell is currently at the Old Chapel. | `current` | Yes | Mutable current-state anchor |
 | `corin_protected_lark` | Corin Hale acted to protect Lark Venn. | `festival_night` | Yes | Hidden motive |
 | `corin_acted_for_safety` | Corin Hale acted to prevent a public accident. | `festival_night` | No | Corin's cover story and Nessa's initial interpretation |
 | `bell_at_reeds_garden` | The Festival Bell was at Reed's Garden on festival night. | `festival_night` | No | Repeatable demo rumour |
@@ -187,6 +190,9 @@ Seeded `claim_relations` include:
 - `bell_at_chapel` contradicts `bell_at_reeds_garden`.
 - `bell_at_chapel` contradicts positive festival-night location claims for the
   bell at another authored location.
+- `bell_at_chapel_current` contradicts positive `current` bell-location claims
+  at every other authored location. Newly normalized current-location claims
+  receive the same deterministic mutually-exclusive relations.
 - `bell_not_at_square` contradicts a positive Festival Square claim with the
   same `festival_morning` context.
 
@@ -199,7 +205,10 @@ The objective `world_facts` visibility is exact:
 | `hidden` | None; the private answer tuple remains in `case_solutions` |
 
 Discoverable facts become player-visible only through the clues and disclosures
-below. The `world_facts` table is never sent wholesale to a model or player.
+below. `bell_at_chapel_current` is deliberately absent: mutable location truth
+comes from the `items` row, while the claim is only its seed-time conversational
+projection. The `world_facts` table is never sent wholesale to a model or
+player.
 
 ## Starting NPC state
 
@@ -238,7 +247,7 @@ episode IDs.
 | `mara_met_corin_at_inn` | Mara | `direct_observation` | 90 | Mara saw Corin enter The Lantern Inn after the accident. References Corin, inn, and `corin_was_at_inn`. |
 | `mara_heard_corins_offer` | Mara | `heard_claim` | 90 | Corin told Mara he would keep Lark out of the public blame. References Corin, Lark, and `corin_protected_lark`. |
 | `corin_saw_the_accident` | Corin | `direct_observation` | 95 | Corin saw the bell strike its frame while Lark worked, then inspected the fresh crack. References Lark, bell, square, and `lark_damaged_bell`. |
-| `corin_moved_the_bell` | Corin | `direct_observation` | 100 | Corin loaded the bell onto the guard handcart and hid it under oilcloth in the Old Chapel. References Corin, bell, chapel, `corin_moved_bell`, and `bell_at_chapel`. |
+| `corin_moved_the_bell` | Corin | `direct_observation` | 100 | Corin loaded the bell onto the guard handcart and hid it under oilcloth in the Old Chapel. References Corin, bell, chapel, `corin_moved_bell`, `bell_at_chapel`, and `bell_at_chapel_current`. |
 | `corin_chose_to_protect_lark` | Corin | `direct_observation` | 100 | Corin decided to conceal the damage until he could protect Lark from public blame. References Corin, Lark, `protect_lark`, and `corin_protected_lark`. |
 | `nessa_saw_corins_cart` | Nessa | `direct_observation` | 95 | Nessa saw Corin take the covered guard cart through the chapel gate but could not see its load. References Corin, chapel, and `corin_was_at_chapel`. |
 | `nessa_heard_safety_story` | Nessa | `heard_claim` | 80 | Corin said he needed the chapel opened to prevent a public accident. References Corin, `public_safety`, and `corin_acted_for_safety`. |
@@ -253,6 +262,13 @@ The two pre-story transmissions are:
   conversation predates the game and does not create a current Nessa–Corin
   contact edge. Nessa begins `leaning` toward the false safety explanation.
 
+Every seeded `direct_observation` episode and its evidence cite a distinct
+`system_seed` `authored_observation` event; the three `empty_frame_seen`
+episodes therefore use three events. Each pre-story communication uses one
+`system_seed` `claim_transmitted` event shared by its transmission, the
+recipient's `heard_claim` episode, and the resulting testimony evidence. Seed
+events have no player-action or ambient-job origin.
+
 Direct observations contribute +80. Therefore:
 
 - Mara is `convinced` that Lark damaged the bell, `leaning` that Corin meant to
@@ -266,11 +282,14 @@ Direct observations contribute +80. Therefore:
 
 ## NPC content
 
-All ordinary NPC responses use one to three short sentences, no more than 80
-words, and no Markdown. They address the present player, distinguish observed
-facts from testimony, and express only claim and entity IDs in the approved
-bundle. Voice instructions may change phrasing but never disclosure tiers,
-belief stance, gate results, promise terms, or objective state.
+All ordinary NPC responses use one to three exact rendering records, producing
+one to three short sentences, no more than 80 words, and no Markdown. Versioned
+authored templates generate safe voiced alternatives from canonical claim text
+and deterministic outcomes. Sonnet selects and orders those records; it never
+writes player-visible prose. Renderings address the present player, distinguish
+observed facts from testimony, and carry only grounding IDs in the approved
+bundle. Voice tags may change which rendering is selected but never disclosure
+tiers, belief stance, gate results, promise terms, or objective state.
 
 ### Mara Venn
 
@@ -361,13 +380,15 @@ result, discovered-clue list, and verified-evidence case-board entry.
 | `inn_guest_ledger` | The Lantern Inn | Inn Guest Ledger | `larks_late_entry` | No | **Lark's Late Entry** — `Mara's ledger records Lark returning from bell practice minutes before Corin arrived at the inn.` | Supports `lark_was_at_square` +70 |
 | `chapel_lane_hedge` | Reed's Garden | Thorn Hedge by the Chapel Lane | `red_seal_on_thorn` | No | **Red Wax on the Thorn** — `A shred of guard-red sealing wax is caught at cart height on the hedge beside the chapel lane.` | Supports `corin_was_at_chapel` +70; also reveals `guard_dispatch_seal` |
 | `chapel_threshold` | Old Chapel | Chapel Threshold | `guard_axle_grease` | No | **Guard Axle Grease** — `Fresh black grease at the threshold matches the distinctive resin used on the town guard's handcart.` | Supports `corin_moved_bell` +70 |
-| `shrouded_shape` | Old Chapel | Shrouded Shape | `cracked_festival_bell` | No | **The Missing Bell, Found** — `The festival bell rests beneath guard oilcloth inside the chapel. Its rim is freshly cracked and its clapper pin is missing.` | Supports `bell_at_chapel` +70 and contradicts current bell-location claims elsewhere -70; reveals `festival_bell` without transferring it |
+| `shrouded_shape` | Old Chapel | Shrouded Shape | `cracked_festival_bell` | No | **The Missing Bell, Found** — `The festival bell rests beneath guard oilcloth inside the chapel. Its rim is freshly cracked and its clapper pin is missing.` | Supports `bell_at_chapel` +70 and `bell_at_chapel_current` +70; the latter mirrors -70 to other current bell-location claims; reveals `festival_bell` without transferring it |
 
 The three required clues establish damage, mover, and motive. Revealing the bell
-establishes location. No required clue depends on generated dialogue.
+establishes location. No required clue depends on model-selected dialogue.
 
-Repeated inspection may add a personal `clue_discoveries` row for contribution
-credit but never duplicates the shared verified-evidence board entry.
+A different player's later inspection adds that player's one
+`clue_discoveries` row for contribution credit but never duplicates the shared
+verified-evidence board entry. Repeating an inspection by the same player adds
+nothing.
 
 ## Relationship effects and social gates
 
@@ -597,12 +618,12 @@ orders; the locked projection returns none of their IDs or labels.
 
 When asked after the gate, Corin's authored fallback confession is:
 
-> Lark damaged the bell by accident. I moved it to the Old Chapel before the
-> council could see it, because I meant to protect her. I told myself I was
+> Lark damaged the bell by accident, and I moved it to the Old Chapel before
+> the council could see it because I meant to protect her. I told myself I was
 > preserving order. I was hiding the truth.
 
-The generated version may vary in voice but must express only the four approved
-final-truth claims and must not change the solution.
+The selected version may vary among authored voiced renderings but must cover
+only the four approved final-truth disclosures and cannot change the solution.
 
 An incorrect theory remains visible in contribution history and does not close
 the town. The correct tuple opens the accepted ten-minute resolution
@@ -613,6 +634,12 @@ reservation and freezes gameplay.
 Post-resolution content may reveal the complete objective timeline. The
 epilogue is deterministic authored text with named contribution fragments; it
 is not model-generated.
+
+Both ending choices use the same atomic resolution rule: conditionally move
+`festival_bell` from the Old Chapel to Festival Square, append one
+`item_relocated` event, resolve promises and relationships, store the ending,
+and mark the town `resolved`. A stale or losing resolver cannot move the item a
+second time.
 
 ### Expose the cover-up
 
@@ -662,10 +689,19 @@ If one player owns several contributions, their name may repeat; the history is
 an audit, not an awards ranking. Zero-count rumour and promise fragments are
 omitted. Display names are inserted as escaped plain text.
 
+The rumour `{count}` is the number of distinct claim keys in the versioned
+`ending_false_claim_keys` set that received at least one NPC-to-NPC
+`claim_transmitted` event with `origin_kind = ambient_job` before the winning
+`case_resolved` event. For `bell-mystery-v1`, that set is exactly
+`corin_acted_for_safety`, `bell_at_reeds_garden`, and
+`lark_did_not_damage_bell`. Multiple hops of one claim count once. Seeded
+pre-story communication, player-to-NPC testimony, dynamic unclassified claims,
+and transmissions at or after resolution do not count.
+
 ## Authored fallback dialogue
 
 These lines are safe terminal fallbacks. They contain no hidden structured
-claim and may be selected by NPC and interaction kind when generation or repair
+claim and may be selected by NPC and interaction kind when selection or repair
 cannot finish.
 
 | NPC | Ask | Tell | Show | Give or promise |
@@ -685,9 +721,23 @@ Authored gameplay denials use these stable lines where applicable:
 | Promise offer became stale | `The circumstances have changed; I cannot ask that promise of you now.` |
 | Town frozen for resolution | `The evidence is assembled. Nothing more changes until the town chooses.` |
 
-Fallback selection still respects the current NPC, action, gate result, and
-visibility bundle. A fallback line never substitutes for claim normalization;
-normalization uses the accepted terminal dependency error.
+Successful mechanical outcomes use exact outcome-specific fallbacks rather
+than a generic line:
+
+| Outcome | Player-safe line |
+|---|---|
+| NPC received an item | `I have it now.` |
+| Nessa lent the chapel key under the return promise | `Take the chapel key. Bring it back when the inquiry is settled.` |
+| Corin granted chapel access | `You have shown enough. The chapel is open to you.` |
+| Keep-secret promise accepted | `Your promise is recorded.` |
+
+Fallback lookup is keyed by NPC, action, response kind, gate result, and
+required mechanical outcome. It must cover every required outcome and may
+never contradict committed custody, access, capability, or promise state. A
+generic fallback may omit an optional nonmechanical disclosure; Corin's exact
+confession is the fallback when all four final-truth disclosures are required.
+A fallback line never substitutes for claim normalization; normalization uses
+the accepted terminal dependency error.
 
 ## Demo script
 
@@ -727,7 +777,7 @@ The seed and rule tests must prove:
 3. Mara's starting context contains no chapel location; Nessa's contains no
    knowledge of the cart's load; Corin alone has the complete truth.
 4. The three required clues and bell reveal are sufficient for the evidence
-   gate and no generated dialogue is required.
+   gate and no model-selected dialogue is required.
 5. Each clue effect targets a seeded claim or a valid deterministic
    current-location contradiction.
 6. Nessa's key and Corin's authorization independently permit chapel entry.
@@ -738,9 +788,14 @@ The seed and rule tests must prove:
    later cart evidence reverses it through append-only evidence.
 10. Every fallback line validates without hidden claims or unapproved entity
     references.
-11. Both endings resolve active promises and produce deterministic escaped
+11. The bell reveal supports both the historical and current chapel claims;
+    the `items` row remains authoritative and both endings relocate it exactly
+    once.
+12. The ending rumour count includes distinct authored-false claims propagated
+    by ambient NPC-to-NPC events only.
+13. Both endings resolve active promises and produce deterministic escaped
     epilogues.
-12. A fresh-town playthrough and the two-browser demo both complete within the
+14. A fresh-town playthrough and the two-browser demo both complete within the
     agreed scope and action limits.
 
 ## Deferred content

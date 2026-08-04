@@ -30,7 +30,7 @@ actually true.
    shows judges exactly why it formed and why it changed.
 
 This is not an unrestricted chatbot. It is a deterministic mystery simulation
-with a controlled language-generation layer.
+with a controlled language-selection layer.
 
 ## What players do
 
@@ -79,11 +79,11 @@ Every NPC turn follows a finite loop:
 1. **Observe** the player action and current town revision.
 2. **Recall** relevant NPC memories from CockroachDB vector search.
 3. **Decide** beliefs, gates, and permitted disclosures with deterministic code.
-4. **Render** short dialogue from an approved bundle using Amazon Bedrock.
-5. **Validate** every model result against canonical entities and allowed claims.
+4. **Select** short, exact voiced renderings from an approved bundle using Amazon Bedrock.
+5. **Validate** every selected ID against canonical claims, outcomes, and memories.
 6. **Persist** the event, memory, provenance, and telemetry transactionally.
 
-Models may interpret language and phrase approved information. They may not
+Models may interpret language and select among approved voiced renderings. They may not
 change objective truth, calculate belief scores, resolve promises, or write to
 the database.
 
@@ -112,7 +112,7 @@ The design principle is:
 
 The short version is:
 
-> **Lambda runs the work. Bedrock provides language. CockroachDB remembers. SQS waits and retries.**
+> **Lambda runs the work. Bedrock selects the voice. CockroachDB remembers. SQS waits and retries.**
 
 ## Hackathon proof
 
@@ -121,8 +121,9 @@ simulation state and the causal history behind NPC behaviour.
 
 - **Distributed Vector Indexing** retrieves semantically relevant episodes
   within one NPC and one town.
-- **CockroachDB Cloud Managed MCP Server** provides judges with read-only views
-  of beliefs, evidence, provenance, promises, object history, and agent runs.
+- **CockroachDB Cloud Managed MCP Server**, configured from the Cloud Console at
+  `https://cockroachlabs.cloud/mcp`, provides judges with read-only views of
+  beliefs, evidence, provenance, promises, object history, and agent runs.
 
 AWS supplies the agent environment, language and embedding models, synchronous
 compute, delayed work, recovery, hosting, secrets, and observability.

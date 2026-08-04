@@ -12,7 +12,9 @@ Build a small, asynchronous multiplayer social-deduction mystery in which NPC me
 
 The MVP will use one authored mystery inside isolated invite-link town instances. Players visit the same persistent town at different times. What one player says or does can change NPC beliefs, relationships, dialogue, and cooperation for the next player.
 
-Objective world state remains authoritative. LLMs render dialogue, normalize bounded claims, and choose from tightly constrained ambient behaviors; they do not invent or mutate world truth.
+Objective world state remains authoritative. LLMs select exact voiced dialogue
+renderings, normalize bounded claims, and choose from tightly constrained
+ambient behaviors; they do not invent or mutate world truth.
 
 ## Player fantasy
 
@@ -203,9 +205,9 @@ The player sees qualitative attitudes such as wary, trusting, or suspicious. Exa
 
 NPCs remain at authored locations in the MVP. They do not autonomously move unique objects.
 
-## NPC generation boundary
+## NPC dialogue boundary
 
-Before an NPC response is generated, deterministic application code selects:
+Before an NPC response is assembled, deterministic application code selects:
 
 - Relevant retrievable memories
 - Claims the NPC currently believes
@@ -213,9 +215,11 @@ Before an NPC response is generated, deterministic application code selects:
 - Relationship stance
 - Result of requested access or item actions
 
-The LLM renders a short in-character response from this approved disclosure bundle.
+Application code builds exact in-character rendering candidates from this
+approved disclosure bundle, deterministic outcomes, and versioned templates.
+The LLM selects and orders up to three candidates; it does not author factual player-visible prose.
 
-Structured output identifies the claims and memories expressed. Responses referencing unapproved claims or entities are rejected, with an authored fallback response available.
+Structured output identifies the selected rendering records. Application code derives their claims, outcomes, and memory references and rejects unknown, incomplete, or incompatible selections, with an authored fallback available.
 
 The guard can lie only through an explicitly permitted cover-story claim. The model does not receive omniscient truth and decide independently to deceive.
 

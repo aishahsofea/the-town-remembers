@@ -79,7 +79,7 @@ CockroachDB is the durable source for both current state and causal history.
 | Game Lambda | Authenticate, validate, retrieve, apply rules, call models, and commit | Retain state after invocation |
 | Ambient Tick Lambda | Process one bounded off-screen reaction job | Run continuously or create arbitrary actions |
 | CockroachDB | Store canonical state, history, provenance, beliefs, vectors, and outbox jobs | Decide what a model should say |
-| Bedrock models | Interpret bounded input, embed text, and render approved dialogue | Access the database or mutate state |
+| Bedrock models | Interpret bounded input, embed text, and select approved dialogue renderings | Access the database or mutate state |
 | SQS FIFO | Delay, order per-town work, redeliver, and buffer ambient jobs | Guarantee exactly-once effects without the database ledger |
 | EventBridge + Recovery Lambda | Find committed outbox jobs whose delivery is pending or uncertain, and clear expired join-replay secrets | Re-run completed jobs, recover a player identity, or generate replacement keys |
 | EventBridge prompt warmup | Keep stable Bedrock structured-output grammars compiled during live judging | Create town state or weaken a task fallback |
@@ -121,9 +121,11 @@ The model-facing type intentionally excludes objective truth:
 type ApprovedDisclosureBundle = {
   townId: string;
   npcId: string;
-  allowedClaimIds: string[];
-  requiredClaimIds: string[];
-  allowedMemoryIds: string[];
+  allowedDisclosureIds: string[];
+  requiredDisclosureIds: string[];
+  allowedOutcomeIds: string[];
+  requiredOutcomeIds: string[];
+  allowedRenderingIds: string[];
   relationshipStance: "wary" | "neutral" | "trusting" | "suspicious";
   actionOutcome?: "allowed" | "denied";
 };
@@ -145,9 +147,12 @@ After joining, ordinary routes use an opaque town ID plus an independent
 town-scoped HTTP-only cookie, so invite tokens do not remain in routine API
 URLs. Town creation, first-time join, and authenticated actions use separate
 durable request ledgers because they occur under different authority.
-The SPA sends `Referrer-Policy: no-referrer`, loads no third-party invite-page
-resources, and replaces the invite URL after resolution. CloudFront and S3 raw
-access logging are disabled; the API access log records the route template but
+The SPA sends `Referrer-Policy: no-referrer` and loads no third-party invite-page
+resources. Its bootstrap copies the route token into page memory and immediately
+replaces the current history entry with tokenless `/join` before preview or
+authentication requests. Refresh before completion intentionally loses the
+capability and asks the visitor to reopen the invite. CloudFront and S3 raw
+access logging are disabled. The API access log records the route template but
 not raw paths, queries, headers, or bodies.
 
 ### Objective state, claims, and beliefs
@@ -190,9 +195,11 @@ claim with objective state and reject lies.
    directness, contradictions, and unresolved commitments.
 9. Deterministic rules calculate action limits, belief stance, access gates, and
    the allowed and required disclosure sets.
-10. Sonnet renders short dialogue from the approved bundle.
-11. Lambda validates structure, canonical entities, referenced IDs, and
-    expressed claims.
+10. Application code builds exact voiced rendering candidates from the approved
+    disclosures, mechanical outcomes, and versioned authored templates. Sonnet
+    selects and orders rendering IDs from that bundle.
+11. Lambda validates rendering membership, required grounding, response kind,
+    and derived length, then concatenates the selected immutable text.
 12. An invalid result receives at most one bounded repair attempt; another
     failure uses an authored fallback.
 13. Lambda opens a short transaction, checks that it still owns the processing
@@ -352,23 +359,31 @@ effect must accept the same key or use an equivalent transactional outbox.
 
 ## Output validation and bounded repair
 
-Zod and Bedrock structured output validate shape, but shape alone cannot prove
-that arbitrary prose contains no unsupported claim. The MVP validation chain is:
+Zod and Bedrock structured output validate shape. Dialogue grounding does not
+depend on interpreting arbitrary generated prose: application code first builds
+exact rendering records from versioned templates, canonical claim text,
+deterministic outcomes, and authorized memories; Sonnet returns only selected
+rendering IDs.
 
-1. Validate the structured response schema.
-2. Require every referenced memory, claim, and entity ID to appear in the
-   approved bundle.
-3. Normalize propositions expressed in the dialogue into the bounded claim
-   grammar and compare them with the approved claim set.
-4. Reject unsupported entities or propositions.
-5. Attempt one repair using the invalid result, sanitized validation errors,
-   NPC style, strict schema, and only the approved disclosure bundle.
-6. Validate the repair from scratch.
-7. Use an authored fallback if it remains invalid.
+The MVP validation chain is:
+
+1. Validate the task's structured response schema.
+2. Require every selected ID to occur in the approved bundle.
+3. For dialogue, derive disclosures, outcomes, memories, entities, and actors
+   from the selected rendering records and require complete coverage of the
+   requested grounding.
+4. Validate the selected response kind, uniqueness, ordering, sentence and word
+   limits, and exact concatenated text.
+5. For normalization and ambient selection, apply their task-specific semantic
+   rules to the returned fields.
+6. Attempt one repair using the invalid result, sanitized validation errors,
+   strict schema, and the same trusted bundle.
+7. Validate the repair from scratch and use the task's authored or deterministic
+   fallback if it remains invalid.
 
 The repair model never receives the complete mystery truth. Invalid output may
 be recorded as a failed `agent_runs` outcome, but it never becomes an episode,
-claim transmission, belief, or player-visible response.
+claim transmission, belief, mechanical outcome, or player-visible response.
 
 ## Ambient propagation
 
@@ -440,11 +455,13 @@ override secrecy, trust, promise, cover-story, or claim-disclosure rules.
 | Model | Normal role | Persistence |
 |---|---|---|
 | Titan Text Embeddings V2 | Embed episodes once and embed retrieval queries | Episode vectors are stored; query vectors normally are not |
-| Claude Sonnet 4.6 | Render short player-facing dialogue from approved information | Output is stored only after validation |
-| Claude Haiku 4.5 | Normalize claims, select a bounded ambient action, or attempt one structured repair | Structured output is stored only after application validation |
+| Claude Sonnet 4.6 | Default selector for exact voiced renderings from approved information and outcomes | Concatenated application-supplied text is stored only after selection validation |
+| Claude Haiku 4.5 | Normalize claims, select a bounded ambient action, attempt one structured repair, or take over rendering selection in the accepted reduced-cost mode | Structured output is stored only after application validation |
 
-For an explicit `Ask`, Titan and Sonnet are part of the normal path. Haiku is
-conditional unless separate semantic validation requires it.
+For an explicit `Ask`, Titan and the active dialogue selector are part of the
+normal path. Sonnet is the default selector; Haiku uses the identical prompt,
+schema, and validator only after the accepted cost threshold and prompt evals
+permit the switch.
 
 The exact system prompts, output schemas, cross-field validators, and prompt
 evaluation gates are defined in
@@ -488,8 +505,9 @@ understand how requests, models, queues, and transactions interact.
 ## Runtime verification focus
 
 - Model prompts never receive hidden objective truth.
-- Unsupported generated claims are rejected, repaired once, then replaced by
-  an authored fallback.
+- Unknown or insufficient rendering selections are rejected, repaired once,
+  then replaced by an authored fallback; no model-authored factual prose reaches
+  the player.
 - A retry cannot duplicate a player effect or ambient action.
 - Tick-created events cannot trigger another action inside their own tick.
 - A false claim may change belief evidence but never authoritative item state.

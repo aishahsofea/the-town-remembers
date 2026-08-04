@@ -72,9 +72,12 @@ surface.
   and join responses use `Cache-Control: no-store` so capability URLs and
   personalized data never enter shared caches.
 - Every HTML and API response sends `Referrer-Policy: no-referrer`. The invite
-  page loads no third-party scripts, pixels, fonts, or analytics; after invite
-  resolution it calls `history.replaceState` to remove the capability from the
-  visible browser URL before navigation continues.
+  page loads no third-party scripts, pixels, fonts, or analytics. At bootstrap
+  it copies the route token into the current page's ephemeral memory and
+  immediately calls `history.replaceState` with tokenless `/join`, before
+  issuing invite-preview or authentication requests. The application never
+  writes the token to persistent browser storage. Refresh before completion
+  loses the capability and requires reopening the invite URL.
 - CloudFront standard and real-time access logs and S3 server-access logs are
   disabled for the MVP because their URI fields cannot safely redact invite
   tokens. API Gateway access logs contain only request ID, route template,
@@ -113,7 +116,7 @@ A successful `201 Created` response returns:
 {
   "townId": "town_123",
   "status": "active",
-  "inviteUrl": "https://example.test/invite/opaque-token"
+  "inviteUrl": "https://example.test/join/opaque-token"
 }
 ```
 
@@ -299,11 +302,21 @@ type InventoryItemView = {
   description: string;
 };
 
+type RevealedItemView = {
+  itemId: Id;
+  displayName: string;
+  description: string;
+  custody:
+    | { kind: "player_inventory" }
+    | { kind: "location"; locationId: Id };
+};
+
 type DiscoveredClueView = {
   clueId: Id;
   title: string;
   description: string;
   firstContributor: PublicActor & { actorType: "player" };
+  contributors: Array<PublicActor & { actorType: "player" }>;
 };
 
 type PromiseSubjectView =
@@ -457,8 +470,11 @@ candidate IDs or labels. An open gate contains only the frozen content
 version's authored suspect, motive, and location options. `currentLocation` is null while away;
 `encounters` contains only enabled NPCs at the current location.
 `discoveredClues` contains the town-wide verified clues this player may submit
-through `show`; the original discoverer retains contribution credit. The board
-and attempt history are shared contributions, subject to their spoiler-safe
+through `show`. `contributors` includes each player with a discovery row exactly
+once in discovery-event order, then player ID; its first element equals
+`firstContributor`. The board card retains the first discoverer's primary
+credit while its contribution detail can name later discoverers. The board and
+attempt history are shared contributions, subject to their spoiler-safe
 projections. A contradiction pair is returned only when both referenced claim
 entries are visible on this board. Each pair puts the lexically smaller entry
 ID first; it means that the accounts conflict, never that either is objectively
@@ -475,6 +491,8 @@ Projection builders apply these stable orders before hashing or returning JSON:
 - `map`: `(mapOrder, id)`;
 - `inspectables`, `encounters`, `inventory`, and `discoveredClues`: normalized
   display name, then ID;
+- each discovered clue's `contributors`: discovery-event sequence, then player
+  ID;
 - `availableActionKinds`: the enum order shown in its type;
 - `activePromises`: `(acceptedAt, promiseId)`;
 - `caseBoard`: `(createdAt, entryId)`;
@@ -557,7 +575,7 @@ must match the action kind in `ActionResultByKind`.
 type NpcDialogue = {
   npcId: Id;
   text: string;
-  responseMode: "generated" | "repaired" | "fallback" | "authored";
+  responseMode: "selected" | "repaired" | "fallback" | "authored";
 };
 
 type PromiseOfferView = {
@@ -590,9 +608,13 @@ type ActionResultByKind = {
   };
   inspect: {
     inspectableId: Id;
-    discovery: "new" | "already_known" | "none";
+    discovery:
+      | "new_to_town"
+      | "new_to_player"
+      | "already_discovered_by_player"
+      | "none";
     clue?: DiscoveredClueView;
-    revealedItem?: InventoryItemView;
+    revealedItem?: RevealedItemView;
   };
   ask: {
     dialogue: NpcDialogue;
@@ -682,9 +704,11 @@ not embed `player-view` or expose the canonical town revision. The browser
 fetches the current view after completion.
 
 For a non-denied response, `outcome` is `no_change` exactly for
-`already_active`, `already_there`, `already_known` or `none` discovery,
-`needs_revision`, `structuredEffect: "none"`, `custody: "unchanged"`, or
-`already_resolved`. Every other non-denied result is `applied`; notably, an
+`already_active`, `already_there`, `already_discovered_by_player` or `none`
+discovery, `needs_revision`, `structuredEffect: "none"`, custody:
+`"unchanged"`, or `already_resolved`. `new_to_town` and `new_to_player` are
+`applied` because each creates a durable discovery contribution. Every other
+non-denied result is `applied`; notably, an
 incorrect accusation is applied because it creates immutable shared history,
 and a leave with `not_required` is applied because it ends the visit.
 
@@ -729,6 +753,17 @@ A clue becomes discovered for `show` town-wide when its first
 `clue_discoveries` row creates the shared verified-evidence board entry. A
 player need not repeat that inspection. Personal discovery rows still preserve
 credit and contribution history.
+
+Inspecting an undiscovered clue returns `new_to_town`. A different player who
+later examines it returns `new_to_player`, appends that player's one discovery
+row, and does not duplicate the board entry. A player who already has that row
+receives `already_discovered_by_player` with no write. An inspectable's
+`inspectionState` is therefore player-relative: town-known evidence remains
+`available` until this player has examined it.
+
+`revealedItem.custody` distinguishes a portable item transferred into the
+player's inventory from a non-portable item merely revealed at its authoritative
+location. Only `player_inventory` appears in the refreshed `inventory` array.
 
 ### Claim normalization
 
@@ -896,8 +931,11 @@ entered `awaiting_resolution`. The first resolution transaction wins
 permanently. A concurrent loser completes with `outcome: "no_change"` and the
 already-selected ending.
 
-Resolution ends all active visits, resolves promises, and makes the town
-permanently read-only. Existing players and new invite holders may view the
+Resolution ends all active visits, applies the authored ending state change,
+resolves promises and relationships, and makes the town permanently read-only.
+For `bell-mystery-v1`, either ending conditionally moves the Festival Bell from
+the Old Chapel to Festival Square and records one `item_relocated` event in the
+same winning transaction. Existing players and new invite holders may view the
 epilogue and shared history until the town is retired. Joining a resolved town
 creates no visit. A retired town accepts neither joins nor player views.
 
@@ -1065,7 +1103,10 @@ The API test suite must prove:
    effects.
 8. Claim drafts expire after ten minutes and can be confirmed once by the
    same co-located player.
-9. `show` rejects unheld items and town-undiscovered clues, lets another player
+9. Inspect distinguishes first-town, later-player, and repeated-same-player clue
+   discovery; later discoverers appear once in contribution history, and a
+   non-portable revealed item remains at its location rather than entering
+   inventory. `show` rejects unheld items and town-undiscovered clues, lets another player
    show a clue already verified on the shared board, allows a held item to
    produce dialogue, and applies structured evidence effects only for authored
    evidence links.

@@ -162,7 +162,7 @@ remains readable. The table contracts below are authoritative.
 | `status` | `STRING NOT NULL` | `active`, `awaiting_resolution`, `resolved`, or `retired` |
 | `revision` | `INT8 NOT NULL DEFAULT 0` | Optimistic-concurrency revision |
 | `last_event_sequence` | `INT8 NOT NULL DEFAULT 0` | Last sequence allocated to a world event |
-| `ambient_scheduled_through_sequence` | `INT8 NOT NULL DEFAULT 0` | Highest event assigned to an ambient job |
+| `ambient_scheduled_through_sequence` | `INT8 NOT NULL DEFAULT 0` | Highest event sequence consumed by ambient range allocation, whether or not the range required a job |
 | `winning_case_attempt_id` | `UUID NULL` | Correct attempt that opened the final choice |
 | `resolution_owner_player_id` | `UUID NULL` | Player with the initial exclusive choice |
 | `resolution_reservation_expires_at` | `TIMESTAMPTZ NULL` | End of the owner's ten-minute reservation |
@@ -422,7 +422,10 @@ inspectable is available only at that custody location.
 `supports` or `contradicts`. `clue_discoveries(town_id, clue_id, player_id)` is
 unique, so repeated inspection by one player does not create contribution spam.
 The first discovery creates the shared verified-evidence board entry; later
-player discoveries remain visible in contribution history. Once that shared
+player discoveries create one additional attribution row and remain visible in
+contribution history. Repeating the inspection by a player who already has that
+row creates no write. The API names these outcomes `new_to_town`,
+`new_to_player`, and `already_discovered_by_player`, respectively. Once that shared
 entry exists, any player may submit the clue through `show`; a personal
 discovery row is not required.
 
@@ -525,7 +528,7 @@ requires a new draft and idempotency key.
 
 When present, `alleged_source_actor_id` is a same-town canonical actor explicitly
 named in the original text. Confirmation copies it to the resulting
-transmission; application code never infers it from generated dialogue.
+transmission; application code never infers it from NPC dialogue.
 
 Expiration is enforced by `expires_at` during reads and confirmation; no
 scheduled cleanup is required. A stale pending row may be lazily marked
@@ -539,7 +542,7 @@ scheduled cleanup is required. A stale pending row may be lazily marked
 | `claim_transmissions` | `town_id UUID`, `id UUID`, `claim_id UUID`, `speaker_actor_id UUID`, `recipient_actor_id UUID`, `parent_transmission_id UUID NULL`, `root_transmission_id UUID`, `source_episode_id UUID NULL`, `alleged_source_actor_id UUID NULL`, `source_kind STRING`, `hop_count INT4`, `event_id UUID`, `interaction_id UUID NULL`, `ordinal INT4`, `created_at TIMESTAMPTZ` | One actual act of communicating a structured claim |
 
 `npc_interactions.player_action_id` is unique. `input_kind` is `ask`, `tell`,
-`show`, `give`, or `promise`. `response_mode` is `generated`, `repaired`,
+`show`, `give`, or `promise`. `response_mode` is `selected`, `repaired`,
 `fallback`, or `authored`.
 
 A player-facing turn creates one `npc_interaction` world event. Every structured
@@ -561,8 +564,12 @@ Speaker and recipient must differ. `(town_id, event_id, ordinal)` is unique.
 
 `hop_count` is zero for original assertions and direct observations. Repeating a
 transmission sets it to the parent's hop count plus one. Alleged hearsay starts
-at one. `hop_count` is constrained to `0` through `3`; a proposed fourth hop is
-not a valid transmission. An originating transmission names itself as
+at one. NPC recipients may receive only hop counts `0` through `3`. A repeated
+NPC-to-player disclosure may use terminal hop `4` only when its parent is hop
+`3`; players do not propagate claims through an ambient edge, and no hop-4
+transmission may target an NPC or become a parent. This reserves one final
+player-visible provenance edge without allowing a fourth off-screen gossip hop.
+An originating transmission names itself as
 `root_transmission_id`; a
 repeat copies its parent's root. Provenance and independent-source identity are
 therefore explicit and are not inferred from prose. A player-visible
@@ -614,11 +621,12 @@ contradictions receive importance of at least 80, so ordinary recency cannot
 erase them from a relevant recall set.
 
 An embedding failure never discards the episode. Recall unions vector
-candidates with up to ten recent or importance-80+ episodes selected through
-`episode_references`, so structured memory still works while Titan is
-unavailable. The failed vector may be retried during a later invocation, using
-a conditional `failed -> ready` update; the episode text and causal identity do
-not change.
+candidates with a fallback candidate pool of up to ten recent or
+importance-80+ episodes selected through `episode_references`, then applies the
+same final top-eight rerank. Structured memory therefore still works while
+Titan is unavailable without widening the prompt. The failed vector may be
+retried during a later invocation, using a conditional `failed -> ready`
+update; the episode text and causal identity do not change.
 
 #### `npc_beliefs` and `belief_evidence`
 
@@ -785,7 +793,7 @@ evaluator while a retained offer or active promise references its version.
 | Column group | Required values |
 |---|---|
 | Identity | `town_id UUID`, `id UUID`, `entry_kind STRING` |
-| Attribution | `contributed_by_player_id UUID NULL`, `source_event_id UUID` |
+| Attribution | `contributed_by_player_id UUID NOT NULL`, `source_event_id UUID` |
 | Structured content | `clue_id UUID NULL`, `claim_id UUID NULL`, `transmission_id UUID NULL` |
 | Player content | `note_text STRING NULL` |
 | Classification | `verification_status STRING` |
@@ -801,12 +809,23 @@ Column-presence checks enforce:
 - A note has a contributor and 1–280 Unicode grapheme clusters of `note_text`
   after trimming, with no clue, claim, or transmission.
 
+Every MVP board entry is player-contributed. Verified evidence names its first
+discoverer, testimony and hearsay name the receiving player, and a note names
+its author; there is no anonymous or system-authored board-entry variant.
+
+Account classification is deterministic from the displayed NPC-to-player
+transmission. `original_assertion` and `direct_observation` are `testimony`.
+`repeated_testimony` and `alleged_hearsay` are `hearsay`; when a repeated chain
+began as alleged hearsay, the root's alleged source is projected separately.
+The stored `entry_kind` and `verification_status` must match that classification.
+
 There is at most one verified-evidence entry per clue and one testimony/hearsay
 entry per transmission. Notes are append-only. Contradiction badges are derived
 by joining board claims through `claim_relations`; objective truth is never
 inferred from an NPC statement.
 
-The first clue discoverer is the contributor for verified evidence. For an
+The first clue discoverer is the board-entry contributor for verified evidence;
+later discoverers remain ordered contribution metadata for that clue. For an
 NPC-to-player transmission, the receiving player is the contributor and the
 speaker remains visible through the transmission. Player-to-NPC assertions do
 not automatically become shared board entries; they appear only if a player
@@ -841,6 +860,13 @@ invite holders who first join after the reservation begins. The first
 conditional insert wins; a concurrent loser returns the stored ending as
 `no_change`.
 
+The winning resolution transaction also moves the non-portable Festival Bell
+from the Old Chapel to Festival Square with a conditional `items.revision`
+update and an `item_relocated` world event. This authored ending consequence is
+not autonomous NPC object manipulation. The item update, relocation event,
+promise outcomes, relationship consequences, resolution row, and town status
+commit atomically, so authoritative item state and both epilogues agree.
+
 While `awaiting_resolution`, all gameplay and ambient effects are frozen;
 player views, read-only joins, action-status reads, and `resolve` remain
 available. On resolution, all active visits end with `town_resolved`, queued
@@ -849,7 +875,7 @@ and the town becomes permanently read-only until retirement.
 
 ### History, operations, idempotency, and ambient ranges
 
-#### `player_actions`
+#### Player actions
 
 | Column group | Required values |
 |---|---|
@@ -940,20 +966,25 @@ completion still requires its removed token.
 | Extra detail | `payload JSONB NOT NULL` |
 
 `(town_id, sequence_no)` and `(town_id, effect_key)` are unique. `origin_kind` is
-`player_action`, `ambient_job`, or `system_seed` and exactly the matching origin
-foreign key is present. Effect indexes start at zero and are unique within their
-origin. Effect keys are derived as `player:<action-key>:<index>`,
+`player_action`, `ambient_job`, or `system_seed`. A player event has only
+`player_action_id`; an ambient event has only `ambient_job_execution_id`; a seed
+event has both origin foreign keys null and payload fields `contentVersion` and
+`seedEventKey`. Effect indexes start at zero and are unique within their origin.
+Effect keys are derived as `player:<action-key>:<index>`,
 `ambient:<job-key>:<index>`, or `seed:<content-version>:<key>`.
 Partial unique constraints on
 `(town_id, player_action_id, effect_index)` and
 `(town_id, ambient_job_execution_id, effect_index)` enforce the numbered
 origins directly.
 
-Initial event types are `visit_started`, `travelled`, `inspected`,
-`clue_discovered`, `npc_interaction`, `claim_transmitted`, `evidence_shown`,
-`item_transferred`, `promise_accepted`, `promise_fulfilled`, `promise_broken`,
-`capability_changed`, `note_added`, `visit_ended`, `relationship_changed`,
-`source_discredited`, `case_attempted`, and `case_resolved`. Belief evidence
+Initial event types are `authored_observation`, `visit_started`, `travelled`,
+`inspected`, `clue_discovered`, `npc_interaction`, `claim_transmitted`,
+`evidence_shown`, `item_transferred`, `item_relocated`, `promise_accepted`,
+`promise_fulfilled`, `promise_broken`, `capability_changed`, `note_added`,
+`visit_ended`, `relationship_changed`, `source_discredited`, `case_attempted`,
+and `case_resolved`. Seed direct-observation episodes and their evidence use
+`system_seed` `authored_observation` events; the two authored pre-story
+communications use `system_seed` `claim_transmitted` events. Belief evidence
 links to its causal event instead of creating redundant `belief_updated` events.
 
 Allocating event sequence numbers and advancing `towns.revision` happen in the
@@ -971,21 +1002,22 @@ workers consider only eligible events inside their assigned sequence range.
 | Measures | `input_tokens INT8`, `output_tokens INT8`, `cache_read_tokens INT8`, `cache_write_tokens INT8`, `latency_ms INT8`, `estimated_cost DECIMAL(12,6)` |
 | Result | `outcome STRING`, `validation_error_code STRING NULL`, `created_at TIMESTAMPTZ` |
 
-`purpose` is `claim_normalization`, `dialogue_rendering`, `ambient_choice`,
+`purpose` is `claim_normalization`, `dialogue_selection`, `ambient_choice`,
 `structured_repair`, `episode_embedding`, or `query_embedding`. At least one
 causal source is present. `outcome` is
 `accepted`, `repaired`, `rejected`, `fallback`, `failed`, or `superseded`. One
 action or job may have several runs. `superseded` records valid output discarded
 because a revision retry rebuilt the context.
 
-For generative calls, `prompt_version` is the complete immutable identifier such
+For structured model calls, `prompt_version` is the complete immutable identifier such
 as `npc-dialogue/1.0.0`; the prompt hash, input contract, output schema, and
 semantic validator versions make an accepted or rejected run reproducible
 without storing the prompt or raw model output. Embedding runs use the stable
 non-generative version identifiers defined by their model adapter.
 `target_prompt_version` is present only for `structured_repair` and names the
-generation prompt whose output is being repaired. The hash and contract-version
-fields are required for generative purposes and null for embedding purposes.
+source task prompt whose output is being repaired. The hash and contract-version
+fields are required for structured model purposes and null for embedding
+purposes.
 
 Each run is appended in a short telemetry transaction after validation, so a
 later state conflict cannot erase incurred cost or a rejected attempt. It is
@@ -1218,7 +1250,7 @@ the job record is already completed, and the event's
   above.
 - Unique-item transfers use conditional updates.
 - Duplicate copies of one action or job follow the
-  [idempotency contract](#idempotency-contract); revisions and conditional
+  [player-action ledger](#player-actions); revisions and conditional
   updates handle different operations that conflict.
 - Departure event, disjoint event range, ended visit, and outbox job are written
   in one transaction; Recovery republishes the same row and key when delivery
@@ -1285,8 +1317,8 @@ The minimum high-risk tests are:
 
 1. A false claim changes belief evidence but never changes `items`.
 2. Mara's initial dialogue prompt does not contain the hidden chapel location.
-3. Unsupported model claims are rejected, repaired once, then replaced by a
-   fallback.
+3. Unknown or ungrounded dialogue rendering IDs are rejected, repaired once,
+   then replaced by an authored fallback.
 4. Two towns cannot read or reference each other's rows.
 5. Two simultaneous unique-item transfers cannot both succeed.
 6. Replaying a completed player action with the same key and request returns the
@@ -1347,9 +1379,15 @@ The minimum high-risk tests are:
     conditionally removes its token before a different action can start.
 32. A normalization draft stores only an explicitly named same-town alleged
     source, and confirmation copies that exact actor to the transmission.
-33. Every generative `agent_runs` row identifies the immutable prompt, exact
+33. Every model `agent_runs` row identifies the immutable prompt, exact
     prompt hash, input contract, output schema, validator, and resolved model;
     repair rows also identify their target prompt.
+34. Ambient NPC recipients never exceed hop 3; a terminal NPC-to-player
+    disclosure may reach hop 4 but cannot become a parent.
+35. Every seed observation and pre-story communication has the specified
+    `system_seed` causal event and no player-action or ambient-job origin.
+36. Both ending choices conditionally relocate the bell exactly once in the
+    same transaction that stores the irreversible resolution.
 
 ## Related decisions
 

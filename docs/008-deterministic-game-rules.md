@@ -11,7 +11,7 @@
 
 Use one versioned, deterministic ruleset for every gameplay consequence. Models
 may interpret player language, choose from a bounded ambient candidate list, and
-render approved dialogue, but they never calculate these values or override a
+select approved dialogue renderings, but they never calculate these values or override a
 failed gate.
 
 `towns.content_version` identifies both the authored mystery content and the
@@ -390,12 +390,18 @@ following are true:
   ambient-eligible event in that range.
 - The speaker has selected the claim as a belief with score at least `20`, or
   the claim is Corin's currently enabled cover story.
+- The provenance source is exact: a repeated claim names its parent
+  transmission, while a personally observed or physically presented claim names
+  the speaker's source episode and has no parent transmission.
 - The directed authored contact edge exists.
 - The disclosure tier is `public`; or it is `guarded` and the listener's trust
   in the speaker is at least `20`; or it is the enabled cover story. Dynamic
   player-originated claims default to `guarded`.
 - `confidential` and `final_truth` claims are never ambient candidates.
 - The proposed transmission's `hop_count` is at most `3`.
+- That limit applies to this NPC-to-NPC ambient recipient. A later
+  NPC-to-player disclosure may add the terminal hop `4` defined by the data
+  contract, but it cannot become another ambient parent.
 - The recipient does not already appear in that provenance chain and has not
   already received the same claim from the same independent source.
 
@@ -424,8 +430,11 @@ points.
 - One NPC may perform at most one outgoing transmission per tick.
 - Selected actions validate in returned order against the pre-tick snapshot
   plus any earlier valid selection from the same tick.
-- A missing, duplicated, out-of-list, or newly invalid selection becomes
-  `do_nothing`; it is never replaced with a model-invented alternative.
+- A schema-invalid or internally inconsistent result may receive the one repair
+  allowed by Decision 010 before any choice ID is interpreted. After IDs are
+  interpreted, a missing candidate, duplicate, out-of-list ID, repeated claim,
+  repeated speaker, or newly invalid selection becomes `do_nothing`; repair
+  never substitutes another choice.
 - Tick-created events are outside their own input range and cannot chain until a
   later tick.
 
@@ -455,6 +464,13 @@ An accusation is correct only when suspect, motive, and location IDs exactly
 match the private solution row. There is no partial credit and no model
 judgment. Incorrect attempts have no score penalty. A correct attempt reserves
 the ending choice for `10` minutes as defined by the schema and HTTP contracts.
+
+The winning resolution transaction also applies the authored ending state
+change. In `bell-mystery-v1`, either choice conditionally moves the Festival
+Bell from the Old Chapel to Festival Square, increments the item revision, and
+appends one `item_relocated` event. The same transaction resolves promises and
+relationships, stores the ending, and marks the town `resolved`; a concurrent
+or replayed loser produces no second relocation.
 
 ## Worked balance checks
 
