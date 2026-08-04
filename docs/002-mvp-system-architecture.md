@@ -331,16 +331,20 @@ append-only. New evidence never erases old evidence.
 - `town_creation_requests` and `join_requests`
 - `player_sessions` and `api_rate_limits`
 - `player_actions` and `claim_drafts`
+- `model_cost_reservations`
 - `outbox` and `ambient_job_executions`
 
 These tables answer: “Has this request or job already run, what response did it
 produce, and has its queued work been delivered and applied?” Their working
-status, temporary processing claims, draft status, and delivery fields are
-mutable. Terminal identity and response fields do not change.
+status, temporary processing claims, draft status, cost admission/settlement,
+and delivery fields are mutable. Terminal identity and response fields do not
+change.
 
 ### Tenant isolation
 
-Every town-owned row includes `town_id`.
+Every town-owned row includes `town_id`. The global monthly
+`model_cost_reservations` ledger is the deliberate exception and is accessible
+only through the cost-admission service, never a town/player repository.
 
 Composite keys and foreign keys include `town_id`. A query for one town must not reach another town.
 
@@ -510,6 +514,11 @@ A production version should use private networking.
 The monthly operating ceiling is **$12.50**.
 
 The application records estimated model cost from actual input and output tokens.
+Before each model or embedding call, it atomically reserves that call's
+configured worst-case cost against the current UTC-month ledger. The call starts
+only after reservation succeeds; afterward the reservation settles to actual
+token-based cost. An ambiguous invocation remains reserved at the worst case,
+so concurrent stale reads cannot cross a hard mode boundary.
 
 Cost modes:
 
@@ -558,12 +567,26 @@ Deployment is run from the developer's laptop.
 pnpm test
 pnpm cdk:deploy
 pnpm db:migrate
-pnpm db:seed-demo
 pnpm prompts:prewarm
 pnpm smoke-test
+pnpm cloud:verify
+pnpm demo:create-town
 ```
 
-Run migrations only when the schema changes. Seed the demo town before recording.
+Run migrations only when the schema changes. `demo:create-town` is an operator
+wrapper over the deployed `POST /api/v1/towns` contract, not a direct database
+seed. It creates and retains one idempotency key until a terminal response,
+supplies the exact Origin and judge bearer code without logging them, and shows
+the reconstructed invite URL only to the operator. Create the demo town before
+recording; do not bypass the town-creation ledger or invite derivation.
+
+Town retirement is an operator-only database command using the locally held
+`migration_admin` credential; it is not a player API. It accepts an exact town
+ID, supports a dry run, refuses `awaiting_resolution`, active visits, or
+live/retryable player actions or nonterminal ambient work, and conditionally
+changes only an eligible `active` or `resolved` town to `retired`. The command
+then verifies preview is `closed` and join/player routes return `410`. It never
+deletes causal rows.
 
 Judges use the live URL and access code. They do not need to deploy the project.
 

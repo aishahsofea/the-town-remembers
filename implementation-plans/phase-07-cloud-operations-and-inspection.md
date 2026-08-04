@@ -13,9 +13,10 @@ cost-governed, deployable by one operator, and causally inspectable by judges.
 
 The proof has two linked paths:
 
-1. A player uses the public CloudFront URL to create/join a fresh town, complete
-   an authenticated saved action, leave through an ambient transition, and
-   resume through the deployed Game, Ambient, Recovery, SQS, Bedrock, and
+1. An operator creates a fresh town through the judge-authenticated public
+   wrapper; a player opens its CloudFront invite, joins, completes an
+   authenticated saved action, leaves through an ambient transition, and
+   resumes through the deployed Game, Ambient, Recovery, SQS, Bedrock, and
    CockroachDB boundaries.
 2. A judge uses the separately authenticated, read-only CockroachDB Cloud
    Managed MCP connection to reconstruct the same town's objective item state,
@@ -37,12 +38,13 @@ clean operator machine.
 - Deployment-time model/config selection and the four required Bedrock
   model/schema warmups.
 - CockroachDB Basic production bootstrap, roles/grants, TLS, resource limit,
-  migrations, authored seed/bootstrap, and separately managed inspection
-  access.
+  migrations, schema/content validation, and separately managed inspection
+  access. Gameplay-town creation remains on the public town-creation ledger.
 - Least-privilege IAM, public-edge security/cache/logging controls, sanitized
   structured application logs, metrics, alarms, dashboards, and cost modes.
 - Read-only inspection views and a judge/developer MCP inspection runbook.
-- Deploy, migrate, seed, prewarm, smoke-test, and rollback commands.
+- Deploy, migrate, prewarm, smoke-test, public town-creation, retirement, and
+  rollback commands.
 - Security, tenant-isolation, queue, alarm, and public endpoint verification at
   the real service boundary.
 
@@ -110,8 +112,9 @@ tests, cost analysis, and the reliability contract together.
 
 - Define one typed configuration surface for account, region, stage, public
   origin, build/release ID, asset version, resolved Bedrock model or inference
-  profile IDs, CockroachDB secret reference, security-key version, log
-  retention, alarms, budget recipients, and concurrency controls.
+  profile IDs, immutable model price-catalog version, CockroachDB secret
+  reference, security-key version, log retention, alarms, budget recipients,
+  and concurrency controls.
 - Reject missing, placeholder, mutually inconsistent, or non-`us-east-1`
   production settings before synthesis/deploy.
 - Keep secret values out of CDK context, CloudFormation outputs, bundled web
@@ -221,15 +224,16 @@ tests, cost analysis, and the reliability contract together.
 - Create/update the `inspection` schema and views through migration authority;
   grant the Managed MCP inspection identity read-only access to those views and
   no base-table writes.
-- Run a fresh migration and seed/bootstrap through operator commands. Validate
-  all vector columns/indexes and town-prefixed query plans at production scale.
+- Run a fresh migration and database bootstrap through operator commands without
+  creating a gameplay town. Validate all vector columns/indexes and
+  town-prefixed query plans at production scale.
 
 **Deliverables**
 
 - CockroachDB bootstrap/grant scripts or documented SQL artifacts, privilege
   assertions, production migration evidence, and configured resource limit.
-- A safe repeatable demo-town bootstrap command that does not overwrite an
-  existing town.
+- A safe repeatable database bootstrap command that creates roles, schema, and
+  views but no town or invite capability.
 
 ### Workstream D — Bedrock deployment and cost enforcement
 
@@ -249,7 +253,9 @@ tests, cost analysis, and the reliability contract together.
   normal fallbacks.
 - Verify every real `agent_runs` record contains resolved model/profile,
   prompt/hash/input/schema/validator versions, tokens, latency, outcome, and
-  estimated cost without raw prompt or model output.
+  estimated cost without raw prompt or model output, and links to a settled
+  admission reservation. Warmups retain only their safe reservation/settlement
+  entries and operational telemetry.
 
 **Deliverables**
 
@@ -261,13 +267,19 @@ tests, cost analysis, and the reliability contract together.
 **Work**
 
 - Aggregate actual input/output/cache token dimensions and inference-profile
-  rates into the monthly model ledger.
+  rates under the deployed immutable price-catalog version into the monthly
+  model ledger. Missing or stale configured rates fail admission closed.
+- Admit every Bedrock/Titan call through the Phase 4 durable worst-case
+  reservation transaction, including warmups. Settle to actual token cost;
+  retain the maximum for an ambiguous call; never expire a reservation merely
+  because a worker stopped.
 - Enforce the accepted state machine: below `$8` Sonnet dialogue; `$8`–`$9.50`
   Haiku dialogue; `$9.50`–`$10.35` stop new towns and tighten action limits;
   at/above `$10.35` authored fallbacks while retained data remains readable.
-- Make transitions conditional/idempotent so concurrent requests cannot spend
-  past a threshold under stale mode. Never reveal ledger dollar values in
-  player errors.
+- Make reservation admission and mode transitions conditional/idempotent so
+  concurrent requests cannot spend past a threshold under stale mode. Reject
+  or fall back before invocation when the next reservation does not fit. Never
+  reveal ledger dollar values in player errors.
 - Create one AWS Budget with alerts at `$5`, `$9`, and `$11`; document billing
   delay and the internal ledger's role as the immediate control.
 - Add dashboards for cost by model/purpose, calls per visit, fallback mode,
@@ -277,8 +289,9 @@ tests, cost analysis, and the reliability contract together.
 
 **Deliverables**
 
-- Cost ledger/mode service, threshold concurrency tests, AWS Budget resources,
-  cost dashboard, and operator alerts.
+- Cost reservation/ledger/mode service, ambiguous-reservation reconciliation
+  procedure, threshold concurrency tests, AWS Budget resources, cost dashboard,
+  and operator alerts.
 
 ### Workstream E — Observability, alarms, and inspection
 
@@ -324,6 +337,9 @@ tests, cost analysis, and the reliability contract together.
   `inspection` schema.
 - Verify the views omit session/invite/join hashes, cookies, raw processing
   tokens, database credentials, raw model output, and unvalidated text.
+- Verify `inspection.agent_runs` exposes safe reserved/settled/released cost
+  status and actual/maximum amounts without granting mutation of the global
+  billing ledger.
 - Create a short judge runbook that starts from a known town/action or job ID
   and reconstructs the canonical demo path in causal order, including the
   unchanged item location and a belief reversal.
@@ -342,8 +358,19 @@ tests, cost analysis, and the reliability contract together.
 **Work**
 
 - Implement/document the accepted operator sequence: install/validate, CDK
-  bootstrap, synth/diff/deploy, migrate, seed/bootstrap, prompt prewarm, and
-  public smoke test.
+  bootstrap, synth/diff/deploy, migrate/database bootstrap, prompt prewarm,
+  public smoke test, and fresh demo-town creation through the deployed
+  `POST /api/v1/towns` contract.
+- Provide `pnpm demo:create-town` as a judge-authenticated HTTP wrapper. It
+  persists its idempotency key locally until terminal completion, supplies the
+  exact Origin, never logs the bearer code or invite, and presents the invite
+  URL only to the operator. It must not call the Phase 1 materializer directly.
+- Provide `pnpm town:retire --town-id <exact-id>` as a dry-run-first,
+  operator-only command using local migration authority. It refuses
+  `awaiting_resolution`, active visits, live/retryable player actions, and
+  nonterminal ambient work; changes an eligible active/resolved town to
+  `retired` without deleting history; and verifies closed preview plus `410`
+  join/player behavior.
 - Separate infrastructure deploy from destructive/irreversible schema change.
   Require migration backups/compatibility checks appropriate to the change and
   keep application rollback compatible with the deployed schema.
@@ -360,8 +387,9 @@ tests, cost analysis, and the reliability contract together.
 
 **Deliverables**
 
-- Operator deployment and rollback runbook, versioned release manifest, smoke
-  runner, and retained sanitized smoke evidence.
+- Operator deployment, town creation/retirement, and rollback runbook,
+  versioned release manifest, smoke runner, and retained sanitized smoke
+  evidence.
 
 #### P7-11 — Run the deployed security, isolation, and operations gate
 
@@ -379,11 +407,19 @@ tests, cost analysis, and the reliability contract together.
   known terminal action/ambient metrics where supported.
 - Review the synthesized/deployed configuration against every exact Phase 7
   timeout, concurrency, retention, retry, and budget value.
+- Implement `pnpm cloud:verify` as the fail-closed aggregate for public smoke,
+  security/cache probes, tenant isolation, canary leakage scans, deployed
+  ambient behavior, IAM/DB/MCP negative privileges, safe alarm delivery, cost
+  reservation/mode races, an isolated retirement lifecycle, and inspection
+  reconstruction. Tests requiring an isolated town/resource or operator
+  acknowledgement must verify that scope before running; they may not silently
+  skip and still report a passing gate.
 
 **Deliverables**
 
-- Signed-off cloud configuration checklist, sanitized leakage-scan evidence,
-  privilege matrix, alarm delivery evidence, and public smoke result.
+- Signed-off cloud configuration checklist, `cloud:verify` aggregate runner,
+  sanitized leakage-scan evidence, privilege matrix, alarm delivery evidence,
+  and public smoke result.
 
 ## 5. Artifacts
 
@@ -392,8 +428,8 @@ Phase 7 is expected to produce or complete:
 - typed CDK stacks/constructs and synth assertions;
 - environment/configuration schema and release manifest;
 - web asset publication and cache invalidation workflow;
-- CockroachDB production bootstrap, grants, migrations, seed/bootstrap, and
-  resource-limit documentation;
+- CockroachDB production bootstrap, grants, migrations, schema/content
+  validation, and resource-limit documentation;
 - Secrets Manager bootstrap/rotation guide and IAM privilege matrix;
 - prompt prewarm runner and warmup schedule;
 - structured logging/metrics contracts, redaction tests, dashboards, alarms,
@@ -438,7 +474,9 @@ their exact scripts with the Phase 0 workspace rather than assuming they exist.
 | CDK correctness | Synth assertions for all exact timeouts, queue, schedules, IAM, cache/logging, retention, alarms, and budgets | `pnpm cdk:synth` and `pnpm test:infra` |
 | Deployment review | Human-readable resource/policy change before apply | `pnpm cdk:diff` |
 | Production deploy | Repeatable stack update from operator machine | `pnpm cdk:deploy` |
-| Database bootstrap | TLS connection, migrations, grants, inspection views, seed, vector indexes | `pnpm db:migrate` and `pnpm db:seed-demo` |
+| Database bootstrap | TLS connection, migrations, grants, inspection views, vector indexes; no town creation | `pnpm db:migrate` |
+| Fresh demo town | Public town-creation ledger, retained key, reconstructed invite, no direct seed bypass | `pnpm demo:create-town` |
+| Town retirement | Dry run, unsafe-state refusal, history retention, closed preview, and `410` player boundaries on an isolated town | `pnpm town:retire --town-id <test-town-id>` |
 | Prompt readiness | Four exact model/schema grammar pairs warm successfully | `pnpm prompts:prewarm` |
 | Public smoke | Health plus authenticated create/join/action/leave/resume over CloudFront | `pnpm smoke-test` |
 | Security headers/cache | Public probes verify Origin, headers, cache, cookies, and tokenless URLs | `pnpm test:security --target production` |
@@ -448,7 +486,7 @@ their exact scripts with the Phase 0 workspace rather than assuming they exist.
 | IAM/DB/MCP privilege | Runtime and inspection identities pass allowed reads and fail forbidden mutation/admin operations | `pnpm test:privileges --target production` |
 | Alarms | Safe synthetic trigger reaches operator and returns to OK | `pnpm test:alarms` |
 | Cost modes | Threshold transitions, concurrency, player-safe errors, budget resources | `pnpm test:cost-controls` |
-| Complete gate | Accepted pre-submission sequence plus inspection reconstruction | `pnpm test && pnpm cdk:deploy && pnpm db:migrate && pnpm db:seed-demo && pnpm prompts:prewarm && pnpm smoke-test` |
+| Complete deployed gate | Aggregate public smoke, security/cache, tenant isolation, log leakage, ambient cloud behavior, IAM/DB/MCP privilege, safe alarm delivery, cost reservations/modes, isolated retirement, and inspection reconstruction after deploy | `pnpm cloud:verify` |
 
 Do not include raw secrets or invite capabilities in command output retained as
 evidence. A test that needs a canary secret must compare a hash or perform a
@@ -474,8 +512,8 @@ bounded absence scan without printing the value.
 ## 9. Exit checklist
 
 - [ ] A clean operator environment can validate config, bootstrap CDK, deploy,
-      migrate, seed/bootstrap, prewarm, and smoke the system using documented
-      commands.
+      migrate/bootstrap, prewarm, smoke, and create a fresh town through the
+      public contract using documented commands.
 - [ ] S3/CloudFront/API Gateway/Game/Ambient/Recovery/SQS/EventBridge resources
       match the accepted topology and exact reliability values.
 - [ ] Static and API cache behavior, Origin validation, referrer policy,
@@ -503,6 +541,9 @@ bounded absence scan without printing the value.
       IAM, and MCP boundaries.
 - [ ] Deployment and rollback runbooks distinguish web, runtime, prompt/model,
       migration, and credential failures without claiming unsafe data rollback.
+- [ ] The dry-run-first retirement command refuses unsafe lifecycle states,
+      deletes no causal history, and makes an eligible retired town closed to
+      joins and player views.
 - [ ] A public smoke test completes creation/join/action/leave/re-entry and
       records only sanitized evidence for the exact deployed release.
 
@@ -511,8 +552,8 @@ bounded absence scan without printing the value.
 Phase 8 receives:
 
 - one known-good deployed release and a release manifest containing commit,
-  content/rules/prompt/schema versions, model profiles, migration version, and
-  public URL;
+  content/rules/prompt/schema versions, model profiles, immutable price-catalog
+  version, migration version, and public URL;
 - fresh-town bootstrap and safe rollback/rotation procedures;
 - dashboards, alarms, cost controls, and an operator contact path;
 - a working read-only Managed MCP connection and causal inspection runbook;

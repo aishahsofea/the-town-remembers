@@ -175,8 +175,10 @@ tests are present.
   status in the query or response.
 - API and database-backed tests for creation replay, mismatched fingerprints,
   invalid judge codes, key-version retention, and valid, unknown, cross-town,
-  and retired previews, including response/log snapshots proving the judge code
-  and raw invite are absent.
+  and retired previews. Response snapshots prove the judge code is absent;
+  persistence and log snapshots prove both the judge code and raw invite are
+  absent. The authorized `201` response is expected to contain the reconstructed
+  invite URL required by Decision 006.
 
 #### P3-04 — Implement idempotent first-time join and replay closure
 
@@ -241,9 +243,13 @@ tests are present.
 
 **Deliverables**
 
-- Transactional player-view token bucket at 30/minute with burst 10 and IP
-  buckets for preview/join boundaries where applicable to the accepted route
-  policy.
+- Transactional player-view token bucket at 30/minute with burst 10, a
+  town-creation-attempt bucket per rotating IP hash at 5 per 15 minutes with
+  burst 5, and a new-join bucket per rotating IP hash at 10 per 15 minutes with
+  burst 10. Invite preview has no additional application bucket in v1.
+- Existing town-creation/join replays and existing-session resumes are
+  recognized before consuming a new-operation bucket, exactly as Decision 006
+  requires.
 - Rotating HMAC IP hashes only; no raw IP persistence.
 - `429` plus `Retry-After` tests proving a rejected request does not consume an
   idempotency key or create an operation row.

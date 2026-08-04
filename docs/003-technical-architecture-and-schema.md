@@ -469,7 +469,7 @@ evaluation gates are defined in
 
 ## Logical schema contract
 
-The accepted 39-table model now lives in
+The accepted 40-table model now lives in
 [Logical Data Model and Schema Contract](005-logical-data-model-and-schema-contract.md).
 That reference owns:
 

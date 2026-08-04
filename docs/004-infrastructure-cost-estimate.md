@@ -122,6 +122,9 @@ The cost-mode implementation and token ledger are therefore budget-critical, not
    traffic. The accepted hard model fallback is therefore **$10.35**, leaving
    $0.95 for platform variance, CockroachDB overage, and contingency.
 2. **Track the invoice dimension, not only the model name.** Record model, inference-profile scope, input tokens, output tokens, cache tokens, retries, and calculated cost in `agent_runs`; global and in-region Claude rates differ.
+   Reserve each invocation's configured worst-case cost transactionally before
+   calling the model, then reconcile it to these actual dimensions. Ambiguous
+   calls retain the reservation rather than assuming zero spend.
 3. **Prefer global cross-region inference when data-routing requirements allow it.** Current global Claude rates are about 9% below in-region rates and would reduce the 250-visit Sonnet-only sensitivity by about $1.00.
 4. **Select the CloudFront Free flat-rate plan deliberately.** Attach the distribution and confirm its 1M-request, 100 GB transfer, and 5 GB S3 allowances.
 5. **Keep CloudWatch bounded.** Set 7–14 day log retention, avoid verbose prompt/response logging, and use standard service metrics unless a custom metric has a clear operational decision attached.

@@ -154,6 +154,11 @@ cannot mutate structured state; confirmed claims create auditable
 transmissions and evidence; retrieved memories are town- and NPC-scoped; and a
 later encounter demonstrably changes because of committed memory.
 
+This is an isolated integration checkpoint, not a standalone player-facing
+release. Phase 4 actions can create ambient-eligible events while their Leave
+path belongs to Phase 5, so shared/public exposure remains disabled until the
+Phase 5 gate passes.
+
 ## Phase 5 — Ambient propagation and recovery
 
 **Outcome:** Leaving after consequential activity advances the town through a
@@ -169,6 +174,10 @@ later player while preserving its full provenance. Duplicate deliveries,
 worker retries, timeouts, and stale leases do not duplicate effects or strand
 the town; the time-passes UI reaches an honest terminal state in every tested
 case.
+
+Passing this gate closes the joint Phase 4/5 player-facing release: NPC actions,
+eligible Leave, transition processing, and re-entry are enabled and verified
+together.
 
 ## Phase 6 — Complete mystery experience
 

@@ -4,6 +4,7 @@
 - **Depends on:** Phase 3 first playable plus the accepted persistence and deterministic-rule foundations
 - **Primary boundary:** Saved player action → NPC-scoped recall → bounded Bedrock selection → deterministic validation → atomic causal persistence
 - **Explicit phase constraint:** This phase owns live Bedrock dialogue, claim normalization, Titan embeddings, and vector recall; it does not own SQS or ambient propagation
+- **Release status:** Integration checkpoint only; Phase 4 and Phase 5 share one player-facing release gate
 
 ## 1. Objective and user-visible proof
 
@@ -22,6 +23,15 @@ verified clue and produces a deterministic belief/relationship change plus a
 grounded response. Database inspection reconstructs the claim, transmission,
 episode, evidence, current belief, selected rendering, and model run while the
 authoritative item row remains unchanged by a false claim.
+
+This proof runs in an isolated integration environment and deliberately does
+not make Phase 4 a deployable player release. Tell and evidentiary Show can
+create ambient-eligible events, while the accepted eligible-range Leave path is
+not complete until Phase 5. Shared or public environments must keep the six
+Phase 4 NPC mutations unavailable until `P5-22` passes; Phase 3 remains the last
+complete player-facing baseline in the interim. Phase 5 enables the mutations
+and eligible Leave path together, so no player can enter a state whose accepted
+Leave behavior is missing.
 
 The encounter loop must still terminate safely when Titan, Sonnet, or Haiku is
 unavailable: Ask and grounded dialogue may use deterministic scoped recall and
@@ -62,6 +72,8 @@ structured state.
 - Ambient candidate execution, outbox publishing, SQS, ambient worker leases,
   EventBridge recovery, transition polling, and NPC-to-NPC off-screen effects;
   Phase 5 owns those.
+- A standalone player-facing Phase 4 release. Feature exposure in a shared or
+  public environment remains gated on the Phase 5 acceptance suite.
 - Model-authored player-visible prose, model-calculated belief/relationship
   scores, model-controlled access/item/promise decisions, or direct database
   access by a model.
@@ -201,10 +213,20 @@ structured state.
 
 **Deliverables**
 
-- Append-only short transaction for every invocation recording purpose,
-  resolved model/profile, prompt/target version, prompt hash, input/schema/
-  validator versions, token/cache dimensions, latency, estimated decimal USD,
-  validation code, and outcome.
+- Before every Bedrock or Titan invocation, calculate its configured worst-case
+  charge and atomically insert/reuse a `model_cost_reservations` admission row
+  against settled actual cost plus outstanding reservations for the UTC month.
+  The maximum uses an immutable resolved price-catalog version plus conservative
+  bounded input/output/cache ceilings; an unknown price or ceiling fails
+  closed. Retry, repair, and revision-rerun calls reserve separately. The
+  external call cannot start without a committed reservation.
+- One short post-call transaction that appends the completed invocation run and
+  settles its reservation atomically, recording purpose, resolved model/profile,
+  prompt/target version, prompt hash, input/schema/validator versions,
+  token/cache dimensions, latency, estimated decimal USD, validation code, and
+  outcome. Release a reservation only when the invocation is proven not to
+  have occurred; an ambiguous call retains its maximum and blocks that capacity
+  until bounded reconciliation.
 - Causal source validation for action/world event as available; revision-lost
   accepted outputs recorded as `superseded` rather than silently discarded.
 - Internal monthly estimated-cost aggregation and mode selection: Sonnet below
@@ -214,7 +236,8 @@ structured state.
   cost, and stable error codes but no prompt text, raw output, player text,
   credentials, or connection data.
 - Unit/database tests for decimal calculations, thresholds, inference-profile
-  rates, repair accounting, fallback, and concurrent ledger reads.
+  rates, repair accounting, fallback, duplicate admission, concurrent
+  reservations at every hard boundary, settlement/release, and ambiguous calls.
 
 #### P4-06 — Add live model smoke and schema prewarm entry points
 
@@ -436,6 +459,9 @@ structured state.
   discovered clues eligible for Show, and player-safe testimony/hearsay with
   ordered provenance; exact scores, objective truth, private reasoning, raw
   model results, and canonical revision remain absent.
+- Shared/public projection keeps the six Phase 4 action kinds unavailable until
+  the Phase 5 release capability is enabled. Only the isolated Phase 4
+  integration profile may expose them before `P5-22`.
 - Inspection-view verification queries proving each accepted interaction can be
   reconstructed without widening player API access.
 
@@ -658,6 +684,9 @@ CockroachDB vector index.
       security tests, live smoke, typecheck, lint, and build pass.
 - [ ] Two browsers demonstrate that committed direct NPC memory changes a later
       interaction without any ambient work.
+- [ ] Phase 4 model actions remain unavailable in shared/public player traffic
+      until the joint Phase 5 release gate passes; the isolated proof never
+      claims that eligible-range Leave is complete.
 
 ## 10. Handoff to Phase 5
 
@@ -678,3 +707,7 @@ The handoff must identify:
   tick partial; and
 - the Phase 3 eligible-range leave seam that Phase 5 will replace with durable
   outbox creation and transition status.
+
+`P5-22` is the first release gate allowed to enable Phase 4 NPC mutations for
+players. Its acceptance evidence must include an eligible event followed by
+Leave, terminal ambient processing, and successful re-entry.

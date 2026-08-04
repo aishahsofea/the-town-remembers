@@ -14,6 +14,11 @@ claims across authored contact edges or do nothing, and every result remains
 idempotent, provenance-complete, inspectable, and terminal before the transition
 deadline.
 
+This phase also closes the joint Phase 4/5 player-facing release gate. The six
+NPC mutations introduced at the Phase 4 integration checkpoint are enabled in
+shared/public player traffic only after eligible Leave, terminal transition,
+and re-entry pass `P5-22` together.
+
 The user-visible proof is the canonical two-browser rumour path:
 
 1. Player A tells Mara that the bell was at Reed's Garden and leaves.
@@ -408,6 +413,10 @@ eventual player-visible `complete`, without leaking their internal difference.
   once; non-active towns remain blocked.
 - Hidden queue IDs, send/execution states, attempts, model outcome, error code,
   selected NPC/claim, and quarantine reason never enter response or ETag.
+- Add a validated release capability that can expose the six Phase 4 NPC
+  mutations only when eligible Leave, outbox publication, Ambient consumption,
+  Recovery terminalization, and transition projection are all configured.
+  Production/shared configuration fails closed if these capabilities differ.
 - HTTP/database tests for every state/race and hidden-only transition changes
   that do or do not affect the safe projection as contractually appropriate.
 
@@ -624,6 +633,10 @@ rare timing/fault cases but cannot alone prove FIFO configuration.
       output, player text, processing tokens, or hidden queue/game detail.
 - [ ] Deterministic, prompt, database, queue, worker, HTTP, browser, security,
       live integration, typecheck, lint, build, and synth gates pass.
+- [ ] The joint Phase 4/5 release test enables the NPC mutations, creates an
+      ambient-eligible belief event, leaves through the durable outbox path,
+      reaches a terminal transition, and starts the next visit without a
+      missing or placeholder branch.
 
 ## 10. Handoff to Phase 6
 

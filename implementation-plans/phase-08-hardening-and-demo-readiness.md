@@ -67,7 +67,8 @@ and receive a regression here.
 
 - A deployed release manifest identifying commit/build, migrations,
   `bell-mystery-v1`, `mvp-rules-v1`, HTTP API `v1`, prompt/schema/validator
-  versions, and resolved model/inference profiles.
+  versions, resolved model/inference profiles, and immutable price-catalog
+  version.
 - Passing complete-mystery E2E and public production smoke suites.
 - Working alarms, dashboards, cost mode controls, log redaction, tenant
   isolation, deployment/rollback procedures, and fresh-town bootstrap.
@@ -112,7 +113,7 @@ and receive a regression here.
 - Freeze one candidate commit/build and record its infrastructure stack version,
   migration set, content/rules version, HTTP API version, prompt hashes,
   input/schema/validator versions, resolved model/profile IDs, asset manifest,
-  environment, and public URL.
+  immutable model price-catalog version, environment, and public URL.
 - Build a traceability ledger from every high-risk verification priority and
   Phase 0–7 exit check to an automated test, manual audit, operational probe,
   or explicitly accepted non-goal.
@@ -134,7 +135,8 @@ and receive a regression here.
   snapshot drift, deterministic rules, content graph, database constraints and
   transactions, API unions/idempotency, queue/recovery, web components,
   accessibility automation, browser journeys, infrastructure synthesis,
-  privilege/security, cost controls, and prompt evaluations.
+  privilege/security, cost controls, prompt evaluations, and the Phase 7
+  `cloud:verify` gate when targeting the deployed release candidate.
 - Keep CockroachDB transaction/concurrency tests on a real compatible database;
   mocks may supplement but not substitute for the claimed boundary.
 - Classify tests by deterministic/offline, external-live, destructive-isolated,
@@ -276,6 +278,10 @@ and receive a regression here.
 - Exercise the `$8`, `$9.50`, and `$10.35` cost-mode transitions with a test
   ledger; ensure no public error reveals its dollar value and retained towns
   remain readable in authored-fallback mode.
+- Race worst-case reservations immediately below every boundary; prove only
+  reservations that fit commit, duplicate admission cannot reserve twice, an
+  ambiguous call remains conservatively charged, and settlement releases only
+  the difference from actual token cost.
 - If tuning is necessary, update the reliability contract, CDK/runtime config,
   cost estimate, tests, and coupled invariant analysis in the same candidate.
 
@@ -315,9 +321,10 @@ and receive a regression here.
 **Work**
 
 - Document a fresh-town workflow that creates a new isolated town through the
-  accepted bootstrap path and never requires clearing a prior town's causal
-  rows. Record the town ID/invite securely and retire it only under the accepted
-  lifecycle.
+  deployed `pnpm demo:create-town` HTTP wrapper and never requires clearing a
+  prior town's causal rows. Record the town ID/invite securely and retire it
+  only with the dry-run-first `pnpm town:retire --town-id <exact-id>` lifecycle
+  command.
 - Define pre-demo checks for release identity, public health and authenticated
   smoke, four prompt warmups, queue/DLQ state, alarms, cost mode, CockroachDB
   resource headroom, MCP access, browser profiles, and network stability.
@@ -326,7 +333,9 @@ and receive a regression here.
   ambiguous commit. Prefer existing safe fallback/ledger inspection over blind
   retries or direct data edits.
 - Include post-recording/post-judging credential rotation, evidence retention,
-  and eventual town/environment retirement.
+  and eventual town/environment retirement. The runbook must refuse direct
+  causal-row deletion or an unsafe retirement while visits, player actions, or
+  ambient work are nonterminal.
 - Walk the runbook with a second reader or cold start from a clean operator
   shell and correct every missing prerequisite.
 
@@ -340,12 +349,22 @@ and receive a regression here.
 **Work**
 
 - Rehearse the exact fresh-town live sequence: Player A tells Mara the garden
-  rumour, leaves, ambient propagation selects Nessa or valid Corin fallback,
-  Player B receives changed dialogue, shows `guard_cart_ruts`, and inspection
-  shows the belief reversal while the item remains in the Old Chapel.
+  rumour and leaves; ambient propagation selects Nessa or the valid Corin
+  fallback; Player B discovers the Cart Tracks by the Guard Post live, receives
+  changed dialogue from the selected recipient, shows the now town-discovered
+  `guard_cart_ruts`, and inspection shows the belief reversal while the item
+  remains in the Old Chapel. Include every required travel step for the actual
+  recipient branch.
 - Make the script branch explicitly on the actual selected recipient rather
   than assuming Nessa. Do not pre-create the player actions, clue, ambient
   transmission, contradiction, or inspection records shown live.
+- Add a third honest branch for a valid `do_nothing` completion. It records and
+  briefly explains the no-op and never pretends a transmission occurred. For a
+  rehearsal, create a new fresh town and restart the primary proof. During a
+  judged attempt, use the previously captured sanitized successful proof if
+  time does not permit a fresh retry, clearly identifying the live no-op and
+  the captured evidence. A valid no-op does not count toward the five
+  consecutive successful primary rehearsals.
 - Keep the judged narrative under three minutes while retaining a longer
   operator rehearsal that also proves full mystery/ending readiness.
 - Prepare exact MCP inspection questions/queries using the live town/action/job
@@ -366,8 +385,8 @@ shortcut.
 
 **Deliverables**
 
-- Timed primary script, branch card for Nessa/Corin, MCP inspection script,
-  presenter/operator checklist, and rehearsal log.
+- Timed primary script, Nessa/Corin/valid-no-op branch card, MCP inspection
+  script, presenter/operator checklist, and rehearsal log.
 
 #### P8-11 — Capture evidence and make the final release decision
 
@@ -452,7 +471,7 @@ isolated targets described above.
 | Latency/cost | Bounded isolated workload with p50/p95/p99 and per-visit cost | `pnpm test:performance --profile mvp-demo` |
 | Browser matrix | Chromium, Firefox, WebKit critical journeys | `pnpm test:e2e --project chromium --project firefox --project webkit` |
 | Accessibility | Automated suite plus referenced manual audit | `pnpm test:a11y` |
-| Cloud/security/privilege | CDK drift, headers/logs, IAM/DB/MCP negative permissions | `pnpm test:cloud` and `pnpm test:privileges --target production` |
+| Cloud/security/privilege | Aggregate deployed smoke, headers/logs, tenant isolation, ambient, IAM/DB/MCP negative permissions, alarms, cost controls, isolated retirement, and inspection | `pnpm cloud:verify` |
 | Demo readiness | Fresh town, two browsers, canonical rumour, evidence reversal, MCP reconstruction | `pnpm demo:rehearse` |
 | Final release | Manifest consistency and all non-manual release blockers | `pnpm release:verify` |
 
@@ -469,6 +488,7 @@ secret-scan result.
 | Fault switches can affect ordinary traffic | Require test-only build/config, explicit fixture scope, and production-disable assertion | Do not run that scenario against the deployed judging environment |
 | Model variability makes exact demo wording unreliable | Assert and narrate structured claims, selected approved renderings, and saved outcomes | Follow authored fallback; never depend on generated prose for required progress |
 | Ambient model chooses Corin instead of preferred Nessa | Treat both as valid accepted behavior and branch on the committed transmission | Follow the selected recipient in Player B and MCP inspection |
+| Ambient model validly chooses `do_nothing` | Record the honest terminal no-op; never claim cross-player propagation | In rehearsal, start a new fresh town; during a time-bounded judged attempt, use clearly labeled captured successful evidence if a fresh retry is impractical |
 | Live model or embedding is slow/unavailable | Use accepted dialogue/recall fallbacks and show the saved honest result | Demonstrate causal state/inspection with the completed fallback; normalization is retried only as a new action after its terminal error |
 | Queue work misses the demo window | Let deadline/recovery reach the honest terminal state and inspect why | Start a fresh prepared town for the primary demo only after recording the failed rehearsal; never patch the job |
 | Rehearsal data contaminates the live proof | Create a fresh isolated town per run and record IDs securely | Retain/retire old towns per policy; never erase causal rows to make them look fresh |
@@ -483,7 +503,7 @@ secret-scan result.
 
 - [ ] The release manifest exactly matches the deployed commit, infrastructure,
       migrations, content/rules, prompts/schemas/validators, models/profiles,
-      assets, and runbook.
+      price catalog, assets, and runbook.
 - [ ] Every accepted high-risk invariant and Phase 0–7 exit condition maps to a
       passing automated check, completed manual audit, operational probe, or
       explicit accepted non-goal.
@@ -510,8 +530,9 @@ secret-scan result.
       the demo, inspect causality, respond to failure, and rotate/retire access
       using the runbooks alone.
 - [ ] At least five consecutive successful fresh-town primary rehearsals are
-      logged, including valid Nessa/Corin branch handling where selected; the
-      required failure rehearsals are logged separately in isolated fixtures.
+      logged, including valid Nessa/Corin branch handling where selected. Valid
+      no-ops are logged separately and do not count as successful propagation;
+      the required failure rehearsals use isolated fixtures.
 - [ ] Managed MCP reconstructs every shown belief, evidence, provenance,
       relationship, item, model, idempotency, and ambient record without write
       authority or secret material.
@@ -531,7 +552,7 @@ At completion, hand off one immutable release/evidence package containing:
   inspection summaries;
 - fresh-town, pre-demo, demo, incident, rollback, rotation, and retirement
   runbooks;
-- the two-player/MCP rehearsal script and branch card;
+- the two-player/MCP rehearsal script and Nessa/Corin/valid-no-op branch card;
 - the final submission claim-to-evidence index and go/no-go record.
 
 Keep the verified environment online through judging, watch alarms and cost

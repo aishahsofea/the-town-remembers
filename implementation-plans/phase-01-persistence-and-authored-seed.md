@@ -2,7 +2,7 @@
 
 - **Status:** Detailed implementation plan
 - **Depends on:** Phase 0 exit gate
-- **Produces:** The accepted 39-table CockroachDB model, inspection surface,
+- **Produces:** The accepted 40-table CockroachDB model, inspection surface,
   and repeatable `bell-mystery-v1` town materialization
 - **Task ID prefix:** `P1-`
 
@@ -29,7 +29,7 @@ it must not print raw invite/session/join secrets or database credentials.
 
 ### In scope
 
-- Forward SQL migrations for all 39 accepted tables, their closed domains,
+- Forward SQL migrations for all 40 accepted tables, their closed domains,
   checks, composite foreign keys, uniqueness, partial indexes, and timestamps.
 - CockroachDB `VECTOR(256)` storage and the required town/NPC-prefixed vector
   index.
@@ -78,7 +78,7 @@ it must not print raw invite/session/join secrets or database credentials.
 
 ### Normative accepted sources
 
-- Decision 005 is authoritative for the 39 tables, value conventions,
+- Decision 005 is authoritative for the 40 tables, value conventions,
   nullability, identity, state machines, indexes, transaction boundaries,
   grants, views, and verification priorities.
 - Decisions 002, 003, and 007 fix Kysely/`pg`, public TLS, short serializable
@@ -159,7 +159,7 @@ never auto-migrate with `app_runtime`.
 
 Production passwords and managed-MCP connection setup remain Phase 7 work.
 
-### Workstream B — The 39-table schema
+### Workstream B — The 40-table schema
 
 The task groups below assign logical ownership, not necessarily one SQL file
 per group. Several accepted relationships are cyclic: visits reference actions,
@@ -299,8 +299,8 @@ cannot be bypassed through supported writes.
 
 **Depends on:** `P1-05`, `P1-07`, `P1-09`
 
-**Tables:** `player_actions`, `world_events`, `agent_runs`, `outbox`,
-`ambient_job_executions`
+**Tables:** `player_actions`, `world_events`, `agent_runs`,
+`model_cost_reservations`, `outbox`, `ambient_job_executions`
 
 **Deliverables**
 
@@ -315,6 +315,11 @@ cannot be bypassed through supported writes.
 - Agent-run purposes, outcomes, prompt/input/schema/validator metadata,
   embedding-versus-structured presence rules, token/latency/cost domains, and
   causal sources.
+- Durable model-cost admission reservations keyed by source/purpose/attempt,
+  with UTC billing month, worst-case amount, reserved/settled/released states,
+  action/job/event/non-game source identity, immutable price version,
+  actual-cost settlement, optional run linkage, and indexes for serializable
+  monthly admission. An ambiguous invocation retains its maximum reservation.
 - Outbox delivery states, send claims, canonical range columns, job identity,
   and transition deadlines.
 - Ambient execution identity, matching outbox job/payload hash, processing/
@@ -335,7 +340,7 @@ the accepted typed envelopes.
 
 - Every index listed under Decision 005's “Required indexes,” including the
   vector index on ready episode embeddings with `town_id` and `npc_id` prefix
-  columns.
+  columns and the monthly/source indexes required for model-cost admission.
 - Catalog-based tests proving tables, columns, types, constraints, foreign-key
   town scoping, indexes, and views match the accepted inventory.
 - A documented fallback for CockroachDB versions that cannot predicate the
@@ -369,7 +374,7 @@ production defaults must fail closed to full verification.
 
 **Deliverables**
 
-- Database interface covering all 39 tables and read-only inspection views.
+- Database interface covering all 40 tables and read-only inspection views.
 - A reproducible generation/introspection command or, if generation cannot
   model CockroachDB vector/composite details, a reviewed declared mapping plus
   drift tests.
@@ -480,6 +485,10 @@ versioned HMAC and durable public town-creation request behavior.
   origins, solution, initial custody, hidden/revealed state, and initial
   beliefs.
 
+This fixture is test-only. Production and demo towns are created through the
+Phase 3 town-creation ledger and versioned invite derivation, never by exposing
+or extending this direct materializer CLI.
+
 ### Workstream E — Inspection and exhaustive database verification
 
 #### P1-19 — Create the read-only `inspection` schema
@@ -497,7 +506,8 @@ versioned HMAC and durable public town-creation request behavior.
   `inspection.idempotency_status`, `inspection.ambient_jobs`, and
   `inspection.access_operations`.
 - Human-inspectable stable keys/display names alongside opaque IDs where useful,
-  deterministic causal ordering, and explicit origin/event relationships.
+  deterministic causal ordering, explicit origin/event relationships, and safe
+  cost-reservation/settlement status joined into `inspection.agent_runs`.
 - Exclusion of invite/session/join hashes, cookies, raw processing tokens,
   database secrets, raw prompts, invalid model output, and credential material.
 - Grants proving inspection is read-only and player runtime does not depend on
@@ -514,7 +524,8 @@ versioned HMAC and durable public town-creation request behavior.
 - High-risk constraint tests for actor/entity subtypes, normalized-name
   collisions, exactly-one item custody, active visits/promises, clue discovery,
   action/event effect identity, draft isolation, testimony/reversal/mirror
-  uniqueness, ambient ranges, and resolution uniqueness.
+  uniqueness, model-cost reservation admission/settlement, ambient ranges, and
+  resolution uniqueness.
 - Concurrent tests showing conditional constraints allow only one unique-item
   owner, one active player action, and one town resolution.
 - Vector insert/index/query tests proving town/NPC prefix filtering and
@@ -541,10 +552,10 @@ versioned HMAC and durable public town-creation request behavior.
 
 | Area | Artifacts |
 |---|---|
-| SQL | Ordered forward migrations, role/grant bootstrap, 39 tables, constraints, indexes, vector index, inspection views |
+| SQL | Ordered forward migrations, role/grant bootstrap, 40 tables, constraints, indexes, vector index, inspection views |
 | Database package | Bounded `pg` pool, Kysely types, query helpers, serializable retry/ambiguous-commit primitives |
 | Content package | Immutable `bell-mystery-v1` registry, `mvp-rules-v1` mapping, static validators, content fixtures |
-| Seeding | Transactional town materializer and safe operator/test seed command |
+| Seeding | Transactional town materializer and test-only seed fixture; no production invite bypass |
 | Verification | Catalog audit, grant tests, CockroachDB integration suites, concurrency/vector/tenant/inspection seed tests |
 | Documentation | Migration/seed/audit/recovery runbook and schema-change checklist |
 
@@ -583,7 +594,7 @@ Commands below are planned interfaces introduced by this phase.
 | Database compatibility | Real CockroachDB version/vector capability check | `pnpm db:doctor:test` |
 | Fresh migration | Apply all migrations to an empty disposable database | `pnpm db:migrate:test` |
 | Repeat migration | Re-run the migration command with no drift or duplicate DDL | `pnpm db:migrate:test` |
-| Schema inventory | Assert 39 tables, exact required views, columns, types, constraints, FKs, and indexes | `pnpm test:db -- schema-audit` |
+| Schema inventory | Assert 40 tables, exact required views, columns, types, constraints, FKs, and indexes | `pnpm test:db -- schema-audit` |
 | Roles and secrets | Verify migration/runtime/inspection grants and denied credential-bearing access | `pnpm test:db -- grants` |
 | Cross-town isolation | Reject cross-town references for every FK family and scope queries | `pnpm test:db -- tenant-isolation` |
 | State invariants | Exercise subtype, custody, state-machine, presence, uniqueness, and JSON writer checks | `pnpm test:db -- constraints` |
@@ -622,7 +633,7 @@ truth. A seed failure rolls back; it never leaves a partially playable town.
 - [ ] `P1-01` through `P1-21` are complete with artifact links.
 - [ ] A fresh CockroachDB target migrates successfully and the migration command
   is safe to run again.
-- [ ] Catalog audit proves all 39 accepted tables, required constraints,
+- [ ] Catalog audit proves all 40 accepted tables, required constraints,
   composite town-scoped foreign keys, indexes, and 13 inspection views exist.
 - [ ] `app_runtime` has only required runtime rights; the inspection identity is
   read-only; application packages cannot access operator credentials.

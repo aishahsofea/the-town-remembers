@@ -44,7 +44,7 @@ explanations on every visit.
 
 ## Logical data model
 
-The settled model contains 39 tables. Each exists because it owns a distinct
+The settled model contains 40 tables. Each exists because it owns a distinct
 identity, lifecycle, consistency boundary, or append-only causal record; there
 are no generic entity-attribute-value tables.
 
@@ -1027,6 +1027,49 @@ cost calculation because in-region and global rates differ. Prompts, raw
 invalid output, credentials, authentication tokens, and connection strings are
 not stored.
 
+#### `model_cost_reservations`
+
+| Column group | Required values |
+|---|---|
+| Identity | `id UUID`, `billing_month DATE`, `town_id UUID NULL`, `player_action_id UUID NULL`, `ambient_job_execution_id UUID NULL`, `world_event_id UUID NULL`, `non_game_operation_key STRING NULL`, `attempt_ordinal INT4` |
+| Admission | `purpose STRING`, `model STRING`, `inference_profile STRING`, `price_version STRING`, `maximum_cost DECIMAL(12,6)`, `status STRING`, `created_at TIMESTAMPTZ` |
+| Settlement | `agent_run_id UUID NULL`, `actual_cost DECIMAL(12,6) NULL`, `settled_at TIMESTAMPTZ NULL` |
+
+Exactly one of player action, ambient execution, world event, or non-game
+operation key identifies the caller. Episode embedding/backfill uses its causal
+world event; warmup and credential-gated synthetic smoke use a unique non-game
+operation key. `town_id` is required for the first three and null for a
+non-game operation. The source plus purpose and attempt ordinal is unique, so
+retrying an admission step cannot reserve twice. `status` is `reserved`,
+`settled`, or `released`. A reserved row has no actual cost or settlement time;
+a settled row has both; a released row records that the invocation was proven
+not to have occurred and has zero actual cost. `maximum_cost` and `actual_cost`
+are non-negative, and settlement cannot exceed the reserved maximum unless a
+release-blocking rate/configuration error is raised.
+
+`maximum_cost` is computed from the resolved inference-profile price and
+conservative hard ceilings for the already-built input, output tokens, cache
+dimensions, and this single transport invocation. If any price or token ceiling
+is unknown, admission fails closed before the call. Retry, repair, and revision
+rerun invocations reserve separately; they never reuse a settled reservation.
+
+Before any Bedrock or Titan invocation, a serializable short transaction sums
+settled actual cost plus outstanding maximum reservations for the UTC billing
+month, chooses the applicable cost mode, and inserts one reservation only when
+the candidate maximum fits below that mode's next hard boundary. If it does not
+fit, admission advances to the next cheaper/restricted mode and recomputes the
+candidate maximum in the same transaction; authored fallback is selected when
+no paid call fits below `$10.35`. The external call may begin only after this
+commit. After the call, a second short transaction atomically appends the
+corresponding `agent_runs` row and settles the reservation to actual token-based
+cost. Warmups settle reservations without creating `agent_runs` rows.
+
+If invocation acknowledgement or settlement is ambiguous, the maximum remains
+reserved until an operator or bounded recovery path can prove whether to settle
+or release it. Stale reservations are never expired merely by wall-clock age.
+This conservative treatment makes concurrent admission safe and prevents stale
+cost-mode reads from spending past `$8`, `$9.50`, or `$10.35`.
+
 #### `outbox` and `ambient_job_executions`
 
 | Table | Required domain columns | Responsibility |
@@ -1183,6 +1226,10 @@ In addition to primary keys and uniqueness constraints, migrations must provide:
   on `(town_id, player_id)` where `status = 'processing'`, a partial stale-work
   index on `status = 'processing'` and `processing_expires_at`, and a partial
   retry index on `status = 'retryable'` and `retry_after_at`.
+- `model_cost_reservations(billing_month, status)` for serialized admission and
+  reconciliation, plus partial unique source/purpose/attempt indexes for player
+  actions, ambient executions, world events, and non-game operations so the
+  same attempt cannot reserve twice.
 - `outbox(town_id, delivery_status, next_send_at, send_expires_at,
   transition_deadline_at)`.
 - A partial stale-work index on
@@ -1259,6 +1306,9 @@ the job record is already completed, and the event's
 ## Tenant isolation and security
 
 - All town-owned queries require `town_id`.
+- `model_cost_reservations` is the deliberate global billing exception. Only
+  the cost-admission service may query it across towns, and no player response
+  or town-scoped repository may import that capability.
 - Composite foreign keys prevent cross-town references.
 - Guest session tokens live in secure, HTTP-only, town-scoped cookies; only
   hashes are stored in `player_sessions`.
@@ -1298,7 +1348,7 @@ normal player requests.
 | `inspection.objective_truth` | Authored facts and the case solution, visible only to judge/developer inspection access |
 | `inspection.case_progress` | Clue discoveries, attempts, resolution gate, and final choice |
 | `inspection.world_event_timeline` | Ordered typed effects and their originating action or ambient job |
-| `inspection.agent_runs` | Model, prompt version, tokens, latency, validation, and fallback outcomes |
+| `inspection.agent_runs` | Model, prompt version, tokens, latency, validation, fallback outcomes, and safe reservation/settlement status |
 | `inspection.idempotency_status` | Player and ambient keys, fingerprints, statuses, attempts, processing claims, and numbered event effects |
 | `inspection.ambient_jobs` | Disjoint event ranges, outbox delivery, execution outcome, and quarantine state |
 | `inspection.access_operations` | Town creation, join replay-window outcomes, active session counts, and rate-limit decisions without credential material |
@@ -1388,6 +1438,9 @@ The minimum high-risk tests are:
     `system_seed` causal event and no player-action or ambient-job origin.
 36. Both ending choices conditionally relocate the bell exactly once in the
     same transaction that stores the irreversible resolution.
+37. Two concurrent model admissions immediately below each hard cost boundary
+    cannot both reserve beyond it; duplicate admission reserves once, and an
+    ambiguous invocation remains charged at its maximum until reconciled.
 
 ## Related decisions
 

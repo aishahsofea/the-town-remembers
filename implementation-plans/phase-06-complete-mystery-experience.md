@@ -401,7 +401,7 @@ P6-01 -> P6-03 -> P6-04 -> P6-05
 P6-03 -> P6-06 -> P6-07 -> P6-08
 P6-04 -> P6-09
 P6-06 -> P6-10
-P6-05 + P6-08 + P6-09 + P6-10 -> P6-11
+P6-02 + P6-05 + P6-08 + P6-09 + P6-10 -> P6-11
 ```
 
 - P6-03 must stabilize projection types and ordering before screen E2E
