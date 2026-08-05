@@ -267,7 +267,11 @@ Every seeded `direct_observation` episode and its evidence cite a distinct
 episodes therefore use three events. Each pre-story communication uses one
 `system_seed` `claim_transmitted` event shared by its transmission, the
 recipient's `heard_claim` episode, and the resulting testimony evidence. Seed
-events have no player-action or ambient-job origin.
+events have no player-action or ambient-job origin. The completed seed advances
+`ambient_scheduled_through_sequence` through the final one in the same
+transaction, and every seed event stores `ambient_eligible = false`, so this
+authored backstory is never treated as new activity by a later player-triggered
+ambient tick.
 
 Direct observations contribute +80. Therefore:
 
@@ -797,6 +801,9 @@ The seed and rule tests must prove:
     epilogues.
 14. A fresh-town playthrough and the two-browser demo both complete within the
     agreed scope and action limits.
+15. Town materialization advances the ambient scheduling boundary through the
+    final ambient-ineligible `system_seed` event, so the first player departure
+    cannot propagate pre-story observations or communications as new activity.
 
 ## Deferred content
 

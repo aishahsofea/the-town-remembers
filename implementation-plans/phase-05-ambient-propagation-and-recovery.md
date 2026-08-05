@@ -137,14 +137,18 @@ eventual player-visible `complete`, without leaking their internal difference.
 
 - One versioned deterministic mapping from every implemented world event type
   to `ambient_eligible`, with content bindings that mark only events creating
-  or materially changing belief about an existing claim.
+  or materially changing belief about an existing claim. `system_seed` origins
+  are categorically false because authored backstory is already materialized
+  and scheduled through before play begins.
 - Leave transaction that appends departure, calculates
   `(ambient_scheduled_through_sequence, last_event_sequence]`, checks the
   authoritative stored event flags, and advances the boundary whether or not a
   job is needed.
 - Concurrency tests proving ranges are nonoverlapping, no event is skipped or
   scheduled twice, ineligible ranges produce no outbox row, and tick-created
-  sequences cannot fall into the tick that created them.
+  sequences cannot fall into the tick that created them. Seed-boundary fixtures
+  also prove no `system_seed` event can enter the first or any later
+  player-triggered range.
 
 #### P5-02 — Create the transactional ambient outbox job
 

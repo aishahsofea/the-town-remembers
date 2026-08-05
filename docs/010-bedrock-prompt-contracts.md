@@ -207,7 +207,8 @@ After Bedrock schema validation, application code enforces:
 - `unsupported` uses `unknown_entity`, `unsupported_context`,
   `outside_claim_grammar`, or `no_proposition`;
 - non-normalized results contain no partial claim;
-- application code, not the model, calculates `normalized_key`.
+- application code, not the model, calculates `normalized_key` through the
+  exact `claim-key:v1` encoder in Decision 005.
 
 A valid `needs_clarification` or `unsupported` result is a successful model
 result, not a repair case. Both map to the API's `needs_revision` result, and the

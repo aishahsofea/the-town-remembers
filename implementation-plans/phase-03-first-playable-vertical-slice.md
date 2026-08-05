@@ -341,7 +341,8 @@ tests are present.
   eligibility to start the next visit for this Phase 3 branch.
 - Concurrency/database tests for repeat Leave, two departures allocating
   nonoverlapping boundaries, empty/ineligible range consumption, and atomic
-  rollback.
+  rollback. The fresh-seed fixture proves the first range begins strictly after
+  the final `system_seed` sequence and never reconsiders authored backstory.
 - An explicit interface and contract test marking the eligible-range branch as
   Phase 5 work; Phase 3 fixtures must not generate such a branch silently.
 

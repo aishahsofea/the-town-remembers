@@ -480,7 +480,7 @@ post-effect relationship state.
 | `object_entity_id`, `object_entity_type` | `UUID, STRING NOT NULL` | Canonical object plus checked type discriminator |
 | `polarity` | `STRING NOT NULL` | `positive` or `negative` |
 | `context_key` | `STRING NOT NULL` | Authored context such as `festival_night` or `current` |
-| `normalized_key` | `STRING NOT NULL` | Canonical serialization of the preceding fields |
+| `normalized_key` | `STRING NOT NULL` | Versioned canonical serialization of the claim tuple defined below |
 
 `claims(town_id, normalized_key)` is unique. Allowed entity combinations are:
 
@@ -491,6 +491,30 @@ post-effect relationship state.
 | `damaged` | `character` | `item` |
 | `is_at` | `item` | `location` |
 | `acted_for` | `character` | `motive` |
+
+Claim identity uses the exact `claim-key:v1` representation:
+
+```text
+"claim-key:v1\n" + canonicalJSON([
+  subject_entity_type,
+  subject_story_entity.entity_key,
+  predicate,
+  object_entity_type,
+  object_story_entity.entity_key,
+  polarity,
+  context_key
+])
+```
+
+`canonicalJSON` is the shared UTF-8 canonical serializer: arrays retain the
+listed order, strings use JSON escaping, and no insignificant whitespace is
+emitted. The encoder uses frozen authored `entity_key` values rather than UUIDs
+or display copy, so seeded and later normalized versions of the same proposition
+receive the same key inside a town and equivalent content-version towns remain
+semantically comparable. The town-scoped unique constraint supplies tenant
+identity, so `town_id` and `content_version` are not repeated inside the key.
+Changing this representation requires a new claim-key version and an explicit
+compatibility path; existing towns never reinterpret stored keys.
 
 `claim_relations` contains `town_id`, two claim IDs, `relation_kind`
 (`contradicts` or `entails`), `rule_version`, and `created_at`. The ordered claim
@@ -1134,6 +1158,16 @@ error code, has no action count, and has no active claim.
 Ambient jobs process disjoint event ranges rather than asking each worker to
 independently guess what is "new."
 
+Town materialization treats authored backstory as already scheduled history.
+After inserting every `system_seed` event, the same seed transaction sets
+`towns.ambient_scheduled_through_sequence` equal to
+`towns.last_event_sequence`. A later player-triggered Leave therefore begins
+strictly after the final seed event. Every `system_seed` event stores
+`ambient_eligible = false`: eligibility denotes new live activity that a later
+Leave may schedule, while authored backstory is already reflected in seeded
+episodes, evidence, and beliefs. Seed insertion, both sequence fields, and the
+complete seeded state commit or roll back together.
+
 When Leave Town commits:
 
 1. It locks or conditionally updates the town revision.
@@ -1435,7 +1469,11 @@ The minimum high-risk tests are:
 34. Ambient NPC recipients never exceed hop 3; a terminal NPC-to-player
     disclosure may reach hop 4 but cannot become a parent.
 35. Every seed observation and pre-story communication has the specified
-    `system_seed` causal event and no player-action or ambient-job origin.
+    `system_seed` causal event and no player-action or ambient-job origin; the
+    events are ambient-ineligible and the completed seed sets
+    `ambient_scheduled_through_sequence` equal to the final seed
+    `last_event_sequence`, so the first player Leave cannot reschedule authored
+    backstory.
 36. Both ending choices conditionally relocate the bell exactly once in the
     same transaction that stores the irreversible resolution.
 37. Two concurrent model admissions immediately below each hard cost boundary

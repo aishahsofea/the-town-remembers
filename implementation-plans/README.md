@@ -72,6 +72,47 @@ rather than silently changing what an existing ID means.
 | 7 | [Cloud operations and inspection](phase-07-cloud-operations-and-inspection.md) | `P7-01`–`P7-11` |
 | 8 | [Hardening and demo readiness](phase-08-hardening-and-demo-readiness.md) | `P8-01`–`P8-11` |
 
+## Effort estimate
+
+These are implementation-and-verification estimates, not calendar promises.
+They assume one experienced TypeScript/React/AWS engineer working full-time,
+roughly six productive engineering hours per day, starting from this
+documentation-only repository. They include the tests, documentation, and real
+CockroachDB/AWS boundary checks required by each exit gate. They exclude delays
+for account approval, model access, stakeholder decisions, judging, and major
+contract changes.
+
+| Phase | Engineer-days | Cumulative | Primary effort driver |
+|---:|---:|---:|---|
+| 0 | 4–6 | 4–6 | Workspace, executable contracts, shells, CI |
+| 1 | 12–18 | 16–24 | Forty-table schema, constraints, seed, CockroachDB tests |
+| 2 | 14–20 | 30–44 | Pure rules, projections, property/scenario coverage |
+| 3 | 10–15 | 40–59 | Auth/session/idempotency API and first browser slice |
+| 4 | 15–22 | 55–81 | Bedrock/Titan, vector recall, six NPC actions, evaluations |
+| 5 | 13–19 | 68–100 | Outbox/FIFO worker/recovery and fault-safe transition UI |
+| 6 | 12–18 | 80–118 | Complete mystery, board, endings, accessibility closure |
+| 7 | 8–13 | 88–131 | Production CDK, security, alarms, MCP, deployment proof |
+| 8 | 8–12 | 96–143 | Fault campaigns, performance, compatibility, rehearsals |
+
+The base one-engineer estimate is **96–143 engineer-days**, or approximately
+**19–29 workweeks**. Use a 20% planning contingency for external-service
+variance, integration discoveries, and release fixes: **115–172 engineer-days
+(23–35 workweeks)**.
+
+Useful cumulative milestones are:
+
+- first saved playable slice through Phase 3: **40–59 engineer-days**;
+- complete cross-player agentic-memory demo through Phase 5:
+  **68–100 engineer-days**; and
+- fully deployed, hardened release through Phase 8: **96–143 engineer-days**
+  before contingency.
+
+The default phase gates make substantial portions sequential. Adding engineers
+can parallelize schema/content, rules/UI, and infrastructure work inside a
+phase, but it will not divide elapsed time linearly. Re-estimate the remaining
+range after every exit gate using measured throughput and newly discovered
+integration work.
+
 ## Phase 0 — Engineering foundation
 
 **Outcome:** A small TypeScript workspace can build, test, lint, and run the

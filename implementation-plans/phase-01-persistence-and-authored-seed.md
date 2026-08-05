@@ -434,6 +434,10 @@ task must not introduce a CMS or duplicate arbitrary prose into JSONB.
 - Validation for unique stable keys and all same-version references.
 - Claim predicate/type/context/polarity validation and deterministic relation
   symmetry/duplicate checks.
+- The shared `claim-key:v1` encoder fixed by Decision 005, using canonical JSON
+  over entity types, frozen entity keys, predicate, polarity, and context; seed
+  fixtures prove identical propositions cannot diverge between content and
+  runtime normalization or collide through display-copy/UUID differences.
 - Validation of solution IDs, item custody, linked inspectables, clue effects,
   required clues, NPC locations, contact edges, disclosure references,
   promise subjects/terms versions, asset keys, fallback keys, and accusation
@@ -444,7 +448,9 @@ task must not introduce a CMS or duplicate arbitrary prose into JSONB.
   reviewable.
 
 No Phase 2 calculations are duplicated here. Rule-dependent reachability and
-balance validation are added in `P2-13` against this registry.
+balance validation are added in `P2-19` against this registry. Claim identity
+is deliberately earlier than those calculations because Phase 1 must insert
+canonical seeded claims before Phase 2 begins.
 
 #### P1-17 — Implement transactional town materialization
 
@@ -464,6 +470,13 @@ balance validation are added in `P2-13` against this registry.
 - Correct episode/transmission/evidence links, direct-observation `+80`
   evidence, Corin-to-Mara `+44` testimony, Corin-to-Nessa `+40` testimony,
   initial belief labels, item custody/reveal state, and zero player records.
+- Every seeded claim key is produced through the shared `claim-key:v1` encoder;
+  no seed-only precomputed or display-text-derived identity path is allowed.
+- After the final `system_seed` event is inserted, set
+  `ambient_scheduled_through_sequence = last_event_sequence` in the same
+  transaction. Authored backstory is inspectable history but is already outside
+  every future player-triggered ambient range; every seed event stores
+  `ambient_eligible = false` as an additional contract assertion.
 - Atomic failure: a validation or insert failure leaves no partial town.
 
 The service does not derive or expose invite plaintext. Phase 3 supplies the
@@ -483,7 +496,8 @@ versioned HMAC and durable public town-creation request behavior.
   town or orphan row.
 - Seed assertions covering exact stable-key sets, event ordering, causal
   origins, solution, initial custody, hidden/revealed state, and initial
-  beliefs.
+  beliefs, plus exact claim-key fixtures and equality of the post-seed ambient
+  boundary and final seed event sequence with all seed events ambient-ineligible.
 
 This fixture is test-only. Production and demo towns are created through the
 Phase 3 town-creation ledger and versioned invite derivation, never by exposing
@@ -602,8 +616,8 @@ Commands below are planned interfaces introduced by this phase.
 | Ambiguous commit | Require ledger read before a possible retry | `pnpm test:db -- ambiguous-commit` |
 | Concurrency | Race item ownership, processing-action uniqueness, and resolution insert | `pnpm test:db -- concurrency` |
 | Vector boundary | Insert/query 256-dimension episodes; enforce town/NPC/ready filters | `pnpm test:db -- vector` |
-| Content | Validate all stable keys, references, copy bindings, starting knowledge, and versions | `pnpm test:content` |
-| Seed | Materialize fresh town, verify exact initial state/history and all-or-nothing rollback | `pnpm db:seed-test` |
+| Content | Validate all stable keys, claim-key encoding, references, copy bindings, starting knowledge, and versions | `pnpm test:content` |
+| Seed | Materialize fresh town, verify exact initial state/history, post-seed ambient boundary, and all-or-nothing rollback | `pnpm db:seed-test` |
 | Repeatable isolation | Materialize two equivalent towns and prove no shared town-owned IDs/references | `pnpm test:db -- seed-isolation` |
 | Inspection | Reconstruct seed beliefs, evidence, provenance, custody, truth, and events; reject writes and secrets | `pnpm test:db -- inspection` |
 | Whole phase | Phase 0 gates plus all required CockroachDB/content tests | `pnpm validate` |
@@ -644,6 +658,12 @@ truth. A seed failure rolls back; it never leaves a partially playable town.
 - [ ] `bell-mystery-v1` validates and maps immutably to `mvp-rules-v1`.
 - [ ] Town materialization commits all exact seed state/history atomically and
   emits all required `system_seed` causal events.
+- [ ] Seeded and dynamically normalized propositions share the frozen
+      `claim-key:v1` encoder, and the seed fixture rejects key drift or
+      collision.
+- [ ] The completed seed sets `ambient_scheduled_through_sequence` equal to the
+      final seed `last_event_sequence`, all seed events are ambient-ineligible,
+      and the first player Leave cannot schedule authored backstory.
 - [ ] Initial beliefs, evidence weights, provenance, item custody, required
   clues, solution, knowledge boundaries, and content keys match Decision 009.
 - [ ] Two seeded towns are semantically equivalent but share no town-owned

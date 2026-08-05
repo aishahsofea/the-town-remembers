@@ -73,7 +73,8 @@ must not print hidden truth as though it were a player response.
   primitives.
 - `P1-13` database-shaped types/adapters without importing a database client
   into rule packages.
-- `P1-15`/`P1-16` immutable content registry and static content validation.
+- `P1-15`/`P1-16` immutable content registry, static content validation, and
+  frozen `claim-key:v1` encoder/fixtures.
 - `P1-17` exact seeded-town snapshots for scenario fixtures.
 - `P1-19` causal inspection semantics used to shape deterministic explanations.
 
@@ -160,9 +161,9 @@ service internally.
 - Pure validation of the five accepted predicate signatures, positive/negative
   polarity, canonical entity kinds, supplied contexts, and optional explicit
   alleged source.
-- A documented, versioned canonical serialization for `normalized_key`, shared
-  by seeded and dynamic claims and independent of display copy or object-key
-  order.
+- Pure reuse and validation of Decision 005's frozen `claim-key:v1` encoder,
+  shared by seeded and dynamic claims and independent of display copy, UUIDs,
+  or object-key order.
 - Deterministic positive/negative opposite relations and mutually exclusive
   same-context location relations.
 - Authored semantic relation merge for
@@ -171,9 +172,10 @@ service internally.
 - A relation/backfill plan for missing contradiction mirrors when a valid new
   claim is created, using the claim-creation event as causal identity.
 
-The accepted contracts do not specify the exact bytes of `normalized_key`.
-`P2-03` must record this narrow representation decision and freeze it for
-`mvp-rules-v1` before seed/dynamic identity fixtures are accepted.
+Phase 2 does not choose or redefine the bytes of `normalized_key`: Phase 1 must
+already have used the Decision 005 representation to materialize the seed.
+`P2-03` adds rule-level fixtures proving normalized player claims produce the
+same key as their seeded equivalents and fail closed on an unknown key version.
 
 #### P2-04 — Implement belief evidence weights and repeat protection
 
@@ -648,7 +650,7 @@ accepted too easily.
 
 | Risk or decision | Plan | Fallback / escalation |
 |---|---|---|
-| Exact `normalized_key` byte format is unspecified | Freeze a small versioned canonical tuple serialization in `P2-03` and use it for seed/dynamic claims | If it affects an accepted external contract, amend Decisions 005/008 before use; never derive identity from player-facing copy |
+| Seed and runtime claim identity could drift | Import the single Phase 1 `claim-key:v1` encoder and compare seeded/dynamic fixtures in `P2-03` | Treat any divergent encoder or stored key as a contract/migration failure; never derive identity from player-facing copy |
 | “Recent” structured recall anchors have no explicit age cutoff | Treat the recent component as the newest authorized episodes within the bounded top-10 anchor query unless contract owners specify an age window | Keep the choice versioned and documented; do not widen NPC/town authorization |
 | Pure planners may grow into an in-memory database | Require callers to provide narrow snapshots and return declarative effects/preconditions only | Split a planner by domain; do not add hidden mutable repositories or singleton state |
 | Rule traces can leak hidden inputs into player responses | Keep inspection-safe traces structurally separate from player-safe result types and add compile/runtime leakage tests | Omit a trace field if its audience cannot be proven; causal rows remain available through inspection |
