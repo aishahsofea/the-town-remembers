@@ -1,0 +1,598 @@
+#!/usr/bin/env node
+
+import fs from "node:fs";
+import path from "node:path";
+import process from "node:process";
+import { isDeepStrictEqual } from "node:util";
+import { pathToFileURL } from "node:url";
+
+const SCOPE = "@the-town-remembers/";
+const INTERNAL_SECTIONS = [
+  "dependencies",
+  "devDependencies",
+  "peerDependencies",
+  "optionalDependencies",
+];
+const SOURCE_EXTENSIONS = new Set([
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+  ".ts",
+  ".tsx",
+  ".mts",
+  ".cts",
+]);
+const IGNORED_DIRECTORIES = new Set([
+  ".git",
+  "node_modules",
+  "dist",
+  "build",
+  "coverage",
+  "cdk.out",
+]);
+
+export const STANDARD_EXPORTS = Object.freeze({
+  ".": {
+    types: "./dist/index.d.ts",
+    import: "./dist/index.js",
+  },
+});
+
+export const RUNTIME_CONFIG_EXPORTS = Object.freeze({
+  "./game": {
+    types: "./dist/game.d.ts",
+    import: "./dist/game.js",
+  },
+  "./ambient": {
+    types: "./dist/ambient.d.ts",
+    import: "./dist/ambient.js",
+  },
+  "./recovery": {
+    types: "./dist/recovery.d.ts",
+    import: "./dist/recovery.js",
+  },
+  "./deployment": {
+    types: "./dist/deployment.d.ts",
+    import: "./dist/deployment.js",
+  },
+  "./test": {
+    types: "./dist/test.d.ts",
+    import: "./dist/test.js",
+  },
+  "./operator": {
+    types: "./dist/operator.d.ts",
+    import: "./dist/operator.js",
+  },
+});
+
+const HTTP_CONTRACTS = `${SCOPE}http-contracts`;
+const MODEL_CONTRACTS = `${SCOPE}model-contracts`;
+const SERIALIZATION = `${SCOPE}serialization`;
+const BROWSER_CONFIG = `${SCOPE}browser-config`;
+const RUNTIME_CONFIG = `${SCOPE}runtime-config`;
+const TEST_SUPPORT = `${SCOPE}test-support`;
+
+export const EXPECTED_PACKAGES = Object.freeze([
+  {
+    path: "apps/web",
+    name: `${SCOPE}web`,
+    kind: "deployment",
+    allowedDependencies: [HTTP_CONTRACTS, BROWSER_CONFIG],
+  },
+  {
+    path: "apps/game-api",
+    name: `${SCOPE}game-api`,
+    kind: "deployment",
+    allowedDependencies: [
+      HTTP_CONTRACTS,
+      MODEL_CONTRACTS,
+      SERIALIZATION,
+      RUNTIME_CONFIG,
+    ],
+  },
+  {
+    path: "apps/ambient-worker",
+    name: `${SCOPE}ambient-worker`,
+    kind: "deployment",
+    allowedDependencies: [MODEL_CONTRACTS, SERIALIZATION, RUNTIME_CONFIG],
+  },
+  {
+    path: "apps/recovery-worker",
+    name: `${SCOPE}recovery-worker`,
+    kind: "deployment",
+    allowedDependencies: [RUNTIME_CONFIG],
+  },
+  {
+    path: "infrastructure",
+    name: `${SCOPE}infrastructure`,
+    kind: "deployment",
+    allowedDependencies: [RUNTIME_CONFIG],
+  },
+  {
+    path: "packages/http-contracts",
+    name: HTTP_CONTRACTS,
+    kind: "library",
+    exports: STANDARD_EXPORTS,
+    allowedDependencies: [],
+  },
+  {
+    path: "packages/model-contracts",
+    name: MODEL_CONTRACTS,
+    kind: "library",
+    exports: STANDARD_EXPORTS,
+    allowedDependencies: [],
+  },
+  {
+    path: "packages/serialization",
+    name: SERIALIZATION,
+    kind: "library",
+    exports: STANDARD_EXPORTS,
+    allowedDependencies: [],
+  },
+  {
+    path: "packages/browser-config",
+    name: BROWSER_CONFIG,
+    kind: "library",
+    exports: STANDARD_EXPORTS,
+    allowedDependencies: [],
+  },
+  {
+    path: "packages/runtime-config",
+    name: RUNTIME_CONFIG,
+    kind: "library",
+    exports: RUNTIME_CONFIG_EXPORTS,
+    allowedDependencies: [],
+  },
+  {
+    path: "packages/test-support",
+    name: TEST_SUPPORT,
+    kind: "library",
+    exports: STANDARD_EXPORTS,
+    allowedDependencies: [
+      HTTP_CONTRACTS,
+      MODEL_CONTRACTS,
+      SERIALIZATION,
+      BROWSER_CONFIG,
+      RUNTIME_CONFIG,
+    ],
+  },
+]);
+
+const EXPECTED_WORKSPACE_GLOBS = ["apps/*", "packages/*", "infrastructure"];
+const EXPECTED_IMPORTERS = [".", ...EXPECTED_PACKAGES.map((entry) => entry.path)];
+
+function addViolation(violations, code, message, filePath) {
+  violations.push({ code, message, ...(filePath ? { path: filePath } : {}) });
+}
+
+function readJson(filePath, violations) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch (error) {
+    addViolation(
+      violations,
+      "invalid_json",
+      `Could not parse JSON: ${error.message}`,
+      filePath,
+    );
+    return undefined;
+  }
+}
+
+function walkFiles(directory, predicate) {
+  if (!fs.existsSync(directory)) return [];
+
+  const files = [];
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    if (entry.isDirectory() && IGNORED_DIRECTORIES.has(entry.name)) continue;
+
+    const entryPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...walkFiles(entryPath, predicate));
+    } else if (entry.isFile() && predicate(entryPath)) {
+      files.push(entryPath);
+    }
+  }
+  return files;
+}
+
+function parseWorkspaceGlobs(contents) {
+  const lines = contents.split(/\r?\n/);
+  const packagesIndex = lines.findIndex((line) => line.trim() === "packages:");
+  if (packagesIndex === -1) return [];
+
+  const globs = [];
+  for (const line of lines.slice(packagesIndex + 1)) {
+    const match = line.match(/^\s+-\s+(.+?)\s*$/);
+    if (match) {
+      globs.push(match[1].replace(/^['"]|['"]$/g, ""));
+      continue;
+    }
+    if (line.trim() !== "") break;
+  }
+  return globs;
+}
+
+function parseLockfileImporters(contents) {
+  const lines = contents.split(/\r?\n/);
+  const importersIndex = lines.findIndex((line) => line.trim() === "importers:");
+  if (importersIndex === -1) return [];
+
+  const importers = [];
+  for (const line of lines.slice(importersIndex + 1)) {
+    if (line.trim() === "") continue;
+    if (!line.startsWith(" ")) break;
+
+    const match = line.match(/^  ([^\s][^:]*):(?:\s|$)/);
+    if (match) importers.push(match[1].replace(/^['"]|['"]$/g, ""));
+  }
+  return importers;
+}
+
+function getInternalPackageName(specifier) {
+  if (!specifier.startsWith(SCOPE)) return undefined;
+  return specifier.split("/").slice(0, 2).join("/");
+}
+
+function collectSpecifiers(contents) {
+  const specifiers = [];
+  const patterns = [
+    /(?:import|export)\s+(?:[^'";]*?\s+from\s+)?["']([^"']+)["']/g,
+    /import\s*\(\s*["']([^"']+)["']\s*\)/g,
+    /require\s*\(\s*["']([^"']+)["']\s*\)/g,
+  ];
+
+  for (const pattern of patterns) {
+    for (const match of contents.matchAll(pattern)) specifiers.push(match[1]);
+  }
+  return specifiers;
+}
+
+function findDeclaredSection(manifest, dependencyName) {
+  return INTERNAL_SECTIONS.find((section) => manifest[section]?.[dependencyName]);
+}
+
+function isAllowedDependency(packageDefinition, dependencyName, section) {
+  if (dependencyName === TEST_SUPPORT) {
+    return packageDefinition.name !== TEST_SUPPORT && section === "devDependencies";
+  }
+  return packageDefinition.allowedDependencies.includes(dependencyName);
+}
+
+function validateRuntimeConfigImport(
+  packageDefinition,
+  specifier,
+  violations,
+  filePath,
+) {
+  if (!specifier.startsWith(`${RUNTIME_CONFIG}/`) && specifier !== RUNTIME_CONFIG) {
+    return;
+  }
+
+  const expectedByConsumer = new Map([
+    [`${SCOPE}game-api`, `${RUNTIME_CONFIG}/game`],
+    [`${SCOPE}ambient-worker`, `${RUNTIME_CONFIG}/ambient`],
+    [`${SCOPE}recovery-worker`, `${RUNTIME_CONFIG}/recovery`],
+    [`${SCOPE}infrastructure`, `${RUNTIME_CONFIG}/deployment`],
+    [TEST_SUPPORT, `${RUNTIME_CONFIG}/test`],
+  ]);
+  const expected = expectedByConsumer.get(packageDefinition.name);
+  if (expected && specifier !== expected) {
+    addViolation(
+      violations,
+      "invalid_runtime_config_import",
+      `${packageDefinition.name} must import runtime configuration through ${expected}.`,
+      filePath,
+    );
+  }
+}
+
+function validateManifest(
+  rootDir,
+  packageDefinition,
+  manifest,
+  internalNames,
+  violations,
+) {
+  const manifestPath = path.join(rootDir, packageDefinition.path, "package.json");
+  const requiredFields = {
+    name: packageDefinition.name,
+    version: "0.0.0",
+    private: true,
+    license: "MIT",
+  };
+
+  for (const [field, expected] of Object.entries(requiredFields)) {
+    if (manifest[field] !== expected) {
+      addViolation(
+        violations,
+        `invalid_package_${field}`,
+        `${packageDefinition.path} must set ${field} to ${JSON.stringify(expected)}.`,
+        manifestPath,
+      );
+    }
+  }
+
+  if (packageDefinition.kind === "deployment") {
+    if ("exports" in manifest) {
+      addViolation(
+        violations,
+        "deployment_exports",
+        `${packageDefinition.path} is a deployment unit and must not publish exports.`,
+        manifestPath,
+      );
+    }
+  } else if (!isDeepStrictEqual(manifest.exports, packageDefinition.exports)) {
+    addViolation(
+      violations,
+      "invalid_exports",
+      `${packageDefinition.path} must expose only its declared dist outputs.`,
+      manifestPath,
+    );
+  }
+
+  for (const section of INTERNAL_SECTIONS) {
+    for (const [dependencyName, version] of Object.entries(manifest[section] ?? {})) {
+      if (!internalNames.has(dependencyName)) continue;
+
+      if (version !== "workspace:*") {
+        addViolation(
+          violations,
+          "invalid_workspace_protocol",
+          `${dependencyName} in ${section} must use workspace:* instead of ${version}.`,
+          manifestPath,
+        );
+      }
+
+      if (dependencyName === TEST_SUPPORT && section !== "devDependencies") {
+        addViolation(
+          violations,
+          "forbidden_test_support_dependency",
+          `${TEST_SUPPORT} may only be referenced from devDependencies.`,
+          manifestPath,
+        );
+      } else if (!isAllowedDependency(packageDefinition, dependencyName, section)) {
+        addViolation(
+          violations,
+          "forbidden_dependency",
+          `${packageDefinition.name} may not depend on ${dependencyName}.`,
+          manifestPath,
+        );
+      }
+    }
+  }
+}
+
+function validateSourceImports(
+  rootDir,
+  packageDefinition,
+  manifest,
+  definitionsByName,
+  definitionsByPath,
+  violations,
+) {
+  const packageRoot = path.join(rootDir, packageDefinition.path);
+  const sourceFiles = walkFiles(packageRoot, (filePath) =>
+    SOURCE_EXTENSIONS.has(path.extname(filePath)),
+  );
+
+  for (const sourceFile of sourceFiles) {
+    const contents = fs.readFileSync(sourceFile, "utf8");
+    for (const specifier of collectSpecifiers(contents)) {
+      if (specifier.startsWith(".")) {
+        const resolved = path.resolve(path.dirname(sourceFile), specifier);
+        for (const [packagePath, otherDefinition] of definitionsByPath) {
+          if (otherDefinition.name === packageDefinition.name) continue;
+          const otherRoot = path.join(rootDir, packagePath);
+          if (resolved === otherRoot || resolved.startsWith(`${otherRoot}${path.sep}`)) {
+            addViolation(
+              violations,
+              "cross_package_relative_import",
+              `${packageDefinition.name} must import ${otherDefinition.name} by package name.`,
+              sourceFile,
+            );
+          }
+        }
+        continue;
+      }
+
+      const dependencyName = getInternalPackageName(specifier);
+      if (!dependencyName || dependencyName === packageDefinition.name) continue;
+
+      const dependencyDefinition = definitionsByName.get(dependencyName);
+      if (!dependencyDefinition) {
+        addViolation(
+          violations,
+          "unknown_internal_import",
+          `${specifier} uses the repository scope but is not a workspace package.`,
+          sourceFile,
+        );
+        continue;
+      }
+
+      const section = findDeclaredSection(manifest, dependencyName);
+      if (!section) {
+        addViolation(
+          violations,
+          "undeclared_internal_import",
+          `${packageDefinition.name} imports ${dependencyName} without declaring it.`,
+          sourceFile,
+        );
+      } else if (!isAllowedDependency(packageDefinition, dependencyName, section)) {
+        addViolation(
+          violations,
+          "forbidden_dependency",
+          `${packageDefinition.name} may not import ${dependencyName}.`,
+          sourceFile,
+        );
+      }
+
+      validateRuntimeConfigImport(
+        packageDefinition,
+        specifier,
+        violations,
+        sourceFile,
+      );
+    }
+  }
+}
+
+export function validateWorkspace(rootDir) {
+  const resolvedRoot = path.resolve(rootDir);
+  const violations = [];
+  const definitionsByName = new Map(
+    EXPECTED_PACKAGES.map((entry) => [entry.name, entry]),
+  );
+  const definitionsByPath = new Map(
+    EXPECTED_PACKAGES.map((entry) => [entry.path, entry]),
+  );
+  const internalNames = new Set(definitionsByName.keys());
+  const manifests = new Map();
+
+  const workspacePath = path.join(resolvedRoot, "pnpm-workspace.yaml");
+  if (!fs.existsSync(workspacePath)) {
+    addViolation(
+      violations,
+      "missing_workspace_config",
+      "pnpm-workspace.yaml is required.",
+      workspacePath,
+    );
+  } else {
+    const actualGlobs = parseWorkspaceGlobs(fs.readFileSync(workspacePath, "utf8"));
+    if (!isDeepStrictEqual(actualGlobs, EXPECTED_WORKSPACE_GLOBS)) {
+      addViolation(
+        violations,
+        "invalid_workspace_globs",
+        `Workspace packages must be: ${EXPECTED_WORKSPACE_GLOBS.join(", ")}.`,
+        workspacePath,
+      );
+    }
+  }
+
+  const lockfilePath = path.join(resolvedRoot, "pnpm-lock.yaml");
+  if (!fs.existsSync(lockfilePath)) {
+    addViolation(
+      violations,
+      "missing_lockfile",
+      "pnpm-lock.yaml is required.",
+      lockfilePath,
+    );
+  } else {
+    const actualImporters = parseLockfileImporters(
+      fs.readFileSync(lockfilePath, "utf8"),
+    ).sort();
+    const expectedImporters = [...EXPECTED_IMPORTERS].sort();
+    if (!isDeepStrictEqual(actualImporters, expectedImporters)) {
+      addViolation(
+        violations,
+        "invalid_lockfile_importers",
+        "The lockfile must contain the root and every declared workspace package.",
+        lockfilePath,
+      );
+    }
+  }
+
+  const discoveredManifestPaths = walkFiles(
+    resolvedRoot,
+    (filePath) => path.basename(filePath) === "package.json",
+  ).map((filePath) => path.relative(resolvedRoot, filePath).split(path.sep).join("/"));
+  const expectedManifestPaths = new Set([
+    "package.json",
+    ...EXPECTED_PACKAGES.map((entry) => `${entry.path}/package.json`),
+  ]);
+  for (const manifestPath of discoveredManifestPaths) {
+    if (!expectedManifestPaths.has(manifestPath)) {
+      addViolation(
+        violations,
+        "unexpected_package_manifest",
+        `${manifestPath} is not a declared workspace package.`,
+        path.join(resolvedRoot, manifestPath),
+      );
+    }
+  }
+
+  for (const packageDefinition of EXPECTED_PACKAGES) {
+    const manifestPath = path.join(
+      resolvedRoot,
+      packageDefinition.path,
+      "package.json",
+    );
+    if (!fs.existsSync(manifestPath)) {
+      addViolation(
+        violations,
+        "missing_package_manifest",
+        `${packageDefinition.path} is missing package.json.`,
+        manifestPath,
+      );
+      continue;
+    }
+
+    const manifest = readJson(manifestPath, violations);
+    if (!manifest) continue;
+    manifests.set(packageDefinition.name, manifest);
+    validateManifest(
+      resolvedRoot,
+      packageDefinition,
+      manifest,
+      internalNames,
+      violations,
+    );
+  }
+
+  const seenNames = new Map();
+  for (const packageDefinition of EXPECTED_PACKAGES) {
+    const manifest = manifests.get(packageDefinition.name);
+    if (!manifest?.name) continue;
+    const previousPath = seenNames.get(manifest.name);
+    if (previousPath) {
+      addViolation(
+        violations,
+        "duplicate_package_name",
+        `${manifest.name} is used by both ${previousPath} and ${packageDefinition.path}.`,
+        path.join(resolvedRoot, packageDefinition.path, "package.json"),
+      );
+    } else {
+      seenNames.set(manifest.name, packageDefinition.path);
+    }
+  }
+
+  for (const packageDefinition of EXPECTED_PACKAGES) {
+    const manifest = manifests.get(packageDefinition.name);
+    if (!manifest) continue;
+    validateSourceImports(
+      resolvedRoot,
+      packageDefinition,
+      manifest,
+      definitionsByName,
+      definitionsByPath,
+      violations,
+    );
+  }
+
+  return violations.sort((left, right) =>
+    `${left.path ?? ""}:${left.code}:${left.message}`.localeCompare(
+      `${right.path ?? ""}:${right.code}:${right.message}`,
+    ),
+  );
+}
+
+function runCli() {
+  const rootDir = process.argv[2] ?? process.cwd();
+  const violations = validateWorkspace(rootDir);
+  if (violations.length === 0) {
+    console.log("Workspace boundaries are valid.");
+    return;
+  }
+
+  console.error(`Workspace boundary check failed with ${violations.length} violation(s):`);
+  for (const violation of violations) {
+    const location = violation.path ? ` (${path.relative(rootDir, violation.path)})` : "";
+    console.error(`- [${violation.code}] ${violation.message}${location}`);
+  }
+  process.exitCode = 1;
+}
+
+if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
+  runCli();
+}

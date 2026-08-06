@@ -130,8 +130,8 @@ corepack pnpm install --frozen-lockfile
 
 Toolchain upgrades must update `package.json`, `pnpm-workspace.yaml`,
 `.node-version`, the package-manager integrity pin, and `pnpm-lock.yaml`
-together. P0-02 will add application and shared-package workspace paths; P0-01
-intentionally includes only the workspace root.
+together. See [CONTRIBUTING.md](CONTRIBUTING.md) for workspace ownership,
+dependency direction, and boundary-checking commands.
 
 ## Hackathon proof
 

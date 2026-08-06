@@ -3,6 +3,10 @@
   "version": "0.0.0",
   "private": true,
   "license": "MIT",
+  "scripts": {
+    "check:boundaries": "node scripts/check-workspace-boundaries.mjs",
+    "test:boundaries": "node --test scripts/check-workspace-boundaries.test.mjs"
+  },
   "engines": {
     "node": "24.18.0",
     "pnpm": "11.20.0"

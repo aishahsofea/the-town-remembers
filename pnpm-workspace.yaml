@@ -1,4 +1,7 @@
-packages: []
+packages:
+  - apps/*
+  - packages/*
+  - infrastructure
 
 nodeVersion: 24.18.0
 engineStrict: true

@@ -1,0 +1,32 @@
+{
+  "name": "@the-town-remembers/runtime-config",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "exports": {
+    "./game": {
+      "types": "./dist/game.d.ts",
+      "import": "./dist/game.js"
+    },
+    "./ambient": {
+      "types": "./dist/ambient.d.ts",
+      "import": "./dist/ambient.js"
+    },
+    "./recovery": {
+      "types": "./dist/recovery.d.ts",
+      "import": "./dist/recovery.js"
+    },
+    "./deployment": {
+      "types": "./dist/deployment.d.ts",
+      "import": "./dist/deployment.js"
+    },
+    "./test": {
+      "types": "./dist/test.d.ts",
+      "import": "./dist/test.js"
+    },
+    "./operator": {
+      "types": "./dist/operator.d.ts",
+      "import": "./dist/operator.js"
+    }
+  }
+}

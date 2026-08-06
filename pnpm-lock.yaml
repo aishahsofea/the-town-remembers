@@ -7,3 +7,25 @@ settings:
 importers:
 
   .: {}
+
+  apps/ambient-worker: {}
+
+  apps/game-api: {}
+
+  apps/recovery-worker: {}
+
+  apps/web: {}
+
+  infrastructure: {}
+
+  packages/browser-config: {}
+
+  packages/http-contracts: {}
+
+  packages/model-contracts: {}
+
+  packages/runtime-config: {}
+
+  packages/serialization: {}
+
+  packages/test-support: {}
