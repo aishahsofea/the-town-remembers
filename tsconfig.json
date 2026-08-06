@@ -16,6 +16,12 @@
     },
     {
       "path": "./packages/runtime-config"
+    },
+    {
+      "path": "./packages/test-support"
+    },
+    {
+      "path": "./apps/game-api"
     }
   ]
 }

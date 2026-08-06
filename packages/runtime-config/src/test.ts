@@ -8,6 +8,7 @@
 
 import { z } from "zod";
 
+import { DEFAULT_API_PORT } from "./game.js";
 import {
   PortSchema,
   parseEnvironment,
@@ -21,12 +22,12 @@ export {
   type ConfigurationIssue,
 } from "./shared.js";
 
-export const DEFAULT_API_PORT = 5174;
+export { DEFAULT_API_PORT } from "./game.js";
 export const DEFAULT_WEB_PORT = 5173;
 
 const TestConfigSchema = z.strictObject({
-  TTR_E2E_API_PORT: PortSchema,
-  TTR_E2E_WEB_PORT: PortSchema,
+  TTR_API_PORT: PortSchema,
+  TTR_WEB_PORT: PortSchema,
 });
 
 export interface TestConfig {
@@ -41,24 +42,16 @@ export function loadTestConfig(source: EnvironmentRecord): TestConfig {
     "test",
     TestConfigSchema,
     {
-      TTR_E2E_API_PORT: withDefault(
-        source,
-        "TTR_E2E_API_PORT",
-        String(DEFAULT_API_PORT),
-      ),
-      TTR_E2E_WEB_PORT: withDefault(
-        source,
-        "TTR_E2E_WEB_PORT",
-        String(DEFAULT_WEB_PORT),
-      ),
+      TTR_API_PORT: withDefault(source, "TTR_API_PORT", String(DEFAULT_API_PORT)),
+      TTR_WEB_PORT: withDefault(source, "TTR_WEB_PORT", String(DEFAULT_WEB_PORT)),
     },
     source,
   );
 
   return {
-    apiPort: parsed.TTR_E2E_API_PORT,
-    webPort: parsed.TTR_E2E_WEB_PORT,
-    apiBaseUrl: `http://127.0.0.1:${parsed.TTR_E2E_API_PORT}`,
-    webBaseUrl: `http://127.0.0.1:${parsed.TTR_E2E_WEB_PORT}`,
+    apiPort: parsed.TTR_API_PORT,
+    webPort: parsed.TTR_WEB_PORT,
+    apiBaseUrl: `http://127.0.0.1:${parsed.TTR_API_PORT}`,
+    webBaseUrl: `http://127.0.0.1:${parsed.TTR_WEB_PORT}`,
   };
 }

@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { loadAmbientConfig } from "./ambient.js";
 import { loadDeploymentConfig } from "./deployment.js";
-import { loadGameConfig } from "./game.js";
+import { DEFAULT_API_PORT, loadGameConfig } from "./game.js";
 import { loadOperatorConfig } from "./operator.js";
 import { loadRecoveryConfig } from "./recovery.js";
 import {
@@ -15,7 +15,7 @@ import {
   PLAYER_API_TIMING,
 } from "./reliability.js";
 import { ConfigurationError, SECRET_VARIABLE_PATTERN } from "./shared.js";
-import { DEFAULT_API_PORT, DEFAULT_WEB_PORT, loadTestConfig } from "./test.js";
+import { DEFAULT_WEB_PORT, loadTestConfig } from "./test.js";
 
 const PRODUCTION = {
   TTR_ENV: "production",
@@ -42,6 +42,7 @@ describe("game runtime configuration", () => {
       buildId: "a1b2c3d",
       logLevel: "warn",
       appOrigin: "https://town.example",
+      apiPort: DEFAULT_API_PORT,
     });
   });
 
@@ -51,6 +52,7 @@ describe("game runtime configuration", () => {
       buildId: "unknown",
       logLevel: "info",
       appOrigin: "http://localhost:5173",
+      apiPort: DEFAULT_API_PORT,
     });
   });
 
@@ -158,9 +160,9 @@ describe("test harness configuration", () => {
 
   it("rejects a port outside the valid range", () => {
     expect(
-      expectConfigurationError(() => loadTestConfig({ TTR_E2E_API_PORT: "70000" }))
+      expectConfigurationError(() => loadTestConfig({ TTR_API_PORT: "70000" }))
         .issues[0]?.variable,
-    ).toBe("TTR_E2E_API_PORT");
+    ).toBe("TTR_API_PORT");
   });
 });
 
@@ -261,8 +263,8 @@ describe(".env.example", () => {
       "TTR_APP_ORIGIN",
       "TTR_AWS_REGION",
       "TTR_AWS_ACCOUNT",
-      "TTR_E2E_API_PORT",
-      "TTR_E2E_WEB_PORT",
+      "TTR_API_PORT",
+      "TTR_WEB_PORT",
       "VITE_TTR_ENV",
       "VITE_TTR_BUILD_ID",
       "TTR_MIGRATION_DATABASE_URL",

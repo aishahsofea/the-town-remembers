@@ -80,11 +80,6 @@ export default tseslint.config(
     },
   },
   {
-    // Structured logging is the intended stdout channel for the server shells.
-    files: ["apps/*/src/observability/*.ts"],
-    rules: { "no-console": "off" },
-  },
-  {
     files: ["**/*.test.ts", "**/*.test.tsx", "e2e/**/*.ts"],
     rules: {
       "@typescript-eslint/no-non-null-assertion": "off",

@@ -165,23 +165,7 @@ importers:
 
   packages/serialization: {}
 
-  packages/test-support:
-    dependencies:
-      '@the-town-remembers/browser-config':
-        specifier: workspace:*
-        version: link:../browser-config
-      '@the-town-remembers/http-contracts':
-        specifier: workspace:*
-        version: link:../http-contracts
-      '@the-town-remembers/model-contracts':
-        specifier: workspace:*
-        version: link:../model-contracts
-      '@the-town-remembers/runtime-config':
-        specifier: workspace:*
-        version: link:../runtime-config
-      '@the-town-remembers/serialization':
-        specifier: workspace:*
-        version: link:../serialization
+  packages/test-support: {}
 
 packages:
 
