@@ -1,0 +1,23 @@
+# Dependencies and package-manager state
+node_modules/
+.pnpm-store/
+
+# Local environment files
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Build and test output
+dist/
+build/
+coverage/
+playwright-report/
+test-results/
+cdk.out/
+.vite/
+*.tsbuildinfo
+
+# Logs and operating-system metadata
+*.log
+.DS_Store

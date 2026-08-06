@@ -1,0 +1,5 @@
+packages: []
+
+nodeVersion: 24.18.0
+engineStrict: true
+pmOnFail: error

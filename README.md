@@ -114,6 +114,25 @@ The short version is:
 
 > **Lambda runs the work. Bedrock selects the voice. CockroachDB remembers. SQS waits and retries.**
 
+## Development toolchain
+
+The repository pins Node.js `24.18.0` LTS and pnpm `11.20.0`. Node is fixed to
+an LTS release for a stable implementation baseline, and pnpm is fixed with its
+package integrity hash so every contributor and CI job uses the same package
+manager build.
+
+After installing the pinned Node version, bootstrap a clean checkout without a
+global pnpm installation:
+
+```sh
+corepack pnpm install --frozen-lockfile
+```
+
+Toolchain upgrades must update `package.json`, `pnpm-workspace.yaml`,
+`.node-version`, the package-manager integrity pin, and `pnpm-lock.yaml`
+together. P0-02 will add application and shared-package workspace paths; P0-01
+intentionally includes only the workspace root.
+
 ## Hackathon proof
 
 CockroachDB is not used as a passive transcript store. It holds both current
