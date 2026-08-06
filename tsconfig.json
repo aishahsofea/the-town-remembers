@@ -22,6 +22,12 @@
     },
     {
       "path": "./apps/game-api"
+    },
+    {
+      "path": "./apps/ambient-worker"
+    },
+    {
+      "path": "./apps/recovery-worker"
     }
   ]
 }

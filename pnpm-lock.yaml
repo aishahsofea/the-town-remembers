@@ -44,6 +44,9 @@ importers:
       '@the-town-remembers/runtime-config':
         specifier: workspace:*
         version: link:../../packages/runtime-config
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@the-town-remembers/test-support':
         specifier: workspace:*
@@ -76,6 +79,9 @@ importers:
       '@the-town-remembers/runtime-config':
         specifier: workspace:*
         version: link:../../packages/runtime-config
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@the-town-remembers/test-support':
         specifier: workspace:*

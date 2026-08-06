@@ -5,7 +5,8 @@
   "license": "MIT",
   "type": "module",
   "dependencies": {
-    "@the-town-remembers/runtime-config": "workspace:*"
+    "@the-town-remembers/runtime-config": "workspace:*",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@the-town-remembers/test-support": "workspace:*",
