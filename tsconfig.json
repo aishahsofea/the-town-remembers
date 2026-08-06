@@ -10,6 +10,12 @@
     },
     {
       "path": "./packages/serialization"
+    },
+    {
+      "path": "./packages/browser-config"
+    },
+    {
+      "path": "./packages/runtime-config"
     }
   ]
 }
