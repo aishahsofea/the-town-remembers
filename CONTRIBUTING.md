@@ -35,7 +35,7 @@ corepack pnpm validate
 | `pnpm check:boundaries` | Package ownership, exports, and dependency direction |
 | `pnpm test:tooling` | The repository scripts in `scripts/` |
 | `pnpm typecheck` | Strict build of every project plus the test-only programs |
-| `pnpm test` | Contract, configuration, runtime-shell, and browser-component tests |
+| `pnpm test` | Contract, configuration, runtime-shell, and browser-component tests, with coverage thresholds on the shared packages |
 | `pnpm test:contracts` | The executable HTTP and Bedrock contracts alone |
 | `pnpm build` | Library declarations, three Lambda bundles, and the web bundle |
 | `pnpm cdk:synth` | Deterministic CDK synthesis into `cdk.out/` |

@@ -13,10 +13,11 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
-    "test": "vitest run",
+    "test": "vitest run --coverage",
     "test:contracts": "vitest run --project contracts",
     "test:e2e": "playwright test",
     "test:tooling": "node --test scripts/*.test.mjs",
+    "test:watch": "vitest",
     "typecheck": "tsc -b tsconfig.json && tsc -p tsconfig.tests.node.json && tsc -p tsconfig.tests.web.json",
     "validate": "pnpm format:check && pnpm lint && pnpm check:boundaries && pnpm test:tooling && pnpm typecheck && pnpm test && pnpm build && pnpm cdk:synth && pnpm test:e2e"
   },
