@@ -34,7 +34,10 @@ export default defineConfig({
         test: {
           name: "runtime-shells",
           environment: "node",
-          include: ["apps/{game-api,ambient-worker,recovery-worker}/src/**/*.test.ts"],
+          include: [
+            "apps/{game-api,ambient-worker,recovery-worker}/src/**/*.test.ts",
+            "infrastructure/src/**/*.test.ts",
+          ],
         },
       },
       "apps/web",

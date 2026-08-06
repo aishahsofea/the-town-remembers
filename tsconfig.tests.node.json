@@ -14,9 +14,9 @@
     "apps/game-api/src/**/*.test.ts",
     "apps/ambient-worker/src/**/*.test.ts",
     "apps/recovery-worker/src/**/*.test.ts",
-    "infrastructure/**/*.test.ts",
     "e2e/**/*.ts",
     "vitest.config.ts",
-    "playwright.config.ts"
+    "playwright.config.ts",
+    "infrastructure/src/**/*.test.ts"
   ]
 }

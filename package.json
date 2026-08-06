@@ -7,6 +7,7 @@
   "scripts": {
     "build": "tsc -b tsconfig.json && pnpm --filter @the-town-remembers/web build",
     "build:id": "node scripts/build-id.mjs",
+    "cdk:synth": "node scripts/synth.mjs",
     "check:boundaries": "node scripts/check-workspace-boundaries.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

@@ -36,6 +36,7 @@ export default tseslint.config(
         project: [
           "./packages/*/tsconfig.json",
           "./apps/*/tsconfig.json",
+          "./infrastructure/tsconfig.json",
           "./tsconfig.tests.node.json",
           "./tsconfig.tests.web.json",
         ],
