@@ -24,8 +24,8 @@ describe("route identity", () => {
       "actionStatus",
       "actions",
       "health",
-      "invitePreview",
       "inviteJoin",
+      "invitePreview",
       "playerView",
       "towns",
     ]);

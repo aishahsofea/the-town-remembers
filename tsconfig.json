@@ -1,5 +1,12 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
   "files": [],
-  "references": [{ "path": "./packages/http-contracts" }]
+  "references": [
+    {
+      "path": "./packages/http-contracts"
+    },
+    {
+      "path": "./packages/serialization"
+    }
+  ]
 }

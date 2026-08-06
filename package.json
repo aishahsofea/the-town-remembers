@@ -10,7 +10,9 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
+    "test": "vitest run",
     "test:boundaries": "node --test scripts/check-workspace-boundaries.test.mjs",
+    "test:contracts": "vitest run --project contracts",
     "typecheck": "tsc -b tsconfig.json && tsc -p tsconfig.tests.node.json"
   },
   "engines": {
