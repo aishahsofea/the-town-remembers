@@ -46,6 +46,15 @@ export default tseslint.config(
     },
     rules: {
       "@typescript-eslint/consistent-type-imports": "error",
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+          ignoreRestSiblings: true,
+        },
+      ],
       "@typescript-eslint/no-unnecessary-condition": "error",
       "@typescript-eslint/switch-exhaustiveness-check": "error",
       "no-console": "error",
