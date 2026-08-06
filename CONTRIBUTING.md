@@ -31,10 +31,10 @@ corepack pnpm validate
 | Command | What it checks |
 |---|---|
 | `pnpm format:check` | Prettier formatting of code and configuration |
-| `pnpm lint` | ESLint with type-aware rules across every project |
 | `pnpm check:boundaries` | Package ownership, exports, and dependency direction |
 | `pnpm test:tooling` | The repository scripts in `scripts/` |
 | `pnpm typecheck` | Strict build of every project plus the test-only programs |
+| `pnpm lint` | ESLint with type-aware rules across every project |
 | `pnpm test` | Contract, configuration, runtime-shell, and browser-component tests, with coverage thresholds on the shared packages |
 | `pnpm test:contracts` | The executable HTTP and Bedrock contracts alone |
 | `pnpm build` | Library declarations, three Lambda bundles, and the web bundle |
@@ -42,8 +42,11 @@ corepack pnpm validate
 | `pnpm test:e2e` | The browser health journey |
 | `pnpm validate` | All of the above, in dependency order |
 
-`pnpm test:e2e` and `pnpm cdk:synth` read built output, so run `pnpm build`
-first when invoking them on their own.
+`pnpm typecheck` comes before `pnpm lint` on purpose. Packages resolve each
+other through their `dist` declarations, so type-aware lint rules need the
+ordered build to have run. `pnpm lint`, `pnpm test:e2e`, and `pnpm cdk:synth`
+all read built output; run `pnpm typecheck` or `pnpm build` first when invoking
+them on their own.
 
 ## Running the health journey locally
 
@@ -158,6 +161,7 @@ return a fabricated success for persistence, model, queue, or gameplay work.
 | `No inputs were found in config file` | A package has a `tsconfig.json` but no source yet. Add the source or remove the project reference. |
 | `was not found by the project service` | A new file is outside every program. Add its directory to the ESLint `project` list. |
 | `Cannot find module .../dist/...` | `pnpm build` has not run. `test:e2e` and `cdk:synth` read built output. |
+| A wave of `no-unsafe-*` lint errors on a fresh clone | `dist` does not exist yet, so cross-package types are unresolvable. Run `pnpm typecheck` first. |
 | Playwright times out waiting for a server | Another process holds `TTR_API_PORT` or `TTR_WEB_PORT`. Both use `strictPort`. |
 | Configuration error naming `TTR_ENV` | The variable is unset and `.env.defaults` was not read. Only repository tooling loads it; a bare `node` invocation must set it. |
 
