@@ -133,6 +133,32 @@ Toolchain upgrades must update `package.json`, `pnpm-workspace.yaml`,
 together. See [CONTRIBUTING.md](CONTRIBUTING.md) for workspace ownership,
 dependency direction, and boundary-checking commands.
 
+## Run it locally
+
+No secret is needed to build, test, or run what exists today.
+
+```sh
+corepack pnpm install --frozen-lockfile
+corepack pnpm exec playwright install chromium
+corepack pnpm validate
+```
+
+`pnpm validate` is the whole gate: formatting, lint, workspace boundaries,
+strict type-checking, contract and runtime tests, every build, deterministic
+CDK synthesis, and the browser health journey. CI runs the identical command.
+
+To see the page:
+
+```sh
+corepack pnpm build
+corepack pnpm dev
+```
+
+Open `http://127.0.0.1:5173`. The page calls `/api/v1/health` through the Vite
+proxy and reports API liveness, build identity, and server time. It is a
+foundation diagnostic: the database, model, queue, and gameplay routes arrive
+in Phases 1 through 6, and no shell in this phase claims otherwise.
+
 ## Hackathon proof
 
 CockroachDB is not used as a passive transcript store. It holds both current
