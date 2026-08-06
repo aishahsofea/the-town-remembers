@@ -28,6 +28,9 @@
     },
     {
       "path": "./apps/recovery-worker"
+    },
+    {
+      "path": "./apps/web"
     }
   ]
 }

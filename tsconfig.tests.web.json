@@ -6,7 +6,7 @@
     "declaration": false,
     "declarationMap": false,
     "noEmit": true,
-    "types": ["vite/client", "node"]
+    "types": ["node"]
   },
   "include": [
     "apps/web/src/**/*.test.ts",

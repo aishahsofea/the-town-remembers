@@ -4,6 +4,11 @@
   "private": true,
   "license": "MIT",
   "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "preview": "vite preview"
+  },
   "dependencies": {
     "@the-town-remembers/browser-config": "workspace:*",
     "@the-town-remembers/http-contracts": "workspace:*",

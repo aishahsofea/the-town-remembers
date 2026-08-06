@@ -7,9 +7,9 @@ const NODE_BUILTIN_PATTERNS = ["node:*", "fs", "path", "crypto", "child_process"
 
 /** Packages whose published surface must stay usable inside a browser bundle. */
 const BROWSER_SAFE_SOURCES = [
-  "apps/web/**/*.{ts,tsx}",
-  "packages/http-contracts/**/*.ts",
-  "packages/browser-config/**/*.ts",
+  "apps/web/src/**/*.{ts,tsx}",
+  "packages/http-contracts/src/**/*.ts",
+  "packages/browser-config/src/**/*.ts",
 ];
 
 export default tseslint.config(
@@ -37,6 +37,7 @@ export default tseslint.config(
           "./packages/*/tsconfig.json",
           "./apps/*/tsconfig.json",
           "./tsconfig.tests.node.json",
+          "./tsconfig.tests.web.json",
         ],
         tsconfigRootDir: import.meta.dirname,
       },

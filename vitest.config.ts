@@ -37,6 +37,7 @@ export default defineConfig({
           include: ["apps/{game-api,ambient-worker,recovery-worker}/src/**/*.test.ts"],
         },
       },
+      "apps/web",
     ],
     coverage: {
       provider: "v8",

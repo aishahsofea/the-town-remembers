@@ -1,0 +1,112 @@
+:root {
+  --surface: #faf7f0;
+  --ink: #23201a;
+  --muted: #5a5347;
+  --line: #cfc7b5;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface: #1a1815;
+    --ink: #f2ede2;
+    --muted: #b6ae9d;
+    --line: #3a352d;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--surface);
+  color: var(--ink);
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  line-height: 1.5;
+}
+
+h1 {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.75rem;
+  margin: 0 0 0.25rem;
+}
+
+.health-panel {
+  max-width: 34rem;
+  margin: 0 auto;
+  padding: 2rem 1rem 3rem;
+}
+
+.health-panel__scope {
+  color: var(--muted);
+  margin-top: 0;
+}
+
+.health-panel__illustration {
+  margin: 1.5rem 0;
+}
+
+.health-panel__illustration img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 0.25rem;
+}
+
+.health-panel__illustration figcaption {
+  color: var(--muted);
+  font-size: 0.875rem;
+  margin-top: 0.5rem;
+}
+
+.health-status {
+  border: 1px solid var(--line);
+  border-radius: 0.25rem;
+  padding: 1rem;
+  margin: 0 0 1.5rem;
+}
+
+.health-status dt {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.health-status dd,
+.health-panel__build dd {
+  margin: 0 0 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.health-panel__build {
+  border-top: 1px solid var(--line);
+  padding-top: 1rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+button {
+  font: inherit;
+  padding: 0.375rem 0.875rem;
+  border: 1px solid var(--line);
+  border-radius: 0.25rem;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+button:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
