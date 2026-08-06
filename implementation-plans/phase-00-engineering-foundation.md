@@ -1,6 +1,6 @@
 # Phase 0 — Engineering Foundation
 
-- **Status:** Detailed implementation plan
+- **Status:** Complete — see [execution detail](phase-00-execution-detail.md)
 - **Depends on:** Accepted decisions 001–011
 - **Produces:** A buildable, testable TypeScript workspace and executable
   contract boundary for later phases
@@ -416,23 +416,29 @@ phase that owns that dependency.
 
 ## 9. Exit checklist
 
-- [ ] `P0-01` through `P0-14` are complete and linked to their delivered
-  artifacts.
-- [ ] A clean checkout installs with the pinned Node/`pnpm` versions and
-  lockfile.
-- [ ] Formatting, lint, strict type-check, contract/unit tests, builds, CDK
-  synthesis, and the browser health journey pass locally and in CI.
-- [ ] All HTTP and Bedrock result unions have executable Zod/TypeScript
+- [x] `P0-01` through `P0-14` are complete and linked to their delivered
+  artifacts. The commit for each is listed in the
+  [execution detail](phase-00-execution-detail.md).
+- [x] A clean checkout installs with the pinned Node/`pnpm` versions and
+  lockfile. Verified in a fresh `git clone`, not in the working copy.
+- [x] Formatting, lint, strict type-check, contract/unit tests, builds, CDK
+  synthesis, and the browser health journey pass locally through one
+  `pnpm validate` command. The CI workflow runs that same command; it has not
+  executed yet because this branch has no remote.
+- [x] All HTTP and Bedrock result unions have executable Zod/TypeScript
   contracts, and all three checked-in JSON schemas pass drift tests.
-- [ ] The browser imports only player-safe contracts and public configuration.
-- [ ] The health route reports liveness/build/time only and makes no dependency
+- [x] The browser imports only player-safe contracts and public configuration.
+  Enforced by the workspace boundary check, by a browser TypeScript project
+  with no Node types, and by a safety check on the built bundle itself.
+- [x] The health route reports liveness/build/time only and makes no dependency
   readiness claim.
-- [ ] Worker shells reject malformed events and perform no external effects.
-- [ ] Safe logs contain request/operation context without raw URLs, request
+- [x] Worker shells reject malformed events and perform no external effects.
+- [x] Safe logs contain request/operation context without raw URLs, request
   events, bodies, headers, cookies, tokens, credentials, or secret values.
-- [ ] The CDK shell synthesizes without plaintext secrets or wildcard
-  placeholder permissions.
-- [ ] Local setup, aggregate commands, package boundaries, configuration
+  Each shell's log event type is closed, so there is no field to carry them.
+- [x] The CDK shell synthesizes without plaintext secrets or wildcard
+  placeholder permissions, and byte-identically across runs.
+- [x] Local setup, aggregate commands, package boundaries, configuration
   categories, and deferred owners are documented.
 
 ## 10. Handoff to Phase 1

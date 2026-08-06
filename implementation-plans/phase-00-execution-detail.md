@@ -11,11 +11,24 @@
 
 ## 1. Completion state
 
-| Task | State | Delivered by |
-|---|---|---|
-| `P0-01` Pin the repository toolchain | Complete | `d6d26d1` |
-| `P0-02` Establish workspace ownership boundaries | Complete | `88dff45` |
-| `P0-03`–`P0-14` | Outstanding | This plan |
+All tasks are complete. The commit that delivered each one:
+
+| Task | Commit |
+|---|---|
+| `P0-01` Pin the repository toolchain | `d6d26d1` |
+| `P0-02` Establish workspace ownership boundaries | `88dff45` |
+| `P0-03` Configure strict TypeScript and module builds | `ca1ba45` |
+| `P0-04` Create the shared HTTP contract package | `e4683f9` |
+| `P0-05` Mirror the Bedrock structured-output contracts | `da3abfb` |
+| `P0-06` Implement deterministic serialization primitives | `c428833` |
+| `P0-07` Centralize and validate configuration | `21850ae` |
+| `P0-08` Build the Game API health shell | `c227e57` |
+| `P0-09` Build the Ambient and Recovery worker shells | `2083961` |
+| `P0-10` Build the React/Vite health shell | `b1cf210` |
+| `P0-11` Create a synthesizable CDK shell | `996cec1` |
+| `P0-12` Standardize the quality gates | `e8a42e4`, `9d24ed1`, `af61244` |
+| `P0-13` Add the CI baseline | `b0f5e9b` |
+| `P0-14` Document setup and boundaries | `f01590b`, `6084a26` |
 
 The recorded toolchain is Node.js `24.18.0` and pnpm `11.20.0`. Every command
 in this plan runs on that pair.
@@ -36,6 +49,9 @@ recorded here so later phases inherit them instead of rediscovering them.
 | `D0-G` | `X-Request-Id` is always server-generated and never echoed from the client | A client-controlled identifier would flow into logs |
 | `D0-H` | `IsoTime` is strictly `YYYY-MM-DDTHH:MM:SS.sssZ`, including on the health route | Decision 006 defines exactly three fractional digits as the canonical timestamp form (see 9.1) |
 | `D0-I` | Grapheme-cluster bounds use `Intl.Segmenter` | Decision 006 bounds text in grapheme clusters, not UTF-16 code units |
+| `D0-K` | TypeScript is pinned to `6.0.3`, not `7.0.2` | The 7.x package ships no TypeScript API surface, and typescript-eslint 8 needs it for type-checked linting. Revisit when a compatible typescript-eslint release exists |
+| `D0-L` | Committed non-secret local defaults live in `.env.defaults`, read only by repository tooling | A clean checkout must validate without hand-set variables, while the runtime loaders keep failing closed because they never read a file |
+| `D0-M` | `pnpm typecheck` runs before `pnpm lint` in the aggregate gate | Packages resolve each other through their `dist` declarations, so type-aware lint rules need the ordered build to have run |
 
 ## 3. Dependency selection
 
@@ -44,105 +60,91 @@ Phase 0. Each has a named justification; anything else needs a plan amendment.
 
 | Package | Where | Why |
 |---|---|---|
-| `typescript` | root | `P0-03` strict builds |
-| `zod` | `http-contracts`, `model-contracts`, `runtime-config`, `browser-config` | `P0-04`, `P0-05`, `P0-07` |
-| `vitest`, `@vitest/coverage-v8` | root | `P0-12` unit and contract projects |
-| `happy-dom`, `@testing-library/react`, `@testing-library/dom` | root dev | `P0-10` component tests |
-| `@playwright/test` | root dev | `P0-12` browser health journey |
-| `eslint`, `typescript-eslint`, `@eslint/js`, `eslint-plugin-react-hooks` | root dev | `P0-12` lint gate |
-| `prettier` | root dev | `P0-12` formatting gate |
+| `typescript` 6.0.3 | root | `P0-03` strict builds; see `D0-K` |
+| `zod` 4 | `http-contracts`, `model-contracts`, `runtime-config`, `browser-config`, both workers | `P0-04`, `P0-05`, `P0-07`, `P0-09` |
+| `vitest`, `@vitest/coverage-v8` | root | `P0-12` unit, contract, and coverage gate |
+| `@playwright/test` | root | `P0-12` browser health journey |
+| `eslint`, `@eslint/js`, `typescript-eslint`, `globals` | root | `P0-12` lint gate |
+| `prettier` | root | `P0-12` formatting gate |
+| `@types/node` | root | Node typings for server projects and tooling |
+| `@the-town-remembers/runtime-config` | root | `playwright.config.ts` reads the test-harness port surface |
 | `react`, `react-dom` | `apps/web` | `P0-10` |
-| `vite`, `@vitejs/plugin-react` | `apps/web` | `P0-10` |
+| `vite`, `@vitejs/plugin-react`, `@types/react`, `@types/react-dom` | `apps/web` | `P0-10` build and typings |
+| `happy-dom`, `@testing-library/react`, `@testing-library/dom` | `apps/web` | `P0-10` component tests, resolved from the web workspace so React is not duplicated |
 | `@types/aws-lambda` | the three Lambda apps | `P0-08`, `P0-09` typed event envelopes |
 | `aws-cdk-lib`, `constructs` | `infrastructure` | `P0-11` |
-| `@types/node`, `@types/react`, `@types/react-dom` | as needed | type-checking |
+
+`eslint-plugin-react-hooks` was planned but not installed: the health shell has
+one hook, and the rule set would need a React-specific ESLint program that
+Phase 3 is better placed to add alongside the real client.
 
 No AWS SDK client, database driver, or model client is installed in Phase 0.
 Their absence is part of the proof that the shells cannot reach a dependency.
 
-## 4. Target file layout
+## 4. Delivered file layout
 
 ```text
-tsconfig.base.json          strict compiler options shared by every project
-tsconfig.node.json          server/Lambda variant (node types, NodeNext)
-tsconfig.browser.json       browser variant (DOM lib, jsx, no node types)
-tsconfig.json               solution file referencing every project
+tsconfig.base.json          strict options shared by every project
+tsconfig.node.json          server and tooling variant (node types, NodeNext)
+tsconfig.portable.json      shared-library variant (no node types, no DOM)
+tsconfig.browser.json       browser variant (DOM lib, jsx, bundler resolution)
+tsconfig.json               solution file referencing all eleven projects
+tsconfig.tests.node.json    test-only program for node projects and tooling
+tsconfig.tests.web.json     test-only program for the browser project
 eslint.config.js            flat config with per-area boundary rules
-.prettierrc.json            formatting rules
-.prettierignore
-vitest.config.ts            four named projects
+.prettierrc.json .prettierignore
+vitest.config.ts            contracts, config, runtime-shells, and web projects
 playwright.config.ts        deterministic ports and web-server lifecycle
-.env.example                names and safe placeholders only
-.github/workflows/ci.yml    P0-13
+.env.example                every variable name with a safe placeholder
+.env.defaults               committed non-secret local values (see D0-L)
+.github/workflows/ci.yml
 
 scripts/
-  check-workspace-boundaries.mjs      existing
-  check-workspace-boundaries.test.mjs existing
-  build-id.mjs                        resolves a build identity without secrets
-  dev.mjs                             runs the local API and Vite pair
-  synth.mjs                           programmatic CDK synthesis entry
+  check-workspace-boundaries.mjs   package ownership and dependency direction
+  check-artifact-safety.mjs        refuses to publish an unsafe CI bundle
+  check-bundle-safety.mjs          browser bundle carries no server concern
+  local-env.mjs / .d.mts           committed local defaults for tooling only
+  build-id.mjs                     build identity without reading a secret
+  dev.mjs                          the local API and Vite pair
+  synth.mjs                        programmatic CDK synthesis entry
+  *.test.mjs                       node:test coverage for each of the above
 
 packages/http-contracts/src/
-  primitives.ts       Id, IsoTime, idempotency key, bounded plain text, enums
-  health.ts           HealthResponse
-  problem.ts          ProblemResponse, status policy constants
-  town.ts             town creation, invite preview, join
-  player-view.ts      the complete PlayerView union
-  actions.ts          ActionRequest, ActionResultByKind, CompletedActionResponse
-  routes.ts           API_VERSION, API_BASE_PATH, route templates
-  index.ts
+  primitives.ts player-view.ts actions.ts problem.ts health.ts town.ts
+  routes.ts fixtures.ts index.ts
+  contracts.test.ts leakage.test.ts routes.test.ts
 
 packages/model-contracts/src/
-  claim-normalization.ts
-  npc-dialogue.ts
-  ambient-choice.ts
-  versions.ts         prompt, task-input, validator, schema-name constants
-  json-schema.ts      normalized generation used by the drift test
-  index.ts
+  claim-normalization.ts npc-dialogue.ts ambient-choice.ts
+  versions.ts json-schema.ts index.ts
+  json-schema.test.ts versions.test.ts
 
 packages/serialization/src/
-  canonical-json.ts
-  digest.ts
-  index.ts
+  canonical-json.ts digest.ts index.ts (+ tests)
 
 packages/runtime-config/src/
-  shared.ts           common parsing helpers and redaction rules
-  reliability.ts      Decision 007 typed constants
+  shared.ts reliability.ts
   game.ts ambient.ts recovery.ts deployment.ts test.ts operator.ts
+  configuration.test.ts
 
-packages/browser-config/src/
-  index.ts            VITE_TTR_* parsing plus the secret-name denylist
-
-packages/test-support/src/
-  fixtures/           contract fixtures shared by test projects
-  log-capture.ts      stdout capture used by redaction tests
-  index.ts
+packages/browser-config/src/ index.ts index.test.ts
+packages/test-support/src/   log-capture.ts redaction.ts index.ts
 
 apps/game-api/src/
-  handler.ts          Lambda entry
-  local-server.ts     node:http adapter used by Vite and Playwright
-  http/router.ts      route table and 404 policy
-  http/problem.ts     problem+json construction
-  http/request-id.ts
-  observability/log.ts
-  routes/health.ts
+  handler.ts local-server.ts main.ts
+  http/{types,request-id,problem,router}.ts observability/log.ts
+  routes/health.ts (+ router and local-server tests)
 
-apps/ambient-worker/src/
-  handler.ts envelope.ts observability/log.ts
-
-apps/recovery-worker/src/
-  handler.ts envelope.ts observability/log.ts
+apps/ambient-worker/src/  handler.ts envelope.ts observability/log.ts (+ tests)
+apps/recovery-worker/src/ handler.ts envelope.ts observability/log.ts (+ tests)
 
 apps/web/
-  index.html vite.config.ts
-  src/main.tsx src/App.tsx
-  src/health/HealthPanel.tsx src/health/useHealth.ts
-  src/assets/manifest.ts src/assets/placeholder.ts
-  src/styles.css
+  index.html vite.config.ts vitest.config.ts
+  src/{main.tsx,App.tsx,config.ts,styles.css,vite-env.d.ts}
+  src/health/{HealthPanel.tsx,useHealth.ts} (+ tests)
+  src/assets/{manifest.ts,placeholder.ts} (+ tests)
 
-infrastructure/
-  bin/app.ts lib/foundation-stack.ts
-
+infrastructure/src/ app.ts foundation-stack.ts synth.ts (+ tests)
 e2e/health.spec.ts
 ```
 
@@ -491,6 +493,9 @@ commands.
 Phase 0 is finished when every goal below is objectively true. Each maps to the
 phase exit checklist.
 
+All fifteen goals are met. The proof for each was executed on a fresh clone,
+not on the working copy, so stale build output could not mask a failure.
+
 | Goal | Proof |
 |---|---|
 | `G1` | `pnpm install --frozen-lockfile` succeeds on Node 24.18.0 from a clean checkout |
@@ -555,3 +560,27 @@ is normative, so all four are exported.
 `P0-01` pinned Node `24.18.0`. That version was not present on the development
 machine and was installed before execution began. `pnpm install` fails closed on
 any other runtime, which is the intended `P0-01` behavior.
+
+## 10. Result
+
+`pnpm validate` passes end to end from a fresh `git clone` with no environment
+variable set and no secret available. It runs, in order: formatting, workspace
+boundaries, tooling tests, strict type-checking of every project, type-aware
+lint, 291 unit and contract tests with coverage thresholds on the shared
+packages, every build, the browser bundle safety check, deterministic CDK
+synthesis, and a six-case Chromium health journey.
+
+Two findings were surfaced by the exit checks rather than by review:
+
+1. The aggregate gate linted before type-checking. On a working copy with
+   stale `dist` output it passed; on a fresh clone every cross-package type was
+   unresolvable. Fixed in `af61244`.
+2. React StrictMode double-invokes effects in development, so the browser
+   journey's request-count assertion was not stable. The assertion now checks
+   that the health path is the only API path the page requests, which is the
+   property that actually matters.
+
+The CI workflow has not yet executed: this branch has no remote. It runs the
+same `pnpm validate` command that passes locally, plus the artifact-safety
+check, so its first run is expected to be a confirmation rather than a
+discovery.
