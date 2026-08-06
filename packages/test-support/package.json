@@ -3,10 +3,18 @@
   "version": "0.0.0",
   "private": true,
   "license": "MIT",
+  "type": "module",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     }
+  },
+  "dependencies": {
+    "@the-town-remembers/browser-config": "workspace:*",
+    "@the-town-remembers/http-contracts": "workspace:*",
+    "@the-town-remembers/model-contracts": "workspace:*",
+    "@the-town-remembers/runtime-config": "workspace:*",
+    "@the-town-remembers/serialization": "workspace:*"
   }
 }

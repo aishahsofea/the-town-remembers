@@ -3,9 +3,15 @@
   "version": "0.0.0",
   "private": true,
   "license": "MIT",
+  "type": "module",
   "scripts": {
+    "build:id": "node scripts/build-id.mjs",
     "check:boundaries": "node scripts/check-workspace-boundaries.mjs",
-    "test:boundaries": "node --test scripts/check-workspace-boundaries.test.mjs"
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "test:boundaries": "node --test scripts/check-workspace-boundaries.test.mjs",
+    "typecheck": "tsc -b tsconfig.json && tsc -p tsconfig.tests.node.json"
   },
   "engines": {
     "node": "24.18.0",
@@ -18,5 +24,17 @@
       "onFail": "error"
     }
   },
-  "packageManager": "pnpm@11.20.0+sha512.9a6f330a95b66446ea088faf1521405a8a01f07fde7124cc9958dfed52d4bb436737e65b08f85f37b46fcba375092558ac51262b816844b22f63406ed166bfee"
+  "packageManager": "pnpm@11.20.0+sha512.9a6f330a95b66446ea088faf1521405a8a01f07fde7124cc9958dfed52d4bb436737e65b08f85f37b46fcba375092558ac51262b816844b22f63406ed166bfee",
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.62.1",
+    "@types/node": "^26.1.2",
+    "@vitest/coverage-v8": "^4.1.10",
+    "eslint": "^10.8.0",
+    "globals": "^17.9.0",
+    "prettier": "^3.9.6",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.66.0",
+    "vitest": "^4.1.10"
+  }
 }

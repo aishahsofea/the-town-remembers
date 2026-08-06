@@ -2,5 +2,15 @@
   "name": "@the-town-remembers/game-api",
   "version": "0.0.0",
   "private": true,
-  "license": "MIT"
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "@the-town-remembers/http-contracts": "workspace:*",
+    "@the-town-remembers/runtime-config": "workspace:*",
+    "@the-town-remembers/serialization": "workspace:*"
+  },
+  "devDependencies": {
+    "@the-town-remembers/test-support": "workspace:*",
+    "@types/aws-lambda": "^8.10.162"
+  }
 }

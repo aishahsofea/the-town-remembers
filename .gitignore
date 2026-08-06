@@ -21,3 +21,6 @@ cdk.out/
 # Logs and operating-system metadata
 *.log
 .DS_Store
+
+# Emitted declaration output for browser projects
+dist-types/

@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "license": "MIT",
+  "type": "module",
   "exports": {
     "./game": {
       "types": "./dist/game.d.ts",
@@ -28,5 +29,8 @@
       "types": "./dist/operator.d.ts",
       "import": "./dist/operator.js"
     }
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
   }
 }

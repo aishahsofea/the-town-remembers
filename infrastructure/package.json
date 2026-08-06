@@ -2,5 +2,11 @@
   "name": "@the-town-remembers/infrastructure",
   "version": "0.0.0",
   "private": true,
-  "license": "MIT"
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "@the-town-remembers/runtime-config": "workspace:*",
+    "aws-cdk-lib": "^2.263.0",
+    "constructs": "^10.8.1"
+  }
 }

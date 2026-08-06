@@ -4,10 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, test } from "node:test";
 
-import {
-  EXPECTED_PACKAGES,
-  validateWorkspace,
-} from "./check-workspace-boundaries.mjs";
+import { EXPECTED_PACKAGES, validateWorkspace } from "./check-workspace-boundaries.mjs";
 
 const temporaryDirectories = [];
 

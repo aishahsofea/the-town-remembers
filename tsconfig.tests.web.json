@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "./tsconfig.browser.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "noEmit": true,
+    "types": ["vite/client", "node"]
+  },
+  "include": [
+    "apps/web/src/**/*.test.ts",
+    "apps/web/src/**/*.test.tsx",
+    "apps/web/vite.config.ts",
+    "apps/web/vitest.config.ts"
+  ]
+}

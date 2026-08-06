@@ -224,7 +224,7 @@ function parseLockfileImporters(contents) {
     if (line.trim() === "") continue;
     if (!line.startsWith(" ")) break;
 
-    const match = line.match(/^  ([^\s][^:]*):(?:\s|$)/);
+    const match = line.match(/^ {2}([^\s][^:]*):(?:\s|$)/);
     if (match) importers.push(match[1].replace(/^['"]|['"]$/g, ""));
   }
   return importers;
@@ -385,7 +385,10 @@ function validateSourceImports(
         for (const [packagePath, otherDefinition] of definitionsByPath) {
           if (otherDefinition.name === packageDefinition.name) continue;
           const otherRoot = path.join(rootDir, packagePath);
-          if (resolved === otherRoot || resolved.startsWith(`${otherRoot}${path.sep}`)) {
+          if (
+            resolved === otherRoot ||
+            resolved.startsWith(`${otherRoot}${path.sep}`)
+          ) {
             addViolation(
               violations,
               "cross_package_relative_import",
@@ -428,12 +431,7 @@ function validateSourceImports(
         );
       }
 
-      validateRuntimeConfigImport(
-        packageDefinition,
-        specifier,
-        violations,
-        sourceFile,
-      );
+      validateRuntimeConfigImport(packageDefinition, specifier, violations, sourceFile);
     }
   }
 }
@@ -585,14 +583,21 @@ function runCli() {
     return;
   }
 
-  console.error(`Workspace boundary check failed with ${violations.length} violation(s):`);
+  console.error(
+    `Workspace boundary check failed with ${violations.length} violation(s):`,
+  );
   for (const violation of violations) {
-    const location = violation.path ? ` (${path.relative(rootDir, violation.path)})` : "";
+    const location = violation.path
+      ? ` (${path.relative(rootDir, violation.path)})`
+      : "";
     console.error(`- [${violation.code}] ${violation.message}${location}`);
   }
   process.exitCode = 1;
 }
 
-if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
+if (
+  process.argv[1] &&
+  pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url
+) {
   runCli();
 }

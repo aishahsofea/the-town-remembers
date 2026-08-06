@@ -2,5 +2,13 @@
   "name": "@the-town-remembers/ambient-worker",
   "version": "0.0.0",
   "private": true,
-  "license": "MIT"
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "@the-town-remembers/runtime-config": "workspace:*"
+  },
+  "devDependencies": {
+    "@the-town-remembers/test-support": "workspace:*",
+    "@types/aws-lambda": "^8.10.162"
+  }
 }
