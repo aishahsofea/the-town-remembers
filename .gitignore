@@ -2,10 +2,13 @@
 node_modules/
 .pnpm-store/
 
-# Local environment files
+# Local environment files. `.env.example` documents every name and
+# `.env.defaults` carries committed non-secret local values; real values live
+# in an ignored `.env`.
 .env
 .env.*
 !.env.example
+!.env.defaults
 !.env.*.example
 
 # Build and test output

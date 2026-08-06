@@ -14,7 +14,7 @@ Run the repository boundary checks before submitting workspace changes:
 
 ```sh
 corepack pnpm check:boundaries
-corepack pnpm test:boundaries
+corepack pnpm test:tooling
 ```
 
 ## Workspace ownership

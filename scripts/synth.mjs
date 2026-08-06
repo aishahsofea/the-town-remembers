@@ -10,6 +10,10 @@
 
 import process from "node:process";
 
+import { applyLocalDefaults } from "./local-env.mjs";
+
+applyLocalDefaults();
+
 const { loadDeploymentConfig } =
   await import("../packages/runtime-config/dist/deployment.js");
 const { createApp } = await import("../infrastructure/dist/app.js");
