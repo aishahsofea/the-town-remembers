@@ -1,0 +1,75 @@
+name: CI
+
+# Validates code only. It creates, mutates, and reads no AWS or CockroachDB
+# resource, and it needs no repository secret. Deployment arrives in Phase 7.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+# A superseded run on the same ref is cancelled rather than left to finish.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+
+      - name: Enable the pinned package manager
+        run: corepack enable
+
+      - name: Set up the pinned Node.js runtime
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+
+      - name: Resolve the pnpm store path
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
+
+      - name: Install from the lockfile
+        run: pnpm install --frozen-lockfile
+
+      - name: Cache the Playwright browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install the browser used by the health journey
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run the same aggregate gate used locally
+        run: pnpm validate
+
+      - name: Refuse to publish an unsafe diagnostic bundle
+        if: ${{ !cancelled() }}
+        run: node scripts/check-artifact-safety.mjs playwright-report test-results
+
+      - name: Upload the browser journey report
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-journey-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          if-no-files-found: ignore
