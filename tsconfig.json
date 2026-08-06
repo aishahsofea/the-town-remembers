@@ -6,6 +6,9 @@
       "path": "./packages/http-contracts"
     },
     {
+      "path": "./packages/model-contracts"
+    },
+    {
       "path": "./packages/serialization"
     }
   ]
