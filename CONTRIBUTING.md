@@ -38,6 +38,7 @@ corepack pnpm validate
 | `pnpm test` | Contract, configuration, runtime-shell, and browser-component tests, with coverage thresholds on the shared packages |
 | `pnpm test:contracts` | The executable HTTP and Bedrock contracts alone |
 | `pnpm build` | Library declarations, three Lambda bundles, and the web bundle |
+| `pnpm check:bundle` | The built browser bundle carries no server concern or credential |
 | `pnpm cdk:synth` | Deterministic CDK synthesis into `cdk.out/` |
 | `pnpm test:e2e` | The browser health journey |
 | `pnpm validate` | All of the above, in dependency order |
