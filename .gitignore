@@ -21,6 +21,10 @@ cdk.out/
 .vite/
 *.tsbuildinfo
 
+# Pinned local CockroachDB binary, its store, and its logs. `pnpm db:up`
+# recreates all of it; nothing here is a source of truth.
+.cockroach/
+
 # Logs and operating-system metadata
 *.log
 .DS_Store
