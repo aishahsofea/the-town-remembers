@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { loadAmbientConfig } from "./ambient.js";
 import { loadDeploymentConfig } from "./deployment.js";
 import { DEFAULT_API_PORT, loadGameConfig } from "./game.js";
+import { loadDatabaseConfig, readSslMode } from "./database.js";
 import { loadOperatorConfig } from "./operator.js";
 import { loadRecoveryConfig } from "./recovery.js";
 import {
@@ -15,7 +16,7 @@ import {
   PLAYER_API_TIMING,
 } from "./reliability.js";
 import { ConfigurationError, SECRET_VARIABLE_PATTERN } from "./shared.js";
-import { DEFAULT_WEB_PORT, loadTestConfig } from "./test.js";
+import { DEFAULT_TEST_DB_PORT, DEFAULT_WEB_PORT, loadTestConfig } from "./test.js";
 
 const PRODUCTION = {
   TTR_ENV: "production",
@@ -149,13 +150,29 @@ describe("worker and deployment configuration", () => {
 });
 
 describe("test harness configuration", () => {
-  it("uses deterministic default ports", () => {
+  it("uses deterministic default ports and the pinned local database", () => {
     expect(loadTestConfig({})).toStrictEqual({
       apiPort: DEFAULT_API_PORT,
       webPort: DEFAULT_WEB_PORT,
       apiBaseUrl: `http://127.0.0.1:${DEFAULT_API_PORT}`,
       webBaseUrl: `http://127.0.0.1:${DEFAULT_WEB_PORT}`,
+      testDatabasePort: DEFAULT_TEST_DB_PORT,
+      testDatabaseUrl: `postgresql://root@127.0.0.1:${DEFAULT_TEST_DB_PORT}/defaultdb?sslmode=disable`,
     });
+  });
+
+  it("follows the configured port when no explicit URL is supplied", () => {
+    expect(loadTestConfig({ TTR_TEST_DB_PORT: "26300" }).testDatabaseUrl).toContain(
+      ":26300/",
+    );
+  });
+
+  it("accepts an explicit remote disposable target", () => {
+    expect(
+      loadTestConfig({
+        TTR_TEST_DATABASE_URL: "postgresql://tester@remote:26257/scratch",
+      }).testDatabaseUrl,
+    ).toBe("postgresql://tester@remote:26257/scratch");
   });
 
   it("rejects a port outside the valid range", () => {
@@ -163,6 +180,76 @@ describe("test harness configuration", () => {
       expectConfigurationError(() => loadTestConfig({ TTR_API_PORT: "70000" }))
         .issues[0]?.variable,
     ).toBe("TTR_API_PORT");
+  });
+});
+
+describe("database runtime configuration", () => {
+  const PRODUCTION_DATABASE_URL =
+    "postgresql://app_runtime:x@cluster.example:26257/town?sslmode=verify-full";
+
+  it("reads a verified production credential", () => {
+    expect(
+      loadDatabaseConfig({
+        TTR_ENV: "production",
+        TTR_DATABASE_URL: PRODUCTION_DATABASE_URL,
+      }),
+    ).toStrictEqual({
+      environment: "production",
+      databaseUrl: PRODUCTION_DATABASE_URL,
+    });
+  });
+
+  it.each(["development", "production"])(
+    "refuses a %s credential that does not request verify-full",
+    (environment) => {
+      const error = expectConfigurationError(() =>
+        loadDatabaseConfig({
+          TTR_ENV: environment,
+          TTR_DATABASE_URL:
+            "postgresql://app_runtime:hunter2@cluster.example:26257/town?sslmode=require",
+        }),
+      );
+      expect(error.category).toBe("database-runtime");
+      expect(error.issues[0]?.variable).toBe("TTR_DATABASE_URL");
+      expect(error.message).not.toContain("hunter2");
+    },
+  );
+
+  it("permits the pinned insecure node only in a local environment", () => {
+    expect(
+      loadDatabaseConfig({
+        TTR_ENV: "local",
+        TTR_DATABASE_URL: "postgresql://root@127.0.0.1:26257/town?sslmode=disable",
+      }).environment,
+    ).toBe("local");
+  });
+
+  it("fails closed when the credential is absent", () => {
+    expect(
+      expectConfigurationError(() => loadDatabaseConfig({ TTR_ENV: "production" }))
+        .issues[0],
+    ).toStrictEqual({
+      variable: "TTR_DATABASE_URL",
+      category: "database-runtime",
+      code: "missing",
+    });
+  });
+
+  it("does not leak the runtime credential into the game category", () => {
+    const runtime = loadGameConfig({
+      ...PRODUCTION,
+      TTR_DATABASE_URL: PRODUCTION_DATABASE_URL,
+    });
+    expect(JSON.stringify(runtime)).not.toContain("app_runtime");
+  });
+
+  it.each([
+    ["postgresql://h/d", undefined],
+    ["postgresql://h/d?sslmode=verify-full", "verify-full"],
+    ["postgresql://h/d?application_name=a&sslmode=require", "require"],
+    ["postgresql://h/d?sslmode=", ""],
+  ])("reads sslmode from %s", (url, expected) => {
+    expect(readSslMode(url)).toBe(expected);
   });
 });
 
@@ -265,6 +352,8 @@ describe(".env.example", () => {
       "TTR_AWS_ACCOUNT",
       "TTR_API_PORT",
       "TTR_WEB_PORT",
+      "TTR_TEST_DB_PORT",
+      "TTR_DATABASE_URL",
       "VITE_TTR_ENV",
       "VITE_TTR_BUILD_ID",
       "TTR_MIGRATION_DATABASE_URL",

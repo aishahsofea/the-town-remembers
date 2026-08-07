@@ -52,6 +52,10 @@ export const RUNTIME_CONFIG_EXPORTS = Object.freeze({
     types: "./dist/recovery.d.ts",
     import: "./dist/recovery.js",
   },
+  "./database": {
+    types: "./dist/database.d.ts",
+    import: "./dist/database.js",
+  },
   "./deployment": {
     types: "./dist/deployment.d.ts",
     import: "./dist/deployment.js",
