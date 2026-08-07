@@ -14,6 +14,9 @@ importers:
       '@playwright/test':
         specifier: ^1.62.1
         version: 1.62.1
+      '@the-town-remembers/database-admin':
+        specifier: workspace:*
+        version: link:packages/database-admin
       '@the-town-remembers/runtime-config':
         specifier: workspace:*
         version: link:packages/runtime-config
@@ -32,6 +35,9 @@ importers:
       globals:
         specifier: ^17.9.0
         version: 17.9.0
+      pg:
+        specifier: ^8.16.3
+        version: 8.22.0
       prettier:
         specifier: ^3.9.6
         version: 3.9.6
@@ -194,6 +200,9 @@ importers:
         specifier: ^8.16.3
         version: 8.22.0
     devDependencies:
+      '@the-town-remembers/test-support':
+        specifier: workspace:*
+        version: link:../test-support
       '@types/pg':
         specifier: ^8.15.6
         version: 8.20.4
@@ -218,7 +227,24 @@ importers:
 
   packages/serialization: {}
 
-  packages/test-support: {}
+  packages/test-support:
+    dependencies:
+      '@the-town-remembers/database':
+        specifier: workspace:*
+        version: link:../database
+      '@the-town-remembers/database-admin':
+        specifier: workspace:*
+        version: link:../database-admin
+      '@the-town-remembers/runtime-config':
+        specifier: workspace:*
+        version: link:../runtime-config
+      pg:
+        specifier: ^8.16.3
+        version: 8.22.0
+    devDependencies:
+      '@types/pg':
+        specifier: ^8.15.6
+        version: 8.20.4
 
 packages:
 

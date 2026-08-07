@@ -10,7 +10,9 @@
     "cdk:synth": "node scripts/synth.mjs",
     "check:boundaries": "node scripts/check-workspace-boundaries.mjs",
     "check:bundle": "node scripts/check-bundle-safety.mjs",
+    "db:doctor": "node scripts/db-doctor.mjs",
     "db:down": "node scripts/cockroach.mjs stop",
+    "db:migrate": "node scripts/db-migrate.mjs",
     "db:status": "node scripts/cockroach.mjs status",
     "db:up": "node scripts/cockroach.mjs start",
     "dev": "node scripts/dev.mjs",
@@ -24,7 +26,7 @@
     "test:tooling": "node --test scripts/*.test.mjs",
     "test:watch": "vitest",
     "typecheck": "tsc -b tsconfig.json && tsc -p tsconfig.tests.node.json && tsc -p tsconfig.tests.web.json",
-    "validate": "pnpm format:check && pnpm check:boundaries && pnpm test:tooling && pnpm typecheck && pnpm lint && pnpm test && pnpm build && pnpm check:bundle && pnpm cdk:synth && pnpm test:e2e"
+    "validate": "pnpm format:check && pnpm check:boundaries && pnpm test:tooling && pnpm typecheck && pnpm lint && TTR_REQUIRE_DB_TESTS=1 pnpm test && pnpm build && pnpm check:bundle && pnpm cdk:synth && pnpm test:e2e"
   },
   "engines": {
     "node": "24.18.0",
@@ -41,12 +43,14 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.62.1",
+    "@the-town-remembers/database-admin": "workspace:*",
     "@the-town-remembers/runtime-config": "workspace:*",
     "@types/node": "^26.1.2",
     "@types/pg": "^8.15.6",
     "@vitest/coverage-v8": "^4.1.10",
     "eslint": "^10.8.0",
     "globals": "^17.9.0",
+    "pg": "^8.16.3",
     "prettier": "^3.9.6",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.66.0",

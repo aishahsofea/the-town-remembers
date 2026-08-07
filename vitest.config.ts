@@ -34,10 +34,14 @@ export default defineConfig({
         test: {
           name: "database",
           environment: "node",
+          globalSetup: ["./scripts/vitest-database-setup.mjs"],
           include: [
             "packages/database/src/**/*.test.ts",
             "packages/database-admin/src/**/*.test.ts",
+            "packages/town-seed/src/**/*.test.ts",
           ],
+          testTimeout: 30_000,
+          hookTimeout: 120_000,
         },
       },
       {

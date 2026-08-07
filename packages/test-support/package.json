@@ -8,6 +8,19 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./database": {
+      "types": "./dist/database/index.d.ts",
+      "import": "./dist/database/index.js"
     }
+  },
+  "dependencies": {
+    "@the-town-remembers/database": "workspace:*",
+    "@the-town-remembers/database-admin": "workspace:*",
+    "@the-town-remembers/runtime-config": "workspace:*",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.6"
   }
 }

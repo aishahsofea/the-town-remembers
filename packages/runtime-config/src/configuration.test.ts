@@ -248,6 +248,8 @@ describe("database runtime configuration", () => {
     ["postgresql://h/d?sslmode=verify-full", "verify-full"],
     ["postgresql://h/d?application_name=a&sslmode=require", "require"],
     ["postgresql://h/d?sslmode=", ""],
+    ["postgresql://h/d?bare&sslmode=require", "require"],
+    ["postgresql://h/d?application_name=a", undefined],
   ])("reads sslmode from %s", (url, expected) => {
     expect(readSslMode(url)).toBe(expected);
   });

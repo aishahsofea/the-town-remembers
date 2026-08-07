@@ -66,6 +66,7 @@ describe("belief labels", () => {
     [19, "doubtful"],
     [0, "doubtful"],
     [-100, "doubtful"],
+    [-1000, "doubtful"],
   ])("labels score %i as %s", (score, label) => {
     expect(beliefLabelFor(score)).toBe(label);
   });

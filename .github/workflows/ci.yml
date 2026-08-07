@@ -1,7 +1,9 @@
 name: CI
 
-# Validates code only. It creates, mutates, and reads no AWS or CockroachDB
-# resource, and it needs no repository secret. Deployment arrives in Phase 7.
+# Validates code only. It creates and mutates no AWS resource and needs no
+# repository secret. The database suite runs against a pinned CockroachDB node
+# the workflow starts and discards itself; no managed cluster is touched.
+# Deployment arrives in Phase 7.
 on:
   push:
     branches: ["**"]
@@ -56,8 +58,21 @@ jobs:
       - name: Install the browser used by the health journey
         run: pnpm exec playwright install --with-deps chromium
 
+      - name: Cache the pinned CockroachDB binary
+        uses: actions/cache@v4
+        with:
+          path: .cockroach/bin
+          key: cockroach-${{ runner.os }}-${{ hashFiles('scripts/cockroach.mjs') }}
+
+      - name: Start the disposable CockroachDB node
+        run: pnpm db:up
+
       - name: Run the same aggregate gate used locally
         run: pnpm validate
+
+      - name: Stop the disposable CockroachDB node
+        if: always()
+        run: pnpm db:down
 
       - name: Refuse to publish an unsafe diagnostic bundle
         if: ${{ !cancelled() }}

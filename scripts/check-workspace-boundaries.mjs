@@ -70,6 +70,17 @@ export const RUNTIME_CONFIG_EXPORTS = Object.freeze({
   },
 });
 
+export const TEST_SUPPORT_EXPORTS = Object.freeze({
+  ".": {
+    types: "./dist/index.d.ts",
+    import: "./dist/index.js",
+  },
+  "./database": {
+    types: "./dist/database/index.d.ts",
+    import: "./dist/database/index.js",
+  },
+});
+
 const HTTP_CONTRACTS = `${SCOPE}http-contracts`;
 const MODEL_CONTRACTS = `${SCOPE}model-contracts`;
 const SERIALIZATION = `${SCOPE}serialization`;
@@ -168,7 +179,7 @@ export const EXPECTED_PACKAGES = Object.freeze([
     path: "packages/test-support",
     name: TEST_SUPPORT,
     kind: "library",
-    exports: STANDARD_EXPORTS,
+    exports: TEST_SUPPORT_EXPORTS,
     allowedDependencies: [
       HTTP_CONTRACTS,
       MODEL_CONTRACTS,
