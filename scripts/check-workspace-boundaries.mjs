@@ -76,6 +76,8 @@ const SERIALIZATION = `${SCOPE}serialization`;
 const BROWSER_CONFIG = `${SCOPE}browser-config`;
 const RUNTIME_CONFIG = `${SCOPE}runtime-config`;
 const TEST_SUPPORT = `${SCOPE}test-support`;
+const DATABASE = `${SCOPE}database`;
+const DATABASE_ADMIN = `${SCOPE}database-admin`;
 
 export const EXPECTED_PACKAGES = Object.freeze([
   {
@@ -149,6 +151,20 @@ export const EXPECTED_PACKAGES = Object.freeze([
     allowedDependencies: [],
   },
   {
+    path: "packages/database",
+    name: DATABASE,
+    kind: "library",
+    exports: STANDARD_EXPORTS,
+    allowedDependencies: [SERIALIZATION, RUNTIME_CONFIG],
+  },
+  {
+    path: "packages/database-admin",
+    name: DATABASE_ADMIN,
+    kind: "library",
+    exports: STANDARD_EXPORTS,
+    allowedDependencies: [DATABASE, SERIALIZATION, RUNTIME_CONFIG],
+  },
+  {
     path: "packages/test-support",
     name: TEST_SUPPORT,
     kind: "library",
@@ -159,6 +175,8 @@ export const EXPECTED_PACKAGES = Object.freeze([
       SERIALIZATION,
       BROWSER_CONFIG,
       RUNTIME_CONFIG,
+      DATABASE,
+      DATABASE_ADMIN,
     ],
   },
 ]);
@@ -280,6 +298,8 @@ function validateRuntimeConfigImport(
     [`${SCOPE}recovery-worker`, `${RUNTIME_CONFIG}/recovery`],
     [`${SCOPE}infrastructure`, `${RUNTIME_CONFIG}/deployment`],
     [TEST_SUPPORT, `${RUNTIME_CONFIG}/test`],
+    [DATABASE, `${RUNTIME_CONFIG}/database`],
+    [DATABASE_ADMIN, `${RUNTIME_CONFIG}/operator`],
   ]);
   const expected = expectedByConsumer.get(packageDefinition.name);
   if (expected && specifier !== expected) {

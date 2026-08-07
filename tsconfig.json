@@ -18,6 +18,12 @@
       "path": "./packages/runtime-config"
     },
     {
+      "path": "./packages/database"
+    },
+    {
+      "path": "./packages/database-admin"
+    },
+    {
       "path": "./packages/test-support"
     },
     {

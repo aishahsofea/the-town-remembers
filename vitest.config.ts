@@ -32,6 +32,16 @@ export default defineConfig({
       },
       {
         test: {
+          name: "database",
+          environment: "node",
+          include: [
+            "packages/database/src/**/*.test.ts",
+            "packages/database-admin/src/**/*.test.ts",
+          ],
+        },
+      },
+      {
+        test: {
           name: "runtime-shells",
           environment: "node",
           include: [

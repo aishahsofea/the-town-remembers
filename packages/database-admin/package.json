@@ -1,0 +1,22 @@
+{
+  "name": "@the-town-remembers/database-admin",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@the-town-remembers/database": "workspace:*",
+    "@the-town-remembers/runtime-config": "workspace:*",
+    "@the-town-remembers/serialization": "workspace:*",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.6"
+  }
+}
