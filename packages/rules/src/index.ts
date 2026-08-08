@@ -7,3 +7,6 @@ export * from "./kernel/reason-codes.js";
 export * from "./kernel/trace.js";
 export * from "./kernel/numeric.js";
 export * from "./kernel/ordering.js";
+export * from "./claims/grammar.js";
+export * from "./claims/canonical.js";
+export * from "./claims/relations.js";
