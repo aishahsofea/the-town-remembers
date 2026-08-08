@@ -1,0 +1,22 @@
+{
+  "name": "@the-town-remembers/town-seed",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@the-town-remembers/content": "workspace:*",
+    "@the-town-remembers/database": "workspace:*",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@the-town-remembers/test-support": "workspace:*",
+    "@types/pg": "^8.15.6"
+  }
+}

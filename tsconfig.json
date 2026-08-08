@@ -27,6 +27,9 @@
       "path": "./packages/database-admin"
     },
     {
+      "path": "./packages/town-seed"
+    },
+    {
       "path": "./packages/test-support"
     },
     {

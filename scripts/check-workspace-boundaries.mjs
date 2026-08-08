@@ -90,6 +90,7 @@ const TEST_SUPPORT = `${SCOPE}test-support`;
 const CONTENT = `${SCOPE}content`;
 const DATABASE = `${SCOPE}database`;
 const DATABASE_ADMIN = `${SCOPE}database-admin`;
+const TOWN_SEED = `${SCOPE}town-seed`;
 
 export const EXPECTED_PACKAGES = Object.freeze([
   {
@@ -182,6 +183,13 @@ export const EXPECTED_PACKAGES = Object.freeze([
     kind: "library",
     exports: STANDARD_EXPORTS,
     allowedDependencies: [DATABASE, SERIALIZATION, RUNTIME_CONFIG],
+  },
+  {
+    path: "packages/town-seed",
+    name: TOWN_SEED,
+    kind: "library",
+    exports: STANDARD_EXPORTS,
+    allowedDependencies: [CONTENT, DATABASE],
   },
   {
     path: "packages/test-support",

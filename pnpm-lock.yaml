@@ -20,6 +20,9 @@ importers:
       '@the-town-remembers/runtime-config':
         specifier: workspace:*
         version: link:packages/runtime-config
+      '@the-town-remembers/town-seed':
+        specifier: workspace:*
+        version: link:packages/town-seed
       '@types/node':
         specifier: ^26.1.2
         version: 26.1.2
@@ -249,6 +252,25 @@ importers:
         specifier: ^8.16.3
         version: 8.22.0
     devDependencies:
+      '@types/pg':
+        specifier: ^8.15.6
+        version: 8.20.4
+
+  packages/town-seed:
+    dependencies:
+      '@the-town-remembers/content':
+        specifier: workspace:*
+        version: link:../content
+      '@the-town-remembers/database':
+        specifier: workspace:*
+        version: link:../database
+      pg:
+        specifier: ^8.16.3
+        version: 8.22.0
+    devDependencies:
+      '@the-town-remembers/test-support':
+        specifier: workspace:*
+        version: link:../test-support
       '@types/pg':
         specifier: ^8.15.6
         version: 8.20.4
