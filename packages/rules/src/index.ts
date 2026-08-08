@@ -5,3 +5,5 @@ export * from "./kernel/effects.js";
 export * from "./kernel/identity.js";
 export * from "./kernel/reason-codes.js";
 export * from "./kernel/trace.js";
+export * from "./kernel/numeric.js";
+export * from "./kernel/ordering.js";
