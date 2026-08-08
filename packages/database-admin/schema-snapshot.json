@@ -3773,5 +3773,1077 @@
     "promise_status",
     "relationship_timeline",
     "world_event_timeline"
-  ]
+  ],
+  "viewColumns": {
+    "access_operations": {
+      "attempt_count": {
+        "type": "bigint",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "counter": {
+        "type": "bigint",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "created_at": {
+        "type": "timestamp with time zone",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "detail": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "error_code": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "operation_key": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "operation_kind": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "status": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "town_id": {
+        "type": "uuid",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      }
+    },
+    "agent_runs": {
+      "agent_run_id": {
+        "type": "uuid",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "cache_read_tokens": {
+        "type": "bigint",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "cache_write_tokens": {
+        "type": "bigint",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "created_at": {
+        "type": "timestamp with time zone",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "estimated_cost": {
+        "type": "numeric",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "event_sequence": {
+        "type": "bigint",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "inference_profile": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "input_tokens": {
+        "type": "bigint",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "latency_ms": {
+        "type": "bigint",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "model": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "outcome": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "output_schema_version": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "output_tokens": {
+        "type": "bigint",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "price_version": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "prompt_version": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "purpose": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "reservation_status": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "reserved_maximum_cost": {
+        "type": "numeric",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "settled_cost": {
+        "type": "numeric",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "target_prompt_version": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "task_input_version": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "town_id": {
+        "type": "uuid",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "validation_error_code": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "validation_policy_version": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      }
+    },
+    "ambient_jobs": {
+      "action_count": {
+        "type": "integer",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "after_event_sequence": {
+        "type": "bigint",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "completed_at": {
+        "type": "timestamp with time zone",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "delivery_error_code": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "delivery_status": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "execution_attempt_count": {
+        "type": "integer",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "execution_error_code": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "execution_status": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "job_key": {
+        "type": "uuid",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "job_type": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "not_before": {
+        "type": "timestamp with time zone",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "send_attempt_count": {
+        "type": "integer",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "sent_at": {
+        "type": "timestamp with time zone",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "source_event_sequence": {
+        "type": "bigint",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "through_event_sequence": {
+        "type": "bigint",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "town_id": {
+        "type": "uuid",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "transition_deadline_at": {
+        "type": "timestamp with time zone",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "visit_id": {
+        "type": "uuid",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      }
+    },
+    "belief_evidence": {
+      "claim_key": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "clue_key": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "corroboration_threshold": {
+        "type": "integer",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "created_at": {
+        "type": "timestamp with time zone",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "event_sequence": {
+        "type": "bigint",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "event_type": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "evidence_kind": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "hop_count": {
+        "type": "integer",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "independent_source_name": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "mirrors_evidence_id": {
+        "type": "uuid",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "npc_name": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "reverses_evidence_id": {
+        "type": "uuid",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "rule_version": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "signed_weight": {
+        "type": "integer",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "town_id": {
+        "type": "uuid",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "trust_snapshot": {
+        "type": "integer",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      }
+    },
+    "case_progress": {
+      "created_at": {
+        "type": "timestamp with time zone",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "event_sequence": {
+        "type": "bigint",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "outcome": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "player_name": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "progress_kind": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "required_for_resolution": {
+        "type": "boolean",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "subject_key": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "town_id": {
+        "type": "uuid",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      }
+    },
+    "claim_paths": {
+      "alleged_source_name": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "claim_key": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "created_at": {
+        "type": "timestamp with time zone",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "event_sequence": {
+        "type": "bigint",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "hop_count": {
+        "type": "integer",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "ordinal": {
+        "type": "integer",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "origin_kind": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "parent_transmission_id": {
+        "type": "uuid",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "recipient_actor_type": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "recipient_name": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "root_transmission_id": {
+        "type": "uuid",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "source_kind": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "speaker_name": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "speaker_type": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "town_id": {
+        "type": "uuid",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "transmission_id": {
+        "type": "uuid",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      }
+    },
+    "idempotency_status": {
+      "attempt_count": {
+        "type": "integer",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "completed_at": {
+        "type": "timestamp with time zone",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "created_at": {
+        "type": "timestamp with time zone",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "effect_count": {
+        "type": "bigint",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "operation_id": {
+        "type": "uuid",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "operation_key": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "operation_kind": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "operation_subkind": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "outcome": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "processing_expires_at": {
+        "type": "timestamp with time zone",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "retry_after_at": {
+        "type": "timestamp with time zone",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "status": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "town_id": {
+        "type": "uuid",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      }
+    },
+    "npc_beliefs": {
+      "claim_key": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "context_key": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "label": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "npc_key": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "npc_name": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "object_key": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "polarity": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "predicate": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "revision": {
+        "type": "bigint",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "score": {
+        "type": "integer",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "subject_key": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "town_id": {
+        "type": "uuid",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "updated_at": {
+        "type": "timestamp with time zone",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "updated_event_sequence": {
+        "type": "bigint",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      }
+    },
+    "object_history": {
+      "held_by_name": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "item_key": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "item_name": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "location_key": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "portable": {
+        "type": "boolean",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "revealed_event_sequence": {
+        "type": "bigint",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "revision": {
+        "type": "bigint",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "town_id": {
+        "type": "uuid",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "updated_at": {
+        "type": "timestamp with time zone",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      }
+    },
+    "objective_truth": {
+      "detail_key": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "secondary_key": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "town_id": {
+        "type": "uuid",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "truth_key": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "truth_kind": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "visibility": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      }
+    },
+    "promise_status": {
+      "accepted_event_sequence": {
+        "type": "bigint",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "created_at": {
+        "type": "timestamp with time zone",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "item_key": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "kind": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "npc_name": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "player_name": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "promise_id": {
+        "type": "uuid",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "protected_claim_key": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "resolved_event_sequence": {
+        "type": "bigint",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "status": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "terms_version": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "town_id": {
+        "type": "uuid",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "updated_at": {
+        "type": "timestamp with time zone",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      }
+    },
+    "relationship_timeline": {
+      "claim_key": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "clue_key": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "created_at": {
+        "type": "timestamp with time zone",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "event_sequence": {
+        "type": "bigint",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "item_key": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "npc_name": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "player_name": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "promise_id": {
+        "type": "uuid",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "reason_kind": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "rule_version": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "suspicion_delta": {
+        "type": "integer",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "town_id": {
+        "type": "uuid",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "trust_delta": {
+        "type": "integer",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      }
+    },
+    "world_event_timeline": {
+      "actor_name": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "ambient_eligible": {
+        "type": "boolean",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "claim_key": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "clue_key": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "effect_index": {
+        "type": "integer",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "effect_key": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "event_type": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "location_entity_key": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "occurred_at": {
+        "type": "timestamp with time zone",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "origin_kind": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "promise_id": {
+        "type": "uuid",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "sequence_no": {
+        "type": "bigint",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "subject_entity_key": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "target_actor_name": {
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      },
+      "town_id": {
+        "type": "uuid",
+        "nullable": true,
+        "default": null,
+        "generated": null
+      }
+    }
+  }
 }

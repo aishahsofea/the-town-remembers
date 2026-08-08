@@ -34,6 +34,10 @@ export interface TableSnapshot {
 export interface SchemaSnapshot {
   readonly tables: Readonly<Record<string, TableSnapshot>>;
   readonly views: readonly string[];
+  /** View columns, so the read-only types can be generated from the catalog. */
+  readonly viewColumns: Readonly<
+    Record<string, Readonly<Record<string, ColumnSnapshot>>>
+  >;
 }
 
 /** CockroachDB names these after internal table IDs, so they are never stable. */
@@ -105,6 +109,18 @@ export async function readSchemaSnapshot(pool: Pool): Promise<SchemaSnapshot> {
      ORDER BY table_name
   `);
 
+  const viewColumnRows = await pool.query<{
+    table_name: string;
+    column_name: string;
+    data_type: string;
+    is_nullable: string;
+  }>(`
+    SELECT table_name, column_name, data_type, is_nullable
+      FROM information_schema.columns
+     WHERE table_schema = 'inspection'
+     ORDER BY table_name, column_name
+  `);
+
   const tableNames = new Set(columns.rows.map((row) => row.table_name));
   const tables = sortedEntries(
     [...tableNames].map((tableName): [string, TableSnapshot] => [
@@ -144,7 +160,30 @@ export async function readSchemaSnapshot(pool: Pool): Promise<SchemaSnapshot> {
     ]),
   );
 
-  return { tables, views: views.rows.map((row) => row.table_name) };
+  const viewColumns = sortedEntries(
+    views.rows.map((view): [string, Record<string, ColumnSnapshot>] => [
+      view.table_name,
+      sortedEntries(
+        viewColumnRows.rows
+          .filter((row) => row.table_name === view.table_name)
+          .map((row): [string, ColumnSnapshot] => [
+            row.column_name,
+            {
+              type: row.data_type,
+              nullable: row.is_nullable === "YES",
+              default: null,
+              generated: null,
+            },
+          ]),
+      ),
+    ]),
+  );
+
+  return {
+    tables,
+    views: views.rows.map((row) => row.table_name),
+    viewColumns,
+  };
 }
 
 /**

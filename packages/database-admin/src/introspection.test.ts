@@ -12,6 +12,7 @@ function snapshotWith(constraints: Record<string, string>): SchemaSnapshot {
       episodes: { columns: {}, constraints, indexes: {} },
     },
     views: [],
+    viewColumns: {},
   };
 }
 

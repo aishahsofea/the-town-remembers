@@ -16,6 +16,7 @@
     "db:seed": "node scripts/db-seed.mjs",
     "db:snapshot": "node scripts/db-snapshot.mjs",
     "db:status": "node scripts/cockroach.mjs status",
+    "db:types": "node scripts/db-types.mjs",
     "db:up": "node scripts/cockroach.mjs start",
     "dev": "node scripts/dev.mjs",
     "format": "prettier --write .",

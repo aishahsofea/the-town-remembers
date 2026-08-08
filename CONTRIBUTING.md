@@ -74,6 +74,7 @@ corepack pnpm db:doctor
 | `pnpm db:migrate` | Applies forward migrations with `TTR_MIGRATION_DATABASE_URL` |
 | `pnpm db:seed` | Materializes one inspectable `bell-mystery-v1` town |
 | `pnpm db:snapshot` | Regenerates `packages/database-admin/schema-snapshot.json` |
+| `pnpm db:types` | Regenerates the Kysely interface from that snapshot |
 
 The integration suite creates its own `ttr_test_<random>` database per test
 file, migrates it, and drops it. Teardown validates that prefix before issuing
@@ -115,8 +116,11 @@ migration, never a destructive reset.
    fails at apply time rather than creating a check that matches nothing.
 4. Update `ACCEPTED_TABLES` or `ACCEPTED_VIEWS` in `expected-schema.ts` if the
    inventory changed.
-5. Run `pnpm db:snapshot` and read the diff. That file is the reviewable record
-   of what the migrations produce.
+5. Run `pnpm db:snapshot`, then `pnpm db:types`, and read both diffs. The
+   snapshot is the reviewable record of what the migrations produce, and the
+   generated interface follows from it — one chain with no weak link, since a
+   hand-written interface could be wrong in a way no test would notice until a
+   query returned the wrong shape.
 6. Review the grants in `0013_grants.sql`. A new table is unreachable by
    `app_runtime` until it is listed there.
 7. Confirm the seed still materializes: `pnpm test:db`.
