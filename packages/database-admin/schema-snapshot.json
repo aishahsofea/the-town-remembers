@@ -3759,5 +3759,19 @@
       }
     }
   },
-  "views": []
+  "views": [
+    "access_operations",
+    "agent_runs",
+    "ambient_jobs",
+    "belief_evidence",
+    "case_progress",
+    "claim_paths",
+    "idempotency_status",
+    "npc_beliefs",
+    "object_history",
+    "objective_truth",
+    "promise_status",
+    "relationship_timeline",
+    "world_event_timeline"
+  ]
 }

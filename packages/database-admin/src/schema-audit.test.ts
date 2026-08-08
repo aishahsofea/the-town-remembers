@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   ACCEPTED_TABLES,
+  ACCEPTED_VIEWS,
   FORBIDDEN_COLUMN_PATTERNS,
   GLOBAL_TABLES,
   INFRASTRUCTURE_TABLES,
@@ -114,6 +115,11 @@ describe.skipIf(!shouldRunDatabaseTests())("the migrated schema", () => {
         expect(details.type, `${table}.${column}`).toBe("numeric");
       }
     }
+  });
+
+  it("declares the thirteen accepted inspection views", () => {
+    expect(ACCEPTED_VIEWS).toHaveLength(13);
+    expect(snapshot.views.toSorted()).toStrictEqual([...ACCEPTED_VIEWS].toSorted());
   });
 
   it("stores every timestamp with a time zone", () => {
