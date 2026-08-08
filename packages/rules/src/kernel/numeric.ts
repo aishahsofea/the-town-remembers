@@ -7,10 +7,15 @@ import { contentFor } from "@the-town-remembers/content";
 
 import { RULES_REGISTRY } from "./version.js";
 
+/** Clamps `value` into `[minimum, maximum]`, inclusive on both ends. */
+export function clampToRange(value: number, minimum: number, maximum: number): number {
+  return Math.max(minimum, Math.min(maximum, value));
+}
+
 /** Clamps a raw belief score into Decision 008's accepted `[-100, 100]` range. */
 export function clampScore(value: number): number {
   const { minimum, maximum } = RULES_REGISTRY.scoreRange;
-  return Math.max(minimum, Math.min(maximum, value));
+  return clampToRange(value, minimum, maximum);
 }
 
 /**
