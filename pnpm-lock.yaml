@@ -268,6 +268,9 @@ importers:
         specifier: ^8.16.3
         version: 8.22.0
     devDependencies:
+      '@the-town-remembers/database-admin':
+        specifier: workspace:*
+        version: link:../database-admin
       '@the-town-remembers/test-support':
         specifier: workspace:*
         version: link:../test-support

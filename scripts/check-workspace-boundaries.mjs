@@ -189,7 +189,7 @@ export const EXPECTED_PACKAGES = Object.freeze([
     name: TOWN_SEED,
     kind: "library",
     exports: STANDARD_EXPORTS,
-    allowedDependencies: [CONTENT, DATABASE],
+    allowedDependencies: [CONTENT, DATABASE, DATABASE_ADMIN],
   },
   {
     path: "packages/test-support",
