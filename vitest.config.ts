@@ -36,6 +36,11 @@ export default defineConfig({
           name: "database",
           environment: "node",
           globalSetup: ["./scripts/vitest-database-setup.mjs"],
+          // One file at a time. Each file migrates its own disposable
+          // database, CockroachDB serializes schema changes anyway, and a
+          // single local node under six concurrent migration runs turns a
+          // fast suite into a timeout.
+          fileParallelism: false,
           include: [
             "packages/database/src/**/*.test.ts",
             "packages/database-admin/src/**/*.test.ts",

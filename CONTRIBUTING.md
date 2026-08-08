@@ -37,6 +37,8 @@ corepack pnpm validate
 | `pnpm lint` | ESLint with type-aware rules across every project |
 | `pnpm test` | Contract, configuration, runtime-shell, and browser-component tests, with coverage thresholds on the shared packages |
 | `pnpm test:contracts` | The executable HTTP and Bedrock contracts alone |
+| `pnpm test:db` | Schema, grant, constraint, transaction, vector, seed, and inspection suites against real CockroachDB |
+| `pnpm test:content` | The authored `bell-mystery-v1` registry and its validators |
 | `pnpm build` | Library declarations, three Lambda bundles, and the web bundle |
 | `pnpm check:bundle` | The built browser bundle carries no server concern or credential |
 | `pnpm cdk:synth` | Deterministic CDK synthesis into `cdk.out/` |
@@ -48,6 +50,86 @@ other through their `dist` declarations, so type-aware lint rules need the
 ordered build to have run. `pnpm lint`, `pnpm test:e2e`, and `pnpm cdk:synth`
 all read built output; run `pnpm typecheck` or `pnpm build` first when invoking
 them on their own.
+
+## Working with the database
+
+Phase 1 verifies persistence against real CockroachDB, never a mock. A mock
+cannot refute a composite foreign key, a partial unique index, a vector index,
+or a serialization conflict, and those are precisely what the schema promises.
+
+`pnpm db:up` downloads one pinned build into an ignored `.cockroach/` and starts
+a single insecure node on the loopback interface. Docker is not involved.
+
+```sh
+corepack pnpm db:up
+corepack pnpm db:doctor
+```
+
+| Command | What it does |
+|---|---|
+| `pnpm db:up` | Starts the pinned local node, downloading it on first use |
+| `pnpm db:status` | Reports whether anything is listening |
+| `pnpm db:down` | Stops the node; the store survives |
+| `pnpm db:doctor` | Proves the target supports vectors, predicated vector indexes, discriminated foreign keys, partial unique indexes, and transactional DDL |
+| `pnpm db:migrate` | Applies forward migrations with `TTR_MIGRATION_DATABASE_URL` |
+| `pnpm db:seed` | Materializes one inspectable `bell-mystery-v1` town |
+| `pnpm db:snapshot` | Regenerates `packages/database-admin/schema-snapshot.json` |
+
+The integration suite creates its own `ttr_test_<random>` database per test
+file, migrates it, and drops it. Teardown validates that prefix before issuing
+`DROP DATABASE`, because the prefix is the only thing standing between a
+mistyped DSN and a real database.
+
+`TTR_SKIP_DB_TESTS=1` skips the suite for a contributor without the binary.
+`pnpm validate` sets `TTR_REQUIRE_DB_TESTS=1`, and the two together are an
+error, so the gate cannot pass by skipping the part of the phase that matters
+most.
+
+### Three credentials, three categories
+
+| Identity | Variable | Held by | May |
+|---|---|---|---|
+| `migration_admin` | `TTR_MIGRATION_DATABASE_URL` | An operator shell | Change the schema |
+| `app_runtime` | `TTR_DATABASE_URL` | A Lambda | Read and write game state; delete only expired rate-limit buckets |
+| `inspection_reader` | CockroachDB managed MCP | Judges and developers | Read the thirteen `inspection` views and nothing else |
+
+Only `packages/database-admin` may read the operator category, and only
+`packages/database` may read the runtime one. The workspace boundary check
+enforces both, so a credential cannot reach a request path by accident.
+
+Outside `TTR_ENV=local`, a runtime DSN that does not request
+`sslmode=verify-full` is refused.
+
+### Changing the schema
+
+Migrations are forward-only. Recovery from a bad migration is another
+migration, never a destructive reset.
+
+1. Read the accepted contract first. Decision 005 settles the entity
+   boundaries, value domains, and required indexes; a migration that disagrees
+   with it is a contract change, not an implementation detail.
+2. Add `NNNN_lower_snake_case.sql`. Never edit an applied file — the runner
+   compares checksums and refuses the whole run, naming the version.
+3. Render closed domains from `packages/database/src/domains.ts` with
+   `{{DOMAIN_NAME}}`. An unsubstituted placeholder is invalid SQL, so a typo
+   fails at apply time rather than creating a check that matches nothing.
+4. Update `ACCEPTED_TABLES` or `ACCEPTED_VIEWS` in `expected-schema.ts` if the
+   inventory changed.
+5. Run `pnpm db:snapshot` and read the diff. That file is the reviewable record
+   of what the migrations produce.
+6. Review the grants in `0013_grants.sql`. A new table is unreachable by
+   `app_runtime` until it is listed there.
+7. Confirm the seed still materializes: `pnpm test:db`.
+
+### When a migration fails
+
+The file and its ledger row commit together, so a failure leaves neither. Fix
+the SQL and run `pnpm db:migrate` again.
+
+If a migration has already been applied and turns out to be wrong, write a new
+one that corrects it. Editing the applied file makes the next run abort before
+executing anything, which is the intended behavior: the database and the
+repository disagree about history, and only a human can say which is right.
 
 ## Running the health journey locally
 
@@ -149,6 +231,9 @@ Every shell in this phase names the phase that replaces it.
 | `infrastructure` stack | Lambda bundling contracts only | Phase 7 |
 | Bedrock contracts | Wire shapes only; no semantic validator | Phase 4 |
 | `packages/serialization` | Primitives only; no player-view projection | Phase 2 |
+| `packages/town-seed` CLI | Test-only; stores an unreachable invite hash | Phase 3 |
+| Repository layer | Schema and transaction primitives only; no typed repositories | Phases 2 and 3 |
+| Production database | Local pinned node only; no cluster, secrets, or managed MCP | Phase 7 |
 
 A shell must report that unsupported work is unavailable. None of them may
 return a fabricated success for persistence, model, queue, or gameplay work.

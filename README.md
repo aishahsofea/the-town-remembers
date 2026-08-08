@@ -159,6 +159,22 @@ proxy and reports API liveness, build identity, and server time. It is a
 foundation diagnostic: the database, model, queue, and gameplay routes arrive
 in Phases 1 through 6, and no shell in this phase claims otherwise.
 
+## Run the database locally
+
+CockroachDB is the durable memory, and the tests prove it against a real one.
+
+```sh
+corepack pnpm db:up
+corepack pnpm db:migrate
+corepack pnpm db:seed
+```
+
+The first command downloads a pinned CockroachDB build into an ignored
+`.cockroach/` and starts a single node; no Docker daemon is involved. The last
+prints one town's opaque ID and the beliefs its three residents start with —
+Mara convinced her sister damaged the bell, Nessa leaning toward a cover story
+she was told, Corin quietly disbelieving the story he invented.
+
 ## Hackathon proof
 
 CockroachDB is not used as a passive transcript store. It holds both current

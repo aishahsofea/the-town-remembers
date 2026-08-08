@@ -242,3 +242,160 @@ describe("content drift", () => {
     expect(fingerprint).toBe("R0M0d2G3S_xajcXbrxU7qCtBQ15xQVHtGpRV06g-rrs");
   });
 });
+
+describe("content validation catches the mistakes this data invites", () => {
+  /** Applies one deliberate corruption to a shallow copy of the registry. */
+  function corrupted(patch: Partial<typeof content>) {
+    return { ...content, ...patch };
+  }
+
+  it("names a duplicate stable key", () => {
+    const issues = validateContent(
+      corrupted({ claims: [...content.claims, content.claims[0]!] }),
+    );
+    expect(issues.map((issue) => issue.code)).toContain("duplicate_key");
+  });
+
+  it("rejects a claim that breaks the predicate matrix", () => {
+    const broken = { ...content.claims[0]!, predicate: "damaged" as const };
+    const issues = validateContent(corrupted({ claims: [broken] }));
+    expect(issues.map((issue) => issue.code)).toContain("claim_matrix");
+  });
+
+  it("rejects a contradiction written in only one direction", () => {
+    const issues = validateContent(
+      corrupted({ claimRelations: [content.claimRelations[0]!] }),
+    );
+    expect(issues.map((issue) => issue.code)).toContain("relation_asymmetric");
+  });
+
+  it("rejects a world fact that names no seeded claim", () => {
+    const issues = validateContent(
+      corrupted({
+        worldFacts: [{ factKey: "invented", claimKey: "nope", visibility: "public" }],
+      }),
+    );
+    expect(issues.map((issue) => issue.code)).toContain("fact_claim");
+  });
+
+  it("rejects a solution field of the wrong entity type", () => {
+    const issues = validateContent(
+      corrupted({
+        // The registry's literal type pins the authored key, so this
+        // corruption has to go through `unknown`. The point of the test is
+        // that validation catches it even where the type already would.
+        caseSolution: {
+          ...content.caseSolution,
+          culpritKey: "old_chapel",
+        } as unknown as typeof content.caseSolution,
+      }),
+    );
+    expect(issues.map((issue) => issue.code)).toContain("solution_role");
+  });
+
+  it("rejects an item with two custodians", () => {
+    const issues = validateContent(
+      corrupted({
+        items: [
+          {
+            ...content.items[0]!,
+            initialLocationKey: "old_chapel",
+            initialHolderKey: "nessa_reed",
+          },
+        ],
+      }),
+    );
+    expect(issues.map((issue) => issue.code)).toContain("item_custody");
+  });
+
+  it("rejects a contact edge that points at itself", () => {
+    const issues = validateContent(
+      corrupted({
+        contactEdges: [
+          { fromNpcKey: "mara_venn", toNpcKey: "mara_venn", trustScore: 0 },
+        ],
+      }),
+    );
+    expect(issues.map((issue) => issue.code)).toContain("contact_edge_self");
+  });
+
+  it("rejects seed events that run backwards or into the present", () => {
+    const issues = validateContent(
+      corrupted({
+        seedEvents: [
+          { ...content.seedEvents[0]!, offsetMinutes: -10 },
+          { ...content.seedEvents[1]!, offsetMinutes: -600 },
+          { ...content.seedEvents[2]!, offsetMinutes: 5 },
+        ],
+      }),
+    );
+    const codes = issues.map((issue) => issue.code);
+    expect(codes).toContain("seed_offset_order");
+    expect(codes).toContain("seed_offset_future");
+  });
+
+  it("rejects a clue effect whose sign disagrees with its kind", () => {
+    const clue = content.clues[0]!;
+    const issues = validateContent(
+      corrupted({
+        inspectables: [
+          {
+            ...content.inspectables[0]!,
+            clue: {
+              ...clue,
+              effects: [
+                {
+                  claimKey: "lark_damaged_bell",
+                  effectKind: "supports",
+                  signedWeight: -70,
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    );
+    expect(issues.map((issue) => issue.code)).toContain("clue_effect_sign");
+  });
+
+  it("rejects a seed that hands an NPC knowledge they must not begin with", () => {
+    const issues = validateContent(
+      corrupted({
+        seedBeliefs: [
+          ...content.seedBeliefs,
+          {
+            npcKey: "nessa_reed",
+            claimKey: "bell_at_chapel",
+            score: 80,
+            label: "convinced",
+            seedEventKey: "nessa_saw_corins_cart",
+          },
+        ],
+      }),
+    );
+    expect(
+      issues.some((issue) => issue.detail.includes("Nessa begins believing")),
+    ).toBe(true);
+  });
+
+  it("rejects a mirror with no contradiction relation behind it", () => {
+    const issues = validateContent(
+      corrupted({
+        seedEvidence: [
+          {
+            npcKey: "mara_venn",
+            claimKey: "corin_was_at_inn",
+            seedEventKey: "mara_met_corin_at_inn",
+            evidenceKind: "contradiction",
+            signedWeight: -80,
+            mirrorsEvidenceOf: {
+              npcKey: "mara_venn",
+              claimKey: "lark_damaged_bell",
+            },
+          },
+        ],
+      }),
+    );
+    expect(issues.map((issue) => issue.code)).toContain("mirror_without_relation");
+  });
+});

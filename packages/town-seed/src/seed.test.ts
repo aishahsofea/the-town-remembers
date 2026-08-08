@@ -50,6 +50,32 @@ describe("planning a town", () => {
     expect(shared).toStrictEqual([]);
   });
 
+  it("refuses to plan against a registry missing a character", () => {
+    expect(() =>
+      planTown(
+        { ...BELL_MYSTERY_V1, characters: [] },
+        {
+          contentVersion: "bell-mystery-v1",
+          createdAt: CREATED_AT,
+          inviteTokenHash: inviteHash("a"),
+        },
+      ),
+    ).toThrow(/has no character/);
+  });
+
+  it("refuses to plan when a reference cannot be resolved", () => {
+    expect(() =>
+      planTown(
+        { ...BELL_MYSTERY_V1, storyEntities: [] },
+        {
+          contentVersion: "bell-mystery-v1",
+          createdAt: CREATED_AT,
+          inviteTokenHash: inviteHash("a"),
+        },
+      ),
+    ).toThrow(/unresolved reference/);
+  });
+
   it("refuses a version the registry does not describe", () => {
     expect(() =>
       planTown(BELL_MYSTERY_V1, {
@@ -298,6 +324,37 @@ describe.skipIf(!shouldRunDatabaseTests())("materializing a town", () => {
       item: "festival_bell",
     });
   });
+
+  it("refuses to summarize a town that does not exist", async () => {
+    await expect(
+      summarizeTown(database().pool, "00000000-0000-0000-0000-000000000000"),
+    ).rejects.toThrow(/No such town/);
+  });
+
+  it("writes an empty row group without emitting a statement", async () => {
+    // The bell mystery has no entailment relations, so this is the real
+    // shape of an empty group rather than a contrived one.
+    const plan = planTown(BELL_MYSTERY_V1, {
+      contentVersion: "bell-mystery-v1",
+      createdAt: CREATED_AT,
+      inviteTokenHash: inviteHash("empty-group"),
+    });
+    const result = await materializeTown(
+      database().pool,
+      {
+        contentVersion: "bell-mystery-v1",
+        createdAt: CREATED_AT,
+        inviteTokenHash: inviteHash("empty-group"),
+      },
+      { plan: { ...plan, claimRelations: [] }, now: () => Date.now() },
+    );
+    expect(result.outcome).toBe("committed");
+    const relations = await database().pool.query(
+      "SELECT 1 FROM public.claim_relations WHERE town_id = $1",
+      [plan.townId],
+    );
+    expect(relations.rowCount).toBe(0);
+  }, 60_000);
 
   it("summarizes safely, naming no secret at any depth", async () => {
     const summary = await summarizeTown(database().pool, townId);
