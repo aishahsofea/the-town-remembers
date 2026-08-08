@@ -23,3 +23,4 @@ export * from "./recall/scoring.js";
 export * from "./ambient/eligibility.js";
 export * from "./ambient/selection.js";
 export * from "./board/provenance.js";
+export * from "./board/case.js";
