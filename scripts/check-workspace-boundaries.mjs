@@ -87,6 +87,7 @@ const SERIALIZATION = `${SCOPE}serialization`;
 const BROWSER_CONFIG = `${SCOPE}browser-config`;
 const RUNTIME_CONFIG = `${SCOPE}runtime-config`;
 const TEST_SUPPORT = `${SCOPE}test-support`;
+const CONTENT = `${SCOPE}content`;
 const DATABASE = `${SCOPE}database`;
 const DATABASE_ADMIN = `${SCOPE}database-admin`;
 
@@ -162,6 +163,13 @@ export const EXPECTED_PACKAGES = Object.freeze([
     allowedDependencies: [],
   },
   {
+    path: "packages/content",
+    name: CONTENT,
+    kind: "library",
+    exports: STANDARD_EXPORTS,
+    allowedDependencies: [SERIALIZATION],
+  },
+  {
     path: "packages/database",
     name: DATABASE,
     kind: "library",
@@ -186,6 +194,7 @@ export const EXPECTED_PACKAGES = Object.freeze([
       SERIALIZATION,
       BROWSER_CONFIG,
       RUNTIME_CONFIG,
+      CONTENT,
       DATABASE,
       DATABASE_ADMIN,
     ],

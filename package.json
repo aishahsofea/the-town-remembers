@@ -21,6 +21,7 @@
     "format:check": "prettier --check .",
     "lint": "eslint .",
     "test": "vitest run --coverage",
+    "test:content": "vitest run --project config packages/content",
     "test:contracts": "vitest run --project contracts",
     "test:db": "vitest run --project database",
     "test:e2e": "playwright test",

@@ -18,6 +18,9 @@
       "path": "./packages/runtime-config"
     },
     {
+      "path": "./packages/content"
+    },
+    {
       "path": "./packages/database"
     },
     {

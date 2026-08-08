@@ -163,6 +163,16 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
 
+  packages/content:
+    dependencies:
+      '@the-town-remembers/serialization':
+        specifier: workspace:*
+        version: link:../serialization
+    devDependencies:
+      '@the-town-remembers/test-support':
+        specifier: workspace:*
+        version: link:../test-support
+
   packages/database:
     dependencies:
       '@the-town-remembers/runtime-config':

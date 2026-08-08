@@ -25,6 +25,7 @@ export default defineConfig({
           name: "config",
           environment: "node",
           include: [
+            "packages/content/src/**/*.test.ts",
             "packages/runtime-config/src/**/*.test.ts",
             "packages/browser-config/src/**/*.test.ts",
           ],
