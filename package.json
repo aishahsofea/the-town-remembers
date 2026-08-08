@@ -13,6 +13,7 @@
     "db:doctor": "node scripts/db-doctor.mjs",
     "db:down": "node scripts/cockroach.mjs stop",
     "db:migrate": "node scripts/db-migrate.mjs",
+    "db:snapshot": "node scripts/db-snapshot.mjs",
     "db:status": "node scripts/cockroach.mjs status",
     "db:up": "node scripts/cockroach.mjs start",
     "dev": "node scripts/dev.mjs",

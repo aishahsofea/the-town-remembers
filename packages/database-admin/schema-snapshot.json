@@ -1,0 +1,3763 @@
+{
+  "tables": {
+    "actors": {
+      "columns": {
+        "actor_type": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "display_name": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "display_name_normalized": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_actors__actor_type": "CHECK ((actor_type IN ('player'::STRING, 'npc'::STRING)))",
+        "fk_actors__town": "FOREIGN KEY (town_id) REFERENCES towns(id) ON DELETE RESTRICT",
+        "pk_actors": "PRIMARY KEY (town_id ASC, id ASC)",
+        "uq_actors__display_name_normalized": "UNIQUE (town_id ASC, display_name_normalized ASC)",
+        "uq_actors__typed_identity": "UNIQUE (town_id ASC, id ASC, actor_type ASC)"
+      },
+      "indexes": {
+        "pk_actors": "CREATE UNIQUE INDEX pk_actors ON public.actors USING btree (town_id ASC, id ASC)",
+        "uq_actors__display_name_normalized": "CREATE UNIQUE INDEX uq_actors__display_name_normalized ON public.actors USING btree (town_id ASC, display_name_normalized ASC)",
+        "uq_actors__typed_identity": "CREATE UNIQUE INDEX uq_actors__typed_identity ON public.actors USING btree (town_id ASC, id ASC, actor_type ASC)"
+      }
+    },
+    "agent_runs": {
+      "columns": {
+        "ambient_job_execution_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "cache_read_tokens": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "cache_write_tokens": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "estimated_cost": {
+          "type": "numeric",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "inference_profile": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "input_tokens": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "latency_ms": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "model": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "outcome": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "output_schema_version": {
+          "type": "text",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "output_tokens": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "player_action_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "prompt_sha256": {
+          "type": "bytea",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "prompt_version": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "purpose": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "target_prompt_version": {
+          "type": "text",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "task_input_version": {
+          "type": "text",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "validation_error_code": {
+          "type": "text",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "validation_policy_version": {
+          "type": "text",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "world_event_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_agent_runs__contract_versions": "CHECK ((CASE WHEN purpose IN ('episode_embedding'::STRING, 'query_embedding'::STRING) THEN (((prompt_sha256 IS NULL) AND (task_input_version IS NULL)) AND (output_schema_version IS NULL)) AND (validation_policy_version IS NULL) ELSE (((prompt_sha256 IS NOT NULL) AND (task_input_version IS NOT NULL)) AND (output_schema_version IS NOT NULL)) AND (validation_policy_version IS NOT NULL) END))",
+        "ck_agent_runs__has_causal_source": "CHECK ((((player_action_id IS NOT NULL) OR (ambient_job_execution_id IS NOT NULL)) OR (world_event_id IS NOT NULL)))",
+        "ck_agent_runs__measures_non_negative": "CHECK (((((((input_tokens >= 0) AND (output_tokens >= 0)) AND (cache_read_tokens >= 0)) AND (cache_write_tokens >= 0)) AND (latency_ms >= 0)) AND (estimated_cost >= 0)))",
+        "ck_agent_runs__outcome": "CHECK ((outcome IN ('accepted'::STRING, 'repaired'::STRING, 'rejected'::STRING, 'fallback'::STRING, 'failed'::STRING, 'superseded'::STRING)))",
+        "ck_agent_runs__prompt_sha256_length": "CHECK (((prompt_sha256 IS NULL) OR (length(prompt_sha256) = 32)))",
+        "ck_agent_runs__purpose": "CHECK ((purpose IN ('claim_normalization'::STRING, 'dialogue_selection'::STRING, 'ambient_choice'::STRING, 'structured_repair'::STRING, 'episode_embedding'::STRING, 'query_embedding'::STRING)))",
+        "ck_agent_runs__target_prompt_version": "CHECK (((purpose = 'structured_repair'::STRING) = (target_prompt_version IS NOT NULL)))",
+        "fk_agent_runs__ambient_execution": "FOREIGN KEY (town_id, ambient_job_execution_id) REFERENCES ambient_job_executions(town_id, id) ON DELETE RESTRICT",
+        "fk_agent_runs__player_action": "FOREIGN KEY (town_id, player_action_id) REFERENCES player_actions(town_id, id) ON DELETE RESTRICT",
+        "fk_agent_runs__world_event": "FOREIGN KEY (town_id, world_event_id) REFERENCES world_events(town_id, id) ON DELETE RESTRICT",
+        "pk_agent_runs": "PRIMARY KEY (town_id ASC, id ASC)"
+      },
+      "indexes": {
+        "pk_agent_runs": "CREATE UNIQUE INDEX pk_agent_runs ON public.agent_runs USING btree (town_id ASC, id ASC)"
+      }
+    },
+    "ambient_job_executions": {
+      "columns": {
+        "action_count": {
+          "type": "integer",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "attempt_count": {
+          "type": "integer",
+          "nullable": false,
+          "default": "0",
+          "generated": ""
+        },
+        "completed_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "error_code": {
+          "type": "text",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "job_key": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "outbox_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "payload_hash": {
+          "type": "bytea",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "processing_expires_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "processing_token": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "status": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_ambient_job_executions__attempt_count": "CHECK ((attempt_count >= 0))",
+        "ck_ambient_job_executions__payload_hash_length": "CHECK ((length(payload_hash) = 32))",
+        "ck_ambient_job_executions__state_shape": "CHECK ((CASE status WHEN 'processing'::STRING THEN ((((processing_token IS NOT NULL) AND (processing_expires_at IS NOT NULL)) AND (action_count IS NULL)) AND (error_code IS NULL)) AND (completed_at IS NULL) WHEN 'completed'::STRING THEN ((((processing_token IS NULL) AND (processing_expires_at IS NULL)) AND (action_count BETWEEN 0 AND 2)) AND (error_code IS NULL)) AND (completed_at IS NOT NULL) WHEN 'quarantined'::STRING THEN (((processing_token IS NULL) AND (processing_expires_at IS NULL)) AND (action_count IS NULL)) AND (error_code IS NOT NULL) ELSE false END))",
+        "ck_ambient_job_executions__status": "CHECK ((status IN ('processing'::STRING, 'completed'::STRING, 'quarantined'::STRING)))",
+        "fk_ambient_job_executions__outbox": "FOREIGN KEY (town_id, outbox_id) REFERENCES outbox(town_id, id) ON DELETE RESTRICT",
+        "pk_ambient_job_executions": "PRIMARY KEY (town_id ASC, id ASC)",
+        "uq_ambient_job_executions__job_key": "UNIQUE (town_id ASC, job_key ASC)",
+        "uq_ambient_job_executions__outbox": "UNIQUE (town_id ASC, outbox_id ASC)"
+      },
+      "indexes": {
+        "ix_ambient_job_executions__stale": "CREATE INDEX ix_ambient_job_executions__stale ON public.ambient_job_executions USING btree (status ASC, processing_expires_at ASC) WHERE (status = 'processing'::STRING)",
+        "pk_ambient_job_executions": "CREATE UNIQUE INDEX pk_ambient_job_executions ON public.ambient_job_executions USING btree (town_id ASC, id ASC)",
+        "uq_ambient_job_executions__job_key": "CREATE UNIQUE INDEX uq_ambient_job_executions__job_key ON public.ambient_job_executions USING btree (town_id ASC, job_key ASC)",
+        "uq_ambient_job_executions__outbox": "CREATE UNIQUE INDEX uq_ambient_job_executions__outbox ON public.ambient_job_executions USING btree (town_id ASC, outbox_id ASC)"
+      }
+    },
+    "api_rate_limits": {
+      "columns": {
+        "bucket_kind": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "last_refill_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "scope_key": {
+          "type": "bytea",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "scope_kind": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "tokens_milli": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_api_rate_limits__bucket_kind": "CHECK ((bucket_kind IN ('model_action'::STRING, 'player_view'::STRING, 'town_creation'::STRING, 'join'::STRING)))",
+        "ck_api_rate_limits__scope_kind": "CHECK ((scope_kind IN ('ip_hash'::STRING, 'player'::STRING, 'town'::STRING)))",
+        "ck_api_rate_limits__tokens_non_negative": "CHECK ((tokens_milli >= 0))",
+        "pk_api_rate_limits": "PRIMARY KEY (scope_kind ASC, scope_key ASC, bucket_kind ASC)"
+      },
+      "indexes": {
+        "ix_api_rate_limits__pruning": "CREATE INDEX ix_api_rate_limits__pruning ON public.api_rate_limits USING btree (updated_at ASC)",
+        "pk_api_rate_limits": "CREATE UNIQUE INDEX pk_api_rate_limits ON public.api_rate_limits USING btree (scope_kind ASC, scope_key ASC, bucket_kind ASC)"
+      }
+    },
+    "belief_evidence": {
+      "columns": {
+        "claim_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "clue_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "corroboration_threshold": {
+          "type": "integer",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "episode_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "event_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "evidence_kind": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "hop_count": {
+          "type": "integer",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "independent_source_actor_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "mirrors_evidence_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "npc_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "reverses_evidence_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "rule_version": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "signed_weight": {
+          "type": "integer",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "source_root_transmission_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "transmission_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "trust_snapshot": {
+          "type": "integer",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_belief_evidence__corroboration_threshold": "CHECK (((corroboration_threshold IS NULL) OR (corroboration_threshold IN (2, 3))))",
+        "ck_belief_evidence__evidence_kind": "CHECK ((evidence_kind IN ('direct_observation'::STRING, 'player_testimony'::STRING, 'npc_testimony'::STRING, 'physical_clue'::STRING, 'corroboration'::STRING, 'contradiction'::STRING, 'source_reversal'::STRING)))",
+        "ck_belief_evidence__hop_range": "CHECK (((hop_count IS NULL) OR (hop_count BETWEEN 0 AND 4)))",
+        "ck_belief_evidence__shape": "CHECK ((CASE evidence_kind WHEN 'direct_observation'::STRING THEN (((((episode_id IS NOT NULL) AND (transmission_id IS NULL)) AND (clue_id IS NULL)) AND (mirrors_evidence_id IS NULL)) AND (reverses_evidence_id IS NULL)) AND (corroboration_threshold IS NULL) WHEN 'player_testimony'::STRING THEN ((((((((transmission_id IS NOT NULL) AND (source_root_transmission_id IS NOT NULL)) AND (independent_source_actor_id IS NOT NULL)) AND (trust_snapshot IS NOT NULL)) AND (hop_count IS NOT NULL)) AND (clue_id IS NULL)) AND (mirrors_evidence_id IS NULL)) AND (reverses_evidence_id IS NULL)) AND (corroboration_threshold IS NULL) WHEN 'npc_testimony'::STRING THEN ((((((((transmission_id IS NOT NULL) AND (source_root_transmission_id IS NOT NULL)) AND (independent_source_actor_id IS NOT NULL)) AND (trust_snapshot IS NOT NULL)) AND (hop_count IS NOT NULL)) AND (clue_id IS NULL)) AND (mirrors_evidence_id IS NULL)) AND (reverses_evidence_id IS NULL)) AND (corroboration_threshold IS NULL) WHEN 'physical_clue'::STRING THEN (((((clue_id IS NOT NULL) AND (transmission_id IS NULL)) AND (episode_id IS NULL)) AND (mirrors_evidence_id IS NULL)) AND (reverses_evidence_id IS NULL)) AND (corroboration_threshold IS NULL) WHEN 'corroboration'::STRING THEN ((((corroboration_threshold IS NOT NULL) AND (independent_source_actor_id IS NOT NULL)) AND (clue_id IS NULL)) AND (mirrors_evidence_id IS NULL)) AND (reverses_evidence_id IS NULL) WHEN 'contradiction'::STRING THEN (((clue_id IS NULL) != (mirrors_evidence_id IS NULL)) AND (reverses_evidence_id IS NULL)) AND (corroboration_threshold IS NULL) WHEN 'source_reversal'::STRING THEN ((reverses_evidence_id IS NOT NULL) AND (mirrors_evidence_id IS NULL)) AND (corroboration_threshold IS NULL) ELSE false END))",
+        "ck_belief_evidence__trust_snapshot_range": "CHECK (((trust_snapshot IS NULL) OR (trust_snapshot BETWEEN -100 AND 100)))",
+        "ck_belief_evidence__weight_range": "CHECK ((signed_weight BETWEEN -100 AND 100))",
+        "fk_belief_evidence__claim": "FOREIGN KEY (town_id, claim_id) REFERENCES claims(town_id, id) ON DELETE RESTRICT",
+        "fk_belief_evidence__clue": "FOREIGN KEY (town_id, clue_id) REFERENCES clues(town_id, id) ON DELETE RESTRICT",
+        "fk_belief_evidence__episode": "FOREIGN KEY (town_id, episode_id) REFERENCES episodes(town_id, id) ON DELETE RESTRICT",
+        "fk_belief_evidence__event": "FOREIGN KEY (town_id, event_id) REFERENCES world_events(town_id, id) ON DELETE RESTRICT",
+        "fk_belief_evidence__independent_source": "FOREIGN KEY (town_id, independent_source_actor_id) REFERENCES actors(town_id, id) ON DELETE RESTRICT",
+        "fk_belief_evidence__mirrors": "FOREIGN KEY (town_id, mirrors_evidence_id) REFERENCES belief_evidence(town_id, id) ON DELETE RESTRICT",
+        "fk_belief_evidence__npc": "FOREIGN KEY (town_id, npc_id) REFERENCES npcs(town_id, id) ON DELETE RESTRICT",
+        "fk_belief_evidence__reverses": "FOREIGN KEY (town_id, reverses_evidence_id) REFERENCES belief_evidence(town_id, id) ON DELETE RESTRICT",
+        "fk_belief_evidence__source_root": "FOREIGN KEY (town_id, source_root_transmission_id) REFERENCES claim_transmissions(town_id, id) ON DELETE RESTRICT",
+        "fk_belief_evidence__transmission": "FOREIGN KEY (town_id, transmission_id) REFERENCES claim_transmissions(town_id, id) ON DELETE RESTRICT",
+        "pk_belief_evidence": "PRIMARY KEY (town_id ASC, id ASC)",
+        "uq_belief_evidence__clue_effect": "UNIQUE (town_id ASC, npc_id ASC, claim_id ASC, clue_id ASC) WHERE ((evidence_kind IN ('physical_clue'::STRING, 'contradiction'::STRING)) AND (clue_id IS NOT NULL))",
+        "uq_belief_evidence__corroboration": "UNIQUE (town_id ASC, event_id ASC, npc_id ASC, claim_id ASC, corroboration_threshold ASC) WHERE (evidence_kind = 'corroboration'::STRING)",
+        "uq_belief_evidence__mirror": "UNIQUE (town_id ASC, npc_id ASC, claim_id ASC, mirrors_evidence_id ASC) WHERE ((evidence_kind = 'contradiction'::STRING) AND (mirrors_evidence_id IS NOT NULL))",
+        "uq_belief_evidence__reverses": "UNIQUE (town_id ASC, reverses_evidence_id ASC) WHERE (reverses_evidence_id IS NOT NULL)",
+        "uq_belief_evidence__testimony_source": "UNIQUE (town_id ASC, npc_id ASC, claim_id ASC, independent_source_actor_id ASC) WHERE (evidence_kind IN ('player_testimony'::STRING, 'npc_testimony'::STRING))"
+      },
+      "indexes": {
+        "ix_belief_evidence__belief_time": "CREATE INDEX ix_belief_evidence__belief_time ON public.belief_evidence USING btree (town_id ASC, npc_id ASC, claim_id ASC, created_at ASC)",
+        "pk_belief_evidence": "CREATE UNIQUE INDEX pk_belief_evidence ON public.belief_evidence USING btree (town_id ASC, id ASC)",
+        "uq_belief_evidence__clue_effect": "CREATE UNIQUE INDEX uq_belief_evidence__clue_effect ON public.belief_evidence USING btree (town_id ASC, npc_id ASC, claim_id ASC, clue_id ASC) WHERE ((evidence_kind IN ('physical_clue'::STRING, 'contradiction'::STRING)) AND (clue_id IS NOT NULL))",
+        "uq_belief_evidence__corroboration": "CREATE UNIQUE INDEX uq_belief_evidence__corroboration ON public.belief_evidence USING btree (town_id ASC, event_id ASC, npc_id ASC, claim_id ASC, corroboration_threshold ASC) WHERE (evidence_kind = 'corroboration'::STRING)",
+        "uq_belief_evidence__mirror": "CREATE UNIQUE INDEX uq_belief_evidence__mirror ON public.belief_evidence USING btree (town_id ASC, npc_id ASC, claim_id ASC, mirrors_evidence_id ASC) WHERE ((evidence_kind = 'contradiction'::STRING) AND (mirrors_evidence_id IS NOT NULL))",
+        "uq_belief_evidence__reverses": "CREATE UNIQUE INDEX uq_belief_evidence__reverses ON public.belief_evidence USING btree (town_id ASC, reverses_evidence_id ASC) WHERE (reverses_evidence_id IS NOT NULL)",
+        "uq_belief_evidence__testimony_source": "CREATE UNIQUE INDEX uq_belief_evidence__testimony_source ON public.belief_evidence USING btree (town_id ASC, npc_id ASC, claim_id ASC, independent_source_actor_id ASC) WHERE (evidence_kind IN ('player_testimony'::STRING, 'npc_testimony'::STRING))"
+      }
+    },
+    "case_attempts": {
+      "columns": {
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "event_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "location_entity_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "location_entity_type": {
+          "type": "text",
+          "nullable": false,
+          "default": "'location'",
+          "generated": ""
+        },
+        "motive_entity_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "motive_entity_type": {
+          "type": "text",
+          "nullable": false,
+          "default": "'motive'",
+          "generated": ""
+        },
+        "outcome": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "player_action_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "player_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "suspect_entity_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "suspect_entity_type": {
+          "type": "text",
+          "nullable": false,
+          "default": "'character'",
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_case_attempts__location_entity_type": "CHECK ((location_entity_type = 'location'::STRING))",
+        "ck_case_attempts__motive_entity_type": "CHECK ((motive_entity_type = 'motive'::STRING))",
+        "ck_case_attempts__outcome": "CHECK ((outcome IN ('incorrect'::STRING, 'correct'::STRING)))",
+        "ck_case_attempts__suspect_entity_type": "CHECK ((suspect_entity_type = 'character'::STRING))",
+        "fk_case_attempts__event": "FOREIGN KEY (town_id, event_id) REFERENCES world_events(town_id, id) ON DELETE RESTRICT",
+        "fk_case_attempts__location": "FOREIGN KEY (town_id, location_entity_id, location_entity_type) REFERENCES story_entities(town_id, id, entity_type) ON DELETE RESTRICT",
+        "fk_case_attempts__motive": "FOREIGN KEY (town_id, motive_entity_id, motive_entity_type) REFERENCES story_entities(town_id, id, entity_type) ON DELETE RESTRICT",
+        "fk_case_attempts__player": "FOREIGN KEY (town_id, player_id) REFERENCES players(town_id, id) ON DELETE RESTRICT",
+        "fk_case_attempts__player_action": "FOREIGN KEY (town_id, player_action_id) REFERENCES player_actions(town_id, id) ON DELETE RESTRICT",
+        "fk_case_attempts__suspect": "FOREIGN KEY (town_id, suspect_entity_id, suspect_entity_type) REFERENCES story_entities(town_id, id, entity_type) ON DELETE RESTRICT",
+        "pk_case_attempts": "PRIMARY KEY (town_id ASC, id ASC)",
+        "uq_case_attempts__player_action": "UNIQUE (town_id ASC, player_action_id ASC)"
+      },
+      "indexes": {
+        "pk_case_attempts": "CREATE UNIQUE INDEX pk_case_attempts ON public.case_attempts USING btree (town_id ASC, id ASC)",
+        "uq_case_attempts__player_action": "CREATE UNIQUE INDEX uq_case_attempts__player_action ON public.case_attempts USING btree (town_id ASC, player_action_id ASC)"
+      }
+    },
+    "case_board_entries": {
+      "columns": {
+        "claim_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "clue_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "contributed_by_player_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "entry_kind": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "note_text": {
+          "type": "text",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "source_event_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "transmission_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "verification_status": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_case_board_entries__entry_kind": "CHECK ((entry_kind IN ('verified_evidence'::STRING, 'testimony'::STRING, 'hearsay'::STRING, 'note'::STRING)))",
+        "ck_case_board_entries__note_length": "CHECK (((note_text IS NULL) OR ((length(note_text) >= 1) AND (octet_length(note_text) <= 1120))))",
+        "ck_case_board_entries__shape": "CHECK ((CASE entry_kind WHEN 'verified_evidence'::STRING THEN (((clue_id IS NOT NULL) AND (claim_id IS NULL)) AND (transmission_id IS NULL)) AND (note_text IS NULL) WHEN 'testimony'::STRING THEN (((claim_id IS NOT NULL) AND (transmission_id IS NOT NULL)) AND (clue_id IS NULL)) AND (note_text IS NULL) WHEN 'hearsay'::STRING THEN (((claim_id IS NOT NULL) AND (transmission_id IS NOT NULL)) AND (clue_id IS NULL)) AND (note_text IS NULL) WHEN 'note'::STRING THEN (((note_text IS NOT NULL) AND (clue_id IS NULL)) AND (claim_id IS NULL)) AND (transmission_id IS NULL) ELSE false END))",
+        "ck_case_board_entries__status_matches_kind": "CHECK ((CASE entry_kind WHEN 'verified_evidence'::STRING THEN verification_status = 'verified_physical'::STRING WHEN 'testimony'::STRING THEN verification_status = 'attributed_testimony'::STRING WHEN 'hearsay'::STRING THEN verification_status = 'attributed_hearsay'::STRING WHEN 'note'::STRING THEN verification_status = 'unverified_player_note'::STRING ELSE false END))",
+        "ck_case_board_entries__verification_status": "CHECK ((verification_status IN ('verified_physical'::STRING, 'attributed_testimony'::STRING, 'attributed_hearsay'::STRING, 'unverified_player_note'::STRING)))",
+        "fk_case_board_entries__claim": "FOREIGN KEY (town_id, claim_id) REFERENCES claims(town_id, id) ON DELETE RESTRICT",
+        "fk_case_board_entries__clue": "FOREIGN KEY (town_id, clue_id) REFERENCES clues(town_id, id) ON DELETE RESTRICT",
+        "fk_case_board_entries__player": "FOREIGN KEY (town_id, contributed_by_player_id) REFERENCES players(town_id, id) ON DELETE RESTRICT",
+        "fk_case_board_entries__source_event": "FOREIGN KEY (town_id, source_event_id) REFERENCES world_events(town_id, id) ON DELETE RESTRICT",
+        "fk_case_board_entries__transmission": "FOREIGN KEY (town_id, transmission_id) REFERENCES claim_transmissions(town_id, id) ON DELETE RESTRICT",
+        "pk_case_board_entries": "PRIMARY KEY (town_id ASC, id ASC)",
+        "uq_case_board_entries__clue": "UNIQUE (town_id ASC, clue_id ASC) WHERE (clue_id IS NOT NULL)",
+        "uq_case_board_entries__transmission": "UNIQUE (town_id ASC, transmission_id ASC) WHERE (transmission_id IS NOT NULL)"
+      },
+      "indexes": {
+        "ix_case_board_entries__timeline": "CREATE INDEX ix_case_board_entries__timeline ON public.case_board_entries USING btree (town_id ASC, created_at ASC)",
+        "pk_case_board_entries": "CREATE UNIQUE INDEX pk_case_board_entries ON public.case_board_entries USING btree (town_id ASC, id ASC)",
+        "uq_case_board_entries__clue": "CREATE UNIQUE INDEX uq_case_board_entries__clue ON public.case_board_entries USING btree (town_id ASC, clue_id ASC) WHERE (clue_id IS NOT NULL)",
+        "uq_case_board_entries__transmission": "CREATE UNIQUE INDEX uq_case_board_entries__transmission ON public.case_board_entries USING btree (town_id ASC, transmission_id ASC) WHERE (transmission_id IS NOT NULL)"
+      }
+    },
+    "case_solutions": {
+      "columns": {
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "culprit_entity_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "culprit_entity_type": {
+          "type": "text",
+          "nullable": false,
+          "default": "'character'",
+          "generated": ""
+        },
+        "location_entity_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "location_entity_type": {
+          "type": "text",
+          "nullable": false,
+          "default": "'location'",
+          "generated": ""
+        },
+        "motive_entity_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "motive_entity_type": {
+          "type": "text",
+          "nullable": false,
+          "default": "'motive'",
+          "generated": ""
+        },
+        "required_item_entity_type": {
+          "type": "text",
+          "nullable": false,
+          "default": "'item'",
+          "generated": ""
+        },
+        "required_item_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_case_solutions__culprit_entity_type": "CHECK ((culprit_entity_type = 'character'::STRING))",
+        "ck_case_solutions__location_entity_type": "CHECK ((location_entity_type = 'location'::STRING))",
+        "ck_case_solutions__motive_entity_type": "CHECK ((motive_entity_type = 'motive'::STRING))",
+        "ck_case_solutions__required_item_entity_type": "CHECK ((required_item_entity_type = 'item'::STRING))",
+        "fk_case_solutions__culprit": "FOREIGN KEY (town_id, culprit_entity_id, culprit_entity_type) REFERENCES story_entities(town_id, id, entity_type) ON DELETE RESTRICT",
+        "fk_case_solutions__location": "FOREIGN KEY (town_id, location_entity_id, location_entity_type) REFERENCES story_entities(town_id, id, entity_type) ON DELETE RESTRICT",
+        "fk_case_solutions__motive": "FOREIGN KEY (town_id, motive_entity_id, motive_entity_type) REFERENCES story_entities(town_id, id, entity_type) ON DELETE RESTRICT",
+        "fk_case_solutions__required_item": "FOREIGN KEY (town_id, required_item_id, required_item_entity_type) REFERENCES story_entities(town_id, id, entity_type) ON DELETE RESTRICT",
+        "pk_case_solutions": "PRIMARY KEY (town_id ASC)"
+      },
+      "indexes": {
+        "pk_case_solutions": "CREATE UNIQUE INDEX pk_case_solutions ON public.case_solutions USING btree (town_id ASC)"
+      }
+    },
+    "claim_drafts": {
+      "columns": {
+        "alleged_source_actor_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "confirmed_by_action_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "confirmed_claim_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "context_key": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "expires_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "normalization_action_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "normalized_key": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "object_entity_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "object_entity_type": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "original_text": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "player_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "polarity": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "predicate": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "status": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "subject_entity_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "subject_entity_type": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "target_npc_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "visit_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_claim_drafts__confirmation": "CHECK ((CASE status WHEN 'confirmed'::STRING THEN (confirmed_by_action_id IS NOT NULL) AND (confirmed_claim_id IS NOT NULL) ELSE (confirmed_by_action_id IS NULL) AND (confirmed_claim_id IS NULL) END))",
+        "ck_claim_drafts__entity_matrix": "CHECK ((((((((predicate = 'was_at'::STRING) AND (subject_entity_type = 'character'::STRING)) AND (object_entity_type = 'location'::STRING)) OR (((predicate = 'moved'::STRING) AND (subject_entity_type = 'character'::STRING)) AND (object_entity_type = 'item'::STRING))) OR (((predicate = 'damaged'::STRING) AND (subject_entity_type = 'character'::STRING)) AND (object_entity_type = 'item'::STRING))) OR (((predicate = 'is_at'::STRING) AND (subject_entity_type = 'item'::STRING)) AND (object_entity_type = 'location'::STRING))) OR (((predicate = 'acted_for'::STRING) AND (subject_entity_type = 'character'::STRING)) AND (object_entity_type = 'motive'::STRING))))",
+        "ck_claim_drafts__polarity": "CHECK ((polarity IN ('positive'::STRING, 'negative'::STRING)))",
+        "ck_claim_drafts__predicate": "CHECK ((predicate IN ('was_at'::STRING, 'moved'::STRING, 'damaged'::STRING, 'is_at'::STRING, 'acted_for'::STRING)))",
+        "ck_claim_drafts__status": "CHECK ((status IN ('pending'::STRING, 'confirmed'::STRING, 'cancelled'::STRING, 'expired'::STRING)))",
+        "fk_claim_drafts__alleged_source": "FOREIGN KEY (town_id, alleged_source_actor_id) REFERENCES actors(town_id, id) ON DELETE RESTRICT",
+        "fk_claim_drafts__confirmed_by_action": "FOREIGN KEY (town_id, confirmed_by_action_id) REFERENCES player_actions(town_id, id) ON DELETE RESTRICT",
+        "fk_claim_drafts__confirmed_claim": "FOREIGN KEY (town_id, confirmed_claim_id) REFERENCES claims(town_id, id) ON DELETE RESTRICT",
+        "fk_claim_drafts__normalization_action": "FOREIGN KEY (town_id, normalization_action_id) REFERENCES player_actions(town_id, id) ON DELETE RESTRICT",
+        "fk_claim_drafts__object": "FOREIGN KEY (town_id, object_entity_id, object_entity_type) REFERENCES story_entities(town_id, id, entity_type) ON DELETE RESTRICT",
+        "fk_claim_drafts__player": "FOREIGN KEY (town_id, player_id) REFERENCES players(town_id, id) ON DELETE RESTRICT",
+        "fk_claim_drafts__subject": "FOREIGN KEY (town_id, subject_entity_id, subject_entity_type) REFERENCES story_entities(town_id, id, entity_type) ON DELETE RESTRICT",
+        "fk_claim_drafts__target_npc": "FOREIGN KEY (town_id, target_npc_id) REFERENCES npcs(town_id, id) ON DELETE RESTRICT",
+        "fk_claim_drafts__visit": "FOREIGN KEY (town_id, visit_id) REFERENCES player_visits(town_id, id) ON DELETE RESTRICT",
+        "pk_claim_drafts": "PRIMARY KEY (town_id ASC, id ASC)"
+      },
+      "indexes": {
+        "pk_claim_drafts": "CREATE UNIQUE INDEX pk_claim_drafts ON public.claim_drafts USING btree (town_id ASC, id ASC)"
+      }
+    },
+    "claim_relations": {
+      "columns": {
+        "claim_a_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "claim_b_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "relation_kind": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "rule_version": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_claim_relations__distinct": "CHECK ((claim_a_id != claim_b_id))",
+        "ck_claim_relations__relation_kind": "CHECK ((relation_kind IN ('contradicts'::STRING, 'entails'::STRING)))",
+        "fk_claim_relations__claim_a": "FOREIGN KEY (town_id, claim_a_id) REFERENCES claims(town_id, id) ON DELETE RESTRICT",
+        "fk_claim_relations__claim_b": "FOREIGN KEY (town_id, claim_b_id) REFERENCES claims(town_id, id) ON DELETE RESTRICT",
+        "pk_claim_relations": "PRIMARY KEY (town_id ASC, claim_a_id ASC, claim_b_id ASC, relation_kind ASC)"
+      },
+      "indexes": {
+        "pk_claim_relations": "CREATE UNIQUE INDEX pk_claim_relations ON public.claim_relations USING btree (town_id ASC, claim_a_id ASC, claim_b_id ASC, relation_kind ASC)"
+      }
+    },
+    "claim_transmissions": {
+      "columns": {
+        "alleged_source_actor_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "claim_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "event_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "hop_count": {
+          "type": "integer",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "interaction_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "ordinal": {
+          "type": "integer",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "parent_eligible": {
+          "type": "boolean",
+          "nullable": false,
+          "default": null,
+          "generated": "hop_count < 4"
+        },
+        "parent_is_eligible": {
+          "type": "boolean",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "parent_transmission_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "recipient_actor_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "recipient_actor_type": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "root_transmission_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "source_episode_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "source_kind": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "speaker_actor_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_claim_transmissions__distinct_parties": "CHECK ((speaker_actor_id != recipient_actor_id))",
+        "ck_claim_transmissions__hop_range": "CHECK ((hop_count BETWEEN 0 AND 4))",
+        "ck_claim_transmissions__npc_recipient_hop": "CHECK (((recipient_actor_type != 'npc'::STRING) OR (hop_count <= 3)))",
+        "ck_claim_transmissions__ordinal": "CHECK ((ordinal >= 0))",
+        "ck_claim_transmissions__parent_is_eligible": "CHECK (((parent_is_eligible IS NULL) OR parent_is_eligible))",
+        "ck_claim_transmissions__parent_pair": "CHECK (((parent_transmission_id IS NULL) = (parent_is_eligible IS NULL)))",
+        "ck_claim_transmissions__recipient_actor_type": "CHECK ((recipient_actor_type IN ('player'::STRING, 'npc'::STRING)))",
+        "ck_claim_transmissions__root": "CHECK (((parent_transmission_id IS NULL) = (root_transmission_id = id)))",
+        "ck_claim_transmissions__source_kind": "CHECK ((source_kind IN ('original_assertion'::STRING, 'direct_observation'::STRING, 'repeated_testimony'::STRING, 'alleged_hearsay'::STRING)))",
+        "ck_claim_transmissions__source_shape": "CHECK ((CASE source_kind WHEN 'original_assertion'::STRING THEN ((parent_transmission_id IS NULL) AND (source_episode_id IS NULL)) AND (hop_count = 0) WHEN 'direct_observation'::STRING THEN ((parent_transmission_id IS NULL) AND (source_episode_id IS NOT NULL)) AND (hop_count = 0) WHEN 'repeated_testimony'::STRING THEN ((parent_transmission_id IS NOT NULL) AND (source_episode_id IS NULL)) AND (hop_count >= 1) WHEN 'alleged_hearsay'::STRING THEN (((parent_transmission_id IS NULL) AND (source_episode_id IS NULL)) AND (alleged_source_actor_id IS NOT NULL)) AND (hop_count >= 1) ELSE false END))",
+        "fk_claim_transmissions__alleged_source": "FOREIGN KEY (town_id, alleged_source_actor_id) REFERENCES actors(town_id, id) ON DELETE RESTRICT",
+        "fk_claim_transmissions__claim": "FOREIGN KEY (town_id, claim_id) REFERENCES claims(town_id, id) ON DELETE RESTRICT",
+        "fk_claim_transmissions__event": "FOREIGN KEY (town_id, event_id) REFERENCES world_events(town_id, id) ON DELETE RESTRICT",
+        "fk_claim_transmissions__interaction": "FOREIGN KEY (town_id, interaction_id) REFERENCES npc_interactions(town_id, id) ON DELETE RESTRICT",
+        "fk_claim_transmissions__parent": "FOREIGN KEY (town_id, parent_transmission_id, parent_is_eligible) REFERENCES claim_transmissions(town_id, id, parent_eligible) ON DELETE RESTRICT",
+        "fk_claim_transmissions__recipient": "FOREIGN KEY (town_id, recipient_actor_id, recipient_actor_type) REFERENCES actors(town_id, id, actor_type) ON DELETE RESTRICT",
+        "fk_claim_transmissions__source_episode": "FOREIGN KEY (town_id, source_episode_id) REFERENCES episodes(town_id, id) ON DELETE RESTRICT",
+        "fk_claim_transmissions__speaker": "FOREIGN KEY (town_id, speaker_actor_id) REFERENCES actors(town_id, id) ON DELETE RESTRICT",
+        "pk_claim_transmissions": "PRIMARY KEY (town_id ASC, id ASC)",
+        "uq_claim_transmissions__event_ordinal": "UNIQUE (town_id ASC, event_id ASC, ordinal ASC)",
+        "uq_claim_transmissions__parent_eligible": "UNIQUE (town_id ASC, id ASC, parent_eligible ASC)"
+      },
+      "indexes": {
+        "ix_claim_transmissions__claim_time": "CREATE INDEX ix_claim_transmissions__claim_time ON public.claim_transmissions USING btree (town_id ASC, claim_id ASC, created_at ASC)",
+        "ix_claim_transmissions__parent": "CREATE INDEX ix_claim_transmissions__parent ON public.claim_transmissions USING btree (town_id ASC, parent_transmission_id ASC)",
+        "pk_claim_transmissions": "CREATE UNIQUE INDEX pk_claim_transmissions ON public.claim_transmissions USING btree (town_id ASC, id ASC)",
+        "uq_claim_transmissions__event_ordinal": "CREATE UNIQUE INDEX uq_claim_transmissions__event_ordinal ON public.claim_transmissions USING btree (town_id ASC, event_id ASC, ordinal ASC)",
+        "uq_claim_transmissions__parent_eligible": "CREATE UNIQUE INDEX uq_claim_transmissions__parent_eligible ON public.claim_transmissions USING btree (town_id ASC, id ASC, parent_eligible ASC)"
+      }
+    },
+    "claims": {
+      "columns": {
+        "context_key": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "normalized_key": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "object_entity_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "object_entity_type": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "polarity": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "predicate": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "subject_entity_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "subject_entity_type": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_claims__entity_matrix": "CHECK ((((((((predicate = 'was_at'::STRING) AND (subject_entity_type = 'character'::STRING)) AND (object_entity_type = 'location'::STRING)) OR (((predicate = 'moved'::STRING) AND (subject_entity_type = 'character'::STRING)) AND (object_entity_type = 'item'::STRING))) OR (((predicate = 'damaged'::STRING) AND (subject_entity_type = 'character'::STRING)) AND (object_entity_type = 'item'::STRING))) OR (((predicate = 'is_at'::STRING) AND (subject_entity_type = 'item'::STRING)) AND (object_entity_type = 'location'::STRING))) OR (((predicate = 'acted_for'::STRING) AND (subject_entity_type = 'character'::STRING)) AND (object_entity_type = 'motive'::STRING))))",
+        "ck_claims__polarity": "CHECK ((polarity IN ('positive'::STRING, 'negative'::STRING)))",
+        "ck_claims__predicate": "CHECK ((predicate IN ('was_at'::STRING, 'moved'::STRING, 'damaged'::STRING, 'is_at'::STRING, 'acted_for'::STRING)))",
+        "fk_claims__object": "FOREIGN KEY (town_id, object_entity_id, object_entity_type) REFERENCES story_entities(town_id, id, entity_type) ON DELETE RESTRICT",
+        "fk_claims__subject": "FOREIGN KEY (town_id, subject_entity_id, subject_entity_type) REFERENCES story_entities(town_id, id, entity_type) ON DELETE RESTRICT",
+        "fk_claims__town": "FOREIGN KEY (town_id) REFERENCES towns(id) ON DELETE RESTRICT",
+        "pk_claims": "PRIMARY KEY (town_id ASC, id ASC)",
+        "uq_claims__normalized_key": "UNIQUE (town_id ASC, normalized_key ASC)"
+      },
+      "indexes": {
+        "pk_claims": "CREATE UNIQUE INDEX pk_claims ON public.claims USING btree (town_id ASC, id ASC)",
+        "uq_claims__normalized_key": "CREATE UNIQUE INDEX uq_claims__normalized_key ON public.claims USING btree (town_id ASC, normalized_key ASC)"
+      }
+    },
+    "clue_claim_effects": {
+      "columns": {
+        "claim_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "clue_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "effect_kind": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "rule_version": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "signed_weight": {
+          "type": "integer",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_clue_claim_effects__effect_kind": "CHECK ((effect_kind IN ('supports'::STRING, 'contradicts'::STRING)))",
+        "ck_clue_claim_effects__sign_matches_kind": "CHECK (((effect_kind = 'supports'::STRING) = (signed_weight > 0)))",
+        "ck_clue_claim_effects__weight_range": "CHECK (((signed_weight BETWEEN -100 AND 100) AND (signed_weight != 0)))",
+        "fk_clue_claim_effects__claim": "FOREIGN KEY (town_id, claim_id) REFERENCES claims(town_id, id) ON DELETE RESTRICT",
+        "fk_clue_claim_effects__clue": "FOREIGN KEY (town_id, clue_id) REFERENCES clues(town_id, id) ON DELETE RESTRICT",
+        "pk_clue_claim_effects": "PRIMARY KEY (town_id ASC, clue_id ASC, claim_id ASC)"
+      },
+      "indexes": {
+        "pk_clue_claim_effects": "CREATE UNIQUE INDEX pk_clue_claim_effects ON public.clue_claim_effects USING btree (town_id ASC, clue_id ASC, claim_id ASC)"
+      }
+    },
+    "clue_discoveries": {
+      "columns": {
+        "clue_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "event_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "player_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "fk_clue_discoveries__clue": "FOREIGN KEY (town_id, clue_id) REFERENCES clues(town_id, id) ON DELETE RESTRICT",
+        "fk_clue_discoveries__event": "FOREIGN KEY (town_id, event_id) REFERENCES world_events(town_id, id) ON DELETE RESTRICT",
+        "fk_clue_discoveries__player": "FOREIGN KEY (town_id, player_id) REFERENCES players(town_id, id) ON DELETE RESTRICT",
+        "pk_clue_discoveries": "PRIMARY KEY (town_id ASC, id ASC)",
+        "uq_clue_discoveries__clue_player": "UNIQUE (town_id ASC, clue_id ASC, player_id ASC)"
+      },
+      "indexes": {
+        "pk_clue_discoveries": "CREATE UNIQUE INDEX pk_clue_discoveries ON public.clue_discoveries USING btree (town_id ASC, id ASC)",
+        "uq_clue_discoveries__clue_player": "CREATE UNIQUE INDEX uq_clue_discoveries__clue_player ON public.clue_discoveries USING btree (town_id ASC, clue_id ASC, player_id ASC)"
+      }
+    },
+    "clues": {
+      "columns": {
+        "clue_key": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "clue_kind": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "content_key": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "inspectable_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "required_for_resolution": {
+          "type": "boolean",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_clues__clue_kind": "CHECK ((clue_kind IN ('physical_trace'::STRING, 'document'::STRING, 'object_state'::STRING)))",
+        "fk_clues__inspectable": "FOREIGN KEY (town_id, inspectable_id) REFERENCES inspectables(town_id, id) ON DELETE RESTRICT",
+        "pk_clues": "PRIMARY KEY (town_id ASC, id ASC)",
+        "uq_clues__clue_key": "UNIQUE (town_id ASC, clue_key ASC)"
+      },
+      "indexes": {
+        "pk_clues": "CREATE UNIQUE INDEX pk_clues ON public.clues USING btree (town_id ASC, id ASC)",
+        "uq_clues__clue_key": "CREATE UNIQUE INDEX uq_clues__clue_key ON public.clues USING btree (town_id ASC, clue_key ASC)"
+      }
+    },
+    "episode_references": {
+      "columns": {
+        "claim_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "entity_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "episode_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()",
+          "generated": ""
+        },
+        "reference_kind": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_episode_references__exactly_one_target": "CHECK (((entity_id IS NULL) != (claim_id IS NULL)))",
+        "ck_episode_references__kind_matches_target": "CHECK (((reference_kind = 'claim'::STRING) = (claim_id IS NOT NULL)))",
+        "ck_episode_references__reference_kind": "CHECK ((reference_kind IN ('participant'::STRING, 'location'::STRING, 'item'::STRING, 'motive'::STRING, 'claim'::STRING)))",
+        "fk_episode_references__claim": "FOREIGN KEY (town_id, claim_id) REFERENCES claims(town_id, id) ON DELETE RESTRICT",
+        "fk_episode_references__entity": "FOREIGN KEY (town_id, entity_id) REFERENCES story_entities(town_id, id) ON DELETE RESTRICT",
+        "fk_episode_references__episode": "FOREIGN KEY (town_id, episode_id) REFERENCES episodes(town_id, id) ON DELETE RESTRICT",
+        "pk_episode_references": "PRIMARY KEY (town_id ASC, id ASC)",
+        "uq_episode_references__claim": "UNIQUE (town_id ASC, episode_id ASC, claim_id ASC) WHERE (claim_id IS NOT NULL)",
+        "uq_episode_references__entity": "UNIQUE (town_id ASC, episode_id ASC, reference_kind ASC, entity_id ASC) WHERE (entity_id IS NOT NULL)"
+      },
+      "indexes": {
+        "pk_episode_references": "CREATE UNIQUE INDEX pk_episode_references ON public.episode_references USING btree (town_id ASC, id ASC)",
+        "uq_episode_references__claim": "CREATE UNIQUE INDEX uq_episode_references__claim ON public.episode_references USING btree (town_id ASC, episode_id ASC, claim_id ASC) WHERE (claim_id IS NOT NULL)",
+        "uq_episode_references__entity": "CREATE UNIQUE INDEX uq_episode_references__entity ON public.episode_references USING btree (town_id ASC, episode_id ASC, reference_kind ASC, entity_id ASC) WHERE (entity_id IS NOT NULL)"
+      }
+    },
+    "episodes": {
+      "columns": {
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "embedding": {
+          "type": "vector",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "embedding_status": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "episode_kind": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "event_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "importance": {
+          "type": "integer",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "npc_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "occurred_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "summary": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_episodes__embedding_consistency": "CHECK (((embedding IS NOT NULL) = (embedding_status = 'ready'::STRING)))",
+        "ck_episodes__embedding_status": "CHECK ((embedding_status IN ('pending'::STRING, 'ready'::STRING, 'failed'::STRING)))",
+        "ck_episodes__episode_kind": "CHECK ((episode_kind IN ('direct_observation'::STRING, 'heard_claim'::STRING, 'player_interaction'::STRING, 'promise_consequence'::STRING, 'item_transfer'::STRING, 'world_consequence'::STRING)))",
+        "ck_episodes__importance": "CHECK ((importance BETWEEN 0 AND 100))",
+        "fk_episodes__event": "FOREIGN KEY (town_id, event_id) REFERENCES world_events(town_id, id) ON DELETE RESTRICT",
+        "fk_episodes__npc": "FOREIGN KEY (town_id, npc_id) REFERENCES npcs(town_id, id) ON DELETE RESTRICT",
+        "pk_episodes": "PRIMARY KEY (town_id ASC, id ASC)",
+        "uq_episodes__npc_event_kind": "UNIQUE (town_id ASC, npc_id ASC, event_id ASC, episode_kind ASC)"
+      },
+      "indexes": {
+        "ix_episodes__embedding": "CREATE INDEX ix_episodes__embedding ON public.episodes USING cspann (town_id, npc_id, embedding vector_l2_ops) WHERE (embedding_status = 'ready'::STRING)",
+        "pk_episodes": "CREATE UNIQUE INDEX pk_episodes ON public.episodes USING btree (town_id ASC, id ASC)",
+        "uq_episodes__npc_event_kind": "CREATE UNIQUE INDEX uq_episodes__npc_event_kind ON public.episodes USING btree (town_id ASC, npc_id ASC, event_id ASC, episode_kind ASC)"
+      }
+    },
+    "inspectables": {
+      "columns": {
+        "content_key": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "display_name": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "enabled": {
+          "type": "boolean",
+          "nullable": false,
+          "default": "true",
+          "generated": ""
+        },
+        "gate_key": {
+          "type": "text",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "inspectable_key": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "linked_entity_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "linked_entity_type": {
+          "type": "text",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "location_entity_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "location_entity_type": {
+          "type": "text",
+          "nullable": false,
+          "default": "'location'",
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_inspectables__linked_entity_type": "CHECK (((linked_entity_type IS NULL) OR (linked_entity_type = 'item'::STRING)))",
+        "ck_inspectables__linked_pair": "CHECK (((linked_entity_id IS NULL) = (linked_entity_type IS NULL)))",
+        "ck_inspectables__location_entity_type": "CHECK ((location_entity_type = 'location'::STRING))",
+        "fk_inspectables__linked_item": "FOREIGN KEY (town_id, linked_entity_id, linked_entity_type) REFERENCES story_entities(town_id, id, entity_type) ON DELETE RESTRICT",
+        "fk_inspectables__location": "FOREIGN KEY (town_id, location_entity_id, location_entity_type) REFERENCES story_entities(town_id, id, entity_type) ON DELETE RESTRICT",
+        "pk_inspectables": "PRIMARY KEY (town_id ASC, id ASC)",
+        "uq_inspectables__inspectable_key": "UNIQUE (town_id ASC, inspectable_key ASC)"
+      },
+      "indexes": {
+        "pk_inspectables": "CREATE UNIQUE INDEX pk_inspectables ON public.inspectables USING btree (town_id ASC, id ASC)",
+        "uq_inspectables__inspectable_key": "CREATE UNIQUE INDEX uq_inspectables__inspectable_key ON public.inspectables USING btree (town_id ASC, inspectable_key ASC)"
+      }
+    },
+    "items": {
+      "columns": {
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "entity_type": {
+          "type": "text",
+          "nullable": false,
+          "default": "'item'",
+          "generated": ""
+        },
+        "held_by_actor_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "location_entity_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "location_entity_type": {
+          "type": "text",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "portable": {
+          "type": "boolean",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "revealed_event_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "revision": {
+          "type": "bigint",
+          "nullable": false,
+          "default": "0",
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_items__entity_type": "CHECK ((entity_type = 'item'::STRING))",
+        "ck_items__exactly_one_custodian": "CHECK (((location_entity_id IS NULL) != (held_by_actor_id IS NULL)))",
+        "ck_items__location_entity_type": "CHECK (((location_entity_type IS NULL) OR (location_entity_type = 'location'::STRING)))",
+        "ck_items__location_pair": "CHECK (((location_entity_id IS NULL) = (location_entity_type IS NULL)))",
+        "ck_items__revision": "CHECK ((revision >= 0))",
+        "fk_items__entity": "FOREIGN KEY (town_id, id, entity_type) REFERENCES story_entities(town_id, id, entity_type) ON DELETE RESTRICT",
+        "fk_items__holder": "FOREIGN KEY (town_id, held_by_actor_id) REFERENCES actors(town_id, id) ON DELETE RESTRICT",
+        "fk_items__location": "FOREIGN KEY (town_id, location_entity_id, location_entity_type) REFERENCES story_entities(town_id, id, entity_type) ON DELETE RESTRICT",
+        "fk_items__revealed_event": "FOREIGN KEY (town_id, revealed_event_id) REFERENCES world_events(town_id, id) ON DELETE RESTRICT",
+        "pk_items": "PRIMARY KEY (town_id ASC, id ASC)"
+      },
+      "indexes": {
+        "pk_items": "CREATE UNIQUE INDEX pk_items ON public.items USING btree (town_id ASC, id ASC)"
+      }
+    },
+    "join_requests": {
+      "columns": {
+        "attempt_count": {
+          "type": "integer",
+          "nullable": false,
+          "default": "0",
+          "generated": ""
+        },
+        "bootstrap_confirmed_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "completed_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "error_code": {
+          "type": "text",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "idempotency_key": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "initial_visit_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "join_secret_hash": {
+          "type": "bytea",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "player_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "processing_expires_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "processing_token": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "replay_closed_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "replay_closed_reason": {
+          "type": "text",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "replay_expires_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "request_hash": {
+          "type": "bytea",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "response_payload": {
+          "type": "jsonb",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "response_status": {
+          "type": "integer",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "session_issue_count": {
+          "type": "integer",
+          "nullable": false,
+          "default": "0",
+          "generated": ""
+        },
+        "status": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_join_requests__attempt_count": "CHECK ((attempt_count >= 0))",
+        "ck_join_requests__claim": "CHECK ((CASE status WHEN 'processing'::STRING THEN (processing_token IS NOT NULL) AND (processing_expires_at IS NOT NULL) ELSE (processing_token IS NULL) AND (processing_expires_at IS NULL) END))",
+        "ck_join_requests__closed_secret_cleared": "CHECK (((replay_closed_at IS NULL) OR (join_secret_hash IS NULL)))",
+        "ck_join_requests__join_secret_hash_length": "CHECK (((join_secret_hash IS NULL) OR (length(join_secret_hash) = 32)))",
+        "ck_join_requests__replay_closed_reason": "CHECK (((replay_closed_reason IS NULL) OR (replay_closed_reason IN ('confirmed'::STRING, 'expired'::STRING, 'exhausted'::STRING))))",
+        "ck_join_requests__replay_closure": "CHECK (((replay_closed_at IS NULL) = (replay_closed_reason IS NULL)))",
+        "ck_join_requests__request_hash_length": "CHECK ((length(request_hash) = 32))",
+        "ck_join_requests__session_issue_count": "CHECK ((CASE status WHEN 'processing'::STRING THEN session_issue_count = 0 WHEN 'completed'::STRING THEN session_issue_count BETWEEN 1 AND 3 ELSE session_issue_count >= 0 END))",
+        "ck_join_requests__status": "CHECK ((status IN ('processing'::STRING, 'completed'::STRING, 'failed'::STRING)))",
+        "ck_join_requests__terminal_fields": "CHECK ((CASE status WHEN 'processing'::STRING THEN ((((player_id IS NULL) AND (response_status IS NULL)) AND (response_payload IS NULL)) AND (error_code IS NULL)) AND (completed_at IS NULL) WHEN 'completed'::STRING THEN ((((player_id IS NOT NULL) AND (response_status IS NOT NULL)) AND (response_payload IS NOT NULL)) AND (error_code IS NULL)) AND (completed_at IS NOT NULL) WHEN 'failed'::STRING THEN (((response_status IS NOT NULL) AND (response_payload IS NOT NULL)) AND (error_code IS NOT NULL)) AND (completed_at IS NOT NULL) ELSE false END))",
+        "fk_join_requests__initial_visit": "FOREIGN KEY (town_id, initial_visit_id) REFERENCES player_visits(town_id, id) ON DELETE RESTRICT",
+        "fk_join_requests__player": "FOREIGN KEY (town_id, player_id) REFERENCES players(town_id, id) ON DELETE RESTRICT",
+        "fk_join_requests__town": "FOREIGN KEY (town_id) REFERENCES towns(id) ON DELETE RESTRICT",
+        "pk_join_requests": "PRIMARY KEY (town_id ASC, idempotency_key ASC)"
+      },
+      "indexes": {
+        "ix_join_requests__open_replay": "CREATE INDEX ix_join_requests__open_replay ON public.join_requests USING btree (replay_expires_at ASC) WHERE ((join_secret_hash IS NOT NULL) AND (bootstrap_confirmed_at IS NULL))",
+        "ix_join_requests__player": "CREATE INDEX ix_join_requests__player ON public.join_requests USING btree (town_id ASC, player_id ASC)",
+        "pk_join_requests": "CREATE UNIQUE INDEX pk_join_requests ON public.join_requests USING btree (town_id ASC, idempotency_key ASC)"
+      }
+    },
+    "model_cost_reservations": {
+      "columns": {
+        "actual_cost": {
+          "type": "numeric",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "agent_run_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "ambient_job_execution_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "attempt_ordinal": {
+          "type": "integer",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "billing_month": {
+          "type": "date",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "inference_profile": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "maximum_cost": {
+          "type": "numeric",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "model": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "non_game_operation_key": {
+          "type": "text",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "player_action_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "price_version": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "purpose": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "settled_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "status": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "world_event_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_model_cost_reservations__attempt_ordinal": "CHECK ((attempt_ordinal >= 0))",
+        "ck_model_cost_reservations__costs_non_negative": "CHECK (((maximum_cost >= 0) AND ((actual_cost IS NULL) OR (actual_cost >= 0))))",
+        "ck_model_cost_reservations__purpose": "CHECK ((purpose IN ('claim_normalization'::STRING, 'dialogue_selection'::STRING, 'ambient_choice'::STRING, 'structured_repair'::STRING, 'episode_embedding'::STRING, 'query_embedding'::STRING)))",
+        "ck_model_cost_reservations__settlement_shape": "CHECK ((CASE status WHEN 'reserved'::STRING THEN (actual_cost IS NULL) AND (settled_at IS NULL) WHEN 'settled'::STRING THEN (actual_cost IS NOT NULL) AND (settled_at IS NOT NULL) WHEN 'released'::STRING THEN (actual_cost = 0) AND (settled_at IS NOT NULL) ELSE false END))",
+        "ck_model_cost_reservations__settlement_within_reservation": "CHECK (((actual_cost IS NULL) OR (actual_cost <= maximum_cost)))",
+        "ck_model_cost_reservations__single_source": "CHECK (((((CASE WHEN player_action_id IS NULL THEN 0 ELSE 1 END + CASE WHEN ambient_job_execution_id IS NULL THEN 0 ELSE 1 END) + CASE WHEN world_event_id IS NULL THEN 0 ELSE 1 END) + CASE WHEN non_game_operation_key IS NULL THEN 0 ELSE 1 END) = 1))",
+        "ck_model_cost_reservations__status": "CHECK ((status IN ('reserved'::STRING, 'settled'::STRING, 'released'::STRING)))",
+        "ck_model_cost_reservations__town_presence": "CHECK (((non_game_operation_key IS NULL) = (town_id IS NOT NULL)))",
+        "fk_model_cost_reservations__agent_run": "FOREIGN KEY (town_id, agent_run_id) REFERENCES agent_runs(town_id, id) ON DELETE RESTRICT",
+        "fk_model_cost_reservations__ambient_execution": "FOREIGN KEY (town_id, ambient_job_execution_id) REFERENCES ambient_job_executions(town_id, id) ON DELETE RESTRICT",
+        "fk_model_cost_reservations__player_action": "FOREIGN KEY (town_id, player_action_id) REFERENCES player_actions(town_id, id) ON DELETE RESTRICT",
+        "fk_model_cost_reservations__town": "FOREIGN KEY (town_id) REFERENCES towns(id) ON DELETE RESTRICT",
+        "fk_model_cost_reservations__world_event": "FOREIGN KEY (town_id, world_event_id) REFERENCES world_events(town_id, id) ON DELETE RESTRICT",
+        "pk_model_cost_reservations": "PRIMARY KEY (id ASC)",
+        "uq_model_cost_reservations__ambient_execution": "UNIQUE (ambient_job_execution_id ASC, purpose ASC, attempt_ordinal ASC) WHERE (ambient_job_execution_id IS NOT NULL)",
+        "uq_model_cost_reservations__non_game_operation": "UNIQUE (non_game_operation_key ASC, purpose ASC, attempt_ordinal ASC) WHERE (non_game_operation_key IS NOT NULL)",
+        "uq_model_cost_reservations__player_action": "UNIQUE (player_action_id ASC, purpose ASC, attempt_ordinal ASC) WHERE (player_action_id IS NOT NULL)",
+        "uq_model_cost_reservations__world_event": "UNIQUE (world_event_id ASC, purpose ASC, attempt_ordinal ASC) WHERE (world_event_id IS NOT NULL)"
+      },
+      "indexes": {
+        "ix_model_cost_reservations__month_status": "CREATE INDEX ix_model_cost_reservations__month_status ON public.model_cost_reservations USING btree (billing_month ASC, status ASC)",
+        "pk_model_cost_reservations": "CREATE UNIQUE INDEX pk_model_cost_reservations ON public.model_cost_reservations USING btree (id ASC)",
+        "uq_model_cost_reservations__ambient_execution": "CREATE UNIQUE INDEX uq_model_cost_reservations__ambient_execution ON public.model_cost_reservations USING btree (ambient_job_execution_id ASC, purpose ASC, attempt_ordinal ASC) WHERE (ambient_job_execution_id IS NOT NULL)",
+        "uq_model_cost_reservations__non_game_operation": "CREATE UNIQUE INDEX uq_model_cost_reservations__non_game_operation ON public.model_cost_reservations USING btree (non_game_operation_key ASC, purpose ASC, attempt_ordinal ASC) WHERE (non_game_operation_key IS NOT NULL)",
+        "uq_model_cost_reservations__player_action": "CREATE UNIQUE INDEX uq_model_cost_reservations__player_action ON public.model_cost_reservations USING btree (player_action_id ASC, purpose ASC, attempt_ordinal ASC) WHERE (player_action_id IS NOT NULL)",
+        "uq_model_cost_reservations__world_event": "CREATE UNIQUE INDEX uq_model_cost_reservations__world_event ON public.model_cost_reservations USING btree (world_event_id ASC, purpose ASC, attempt_ordinal ASC) WHERE (world_event_id IS NOT NULL)"
+      }
+    },
+    "npc_beliefs": {
+      "columns": {
+        "claim_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "label": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "npc_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "revision": {
+          "type": "bigint",
+          "nullable": false,
+          "default": "0",
+          "generated": ""
+        },
+        "score": {
+          "type": "integer",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "updated_event_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_npc_beliefs__label": "CHECK ((label IN ('convinced'::STRING, 'leaning'::STRING, 'doubtful'::STRING)))",
+        "ck_npc_beliefs__label_matches_score": "CHECK ((CASE WHEN score >= 60 THEN label = 'convinced'::STRING WHEN score >= 20 THEN label = 'leaning'::STRING ELSE label = 'doubtful'::STRING END))",
+        "ck_npc_beliefs__revision": "CHECK ((revision >= 0))",
+        "ck_npc_beliefs__score_range": "CHECK ((score BETWEEN -100 AND 100))",
+        "fk_npc_beliefs__claim": "FOREIGN KEY (town_id, claim_id) REFERENCES claims(town_id, id) ON DELETE RESTRICT",
+        "fk_npc_beliefs__npc": "FOREIGN KEY (town_id, npc_id) REFERENCES npcs(town_id, id) ON DELETE RESTRICT",
+        "fk_npc_beliefs__updated_event": "FOREIGN KEY (town_id, updated_event_id) REFERENCES world_events(town_id, id) ON DELETE RESTRICT",
+        "pk_npc_beliefs": "PRIMARY KEY (town_id ASC, npc_id ASC, claim_id ASC)"
+      },
+      "indexes": {
+        "pk_npc_beliefs": "CREATE UNIQUE INDEX pk_npc_beliefs ON public.npc_beliefs USING btree (town_id ASC, npc_id ASC, claim_id ASC)"
+      }
+    },
+    "npc_contact_edges": {
+      "columns": {
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "enabled": {
+          "type": "boolean",
+          "nullable": false,
+          "default": "true",
+          "generated": ""
+        },
+        "from_npc_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "to_npc_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "trust_score": {
+          "type": "integer",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_npc_contact_edges__distinct": "CHECK ((from_npc_id != to_npc_id))",
+        "ck_npc_contact_edges__trust_range": "CHECK ((trust_score BETWEEN -100 AND 100))",
+        "fk_npc_contact_edges__from": "FOREIGN KEY (town_id, from_npc_id) REFERENCES npcs(town_id, id) ON DELETE RESTRICT",
+        "fk_npc_contact_edges__to": "FOREIGN KEY (town_id, to_npc_id) REFERENCES npcs(town_id, id) ON DELETE RESTRICT",
+        "pk_npc_contact_edges": "PRIMARY KEY (town_id ASC, from_npc_id ASC, to_npc_id ASC)"
+      },
+      "indexes": {
+        "pk_npc_contact_edges": "CREATE UNIQUE INDEX pk_npc_contact_edges ON public.npc_contact_edges USING btree (town_id ASC, from_npc_id ASC, to_npc_id ASC)"
+      }
+    },
+    "npc_interactions": {
+      "columns": {
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "event_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "input_kind": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "npc_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "npc_text": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "player_action_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "player_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "player_text": {
+          "type": "text",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "response_mode": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "visit_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_npc_interactions__input_kind": "CHECK ((input_kind IN ('ask'::STRING, 'tell'::STRING, 'show'::STRING, 'give'::STRING, 'promise'::STRING)))",
+        "ck_npc_interactions__response_mode": "CHECK ((response_mode IN ('selected'::STRING, 'repaired'::STRING, 'fallback'::STRING, 'authored'::STRING)))",
+        "fk_npc_interactions__event": "FOREIGN KEY (town_id, event_id) REFERENCES world_events(town_id, id) ON DELETE RESTRICT",
+        "fk_npc_interactions__npc": "FOREIGN KEY (town_id, npc_id) REFERENCES npcs(town_id, id) ON DELETE RESTRICT",
+        "fk_npc_interactions__player": "FOREIGN KEY (town_id, player_id) REFERENCES players(town_id, id) ON DELETE RESTRICT",
+        "fk_npc_interactions__player_action": "FOREIGN KEY (town_id, player_action_id) REFERENCES player_actions(town_id, id) ON DELETE RESTRICT",
+        "fk_npc_interactions__visit": "FOREIGN KEY (town_id, visit_id) REFERENCES player_visits(town_id, id) ON DELETE RESTRICT",
+        "pk_npc_interactions": "PRIMARY KEY (town_id ASC, id ASC)",
+        "uq_npc_interactions__player_action": "UNIQUE (town_id ASC, player_action_id ASC)"
+      },
+      "indexes": {
+        "pk_npc_interactions": "CREATE UNIQUE INDEX pk_npc_interactions ON public.npc_interactions USING btree (town_id ASC, id ASC)",
+        "uq_npc_interactions__player_action": "CREATE UNIQUE INDEX uq_npc_interactions__player_action ON public.npc_interactions USING btree (town_id ASC, player_action_id ASC)"
+      }
+    },
+    "npc_player_relationships": {
+      "columns": {
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "npc_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "player_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "revision": {
+          "type": "bigint",
+          "nullable": false,
+          "default": "0",
+          "generated": ""
+        },
+        "suspicion_score": {
+          "type": "integer",
+          "nullable": false,
+          "default": "0",
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "trust_score": {
+          "type": "integer",
+          "nullable": false,
+          "default": "0",
+          "generated": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "updated_event_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_npc_player_relationships__revision": "CHECK ((revision >= 0))",
+        "ck_npc_player_relationships__suspicion_range": "CHECK ((suspicion_score BETWEEN -100 AND 100))",
+        "ck_npc_player_relationships__trust_range": "CHECK ((trust_score BETWEEN -100 AND 100))",
+        "fk_npc_player_relationships__npc": "FOREIGN KEY (town_id, npc_id) REFERENCES npcs(town_id, id) ON DELETE RESTRICT",
+        "fk_npc_player_relationships__player": "FOREIGN KEY (town_id, player_id) REFERENCES players(town_id, id) ON DELETE RESTRICT",
+        "fk_npc_player_relationships__updated_event": "FOREIGN KEY (town_id, updated_event_id) REFERENCES world_events(town_id, id) ON DELETE RESTRICT",
+        "pk_npc_player_relationships": "PRIMARY KEY (town_id ASC, npc_id ASC, player_id ASC)"
+      },
+      "indexes": {
+        "pk_npc_player_relationships": "CREATE UNIQUE INDEX pk_npc_player_relationships ON public.npc_player_relationships USING btree (town_id ASC, npc_id ASC, player_id ASC)"
+      }
+    },
+    "npcs": {
+      "columns": {
+        "actor_type": {
+          "type": "text",
+          "nullable": false,
+          "default": "'npc'",
+          "generated": ""
+        },
+        "character_entity_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "character_entity_type": {
+          "type": "text",
+          "nullable": false,
+          "default": "'character'",
+          "generated": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "location_entity_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "location_entity_type": {
+          "type": "text",
+          "nullable": false,
+          "default": "'location'",
+          "generated": ""
+        },
+        "profile_key": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "profile_version": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_npcs__actor_type": "CHECK ((actor_type = 'npc'::STRING))",
+        "ck_npcs__character_entity_type": "CHECK ((character_entity_type = 'character'::STRING))",
+        "ck_npcs__location_entity_type": "CHECK ((location_entity_type = 'location'::STRING))",
+        "fk_npcs__actor": "FOREIGN KEY (town_id, id, actor_type) REFERENCES actors(town_id, id, actor_type) ON DELETE RESTRICT",
+        "fk_npcs__character": "FOREIGN KEY (town_id, character_entity_id, character_entity_type) REFERENCES story_entities(town_id, id, entity_type) ON DELETE RESTRICT",
+        "fk_npcs__location": "FOREIGN KEY (town_id, location_entity_id, location_entity_type) REFERENCES story_entities(town_id, id, entity_type) ON DELETE RESTRICT",
+        "pk_npcs": "PRIMARY KEY (town_id ASC, id ASC)",
+        "uq_npcs__character": "UNIQUE (town_id ASC, character_entity_id ASC)"
+      },
+      "indexes": {
+        "pk_npcs": "CREATE UNIQUE INDEX pk_npcs ON public.npcs USING btree (town_id ASC, id ASC)",
+        "uq_npcs__character": "CREATE UNIQUE INDEX uq_npcs__character ON public.npcs USING btree (town_id ASC, character_entity_id ASC)"
+      }
+    },
+    "outbox": {
+      "columns": {
+        "after_event_sequence": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "delivery_status": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "job_key": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "job_type": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "last_error_code": {
+          "type": "text",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "next_send_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "not_before": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "payload": {
+          "type": "jsonb",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "payload_hash": {
+          "type": "bytea",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "send_attempt_count": {
+          "type": "integer",
+          "nullable": false,
+          "default": "0",
+          "generated": ""
+        },
+        "send_expires_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "send_token": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "sent_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "source_event_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "through_event_sequence": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "transition_deadline_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "visit_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_outbox__delivery_shape": "CHECK ((CASE delivery_status WHEN 'pending'::STRING THEN (((send_token IS NULL) AND (send_expires_at IS NULL)) AND (sent_at IS NULL)) AND (last_error_code IS NULL) WHEN 'sending'::STRING THEN ((send_token IS NOT NULL) AND (send_expires_at IS NOT NULL)) AND (sent_at IS NULL) WHEN 'sent'::STRING THEN ((send_token IS NULL) AND (send_expires_at IS NULL)) AND (sent_at IS NOT NULL) WHEN 'abandoned'::STRING THEN ((send_token IS NULL) AND (send_expires_at IS NULL)) AND (last_error_code IS NOT NULL) ELSE false END))",
+        "ck_outbox__delivery_status": "CHECK ((delivery_status IN ('pending'::STRING, 'sending'::STRING, 'sent'::STRING, 'abandoned'::STRING)))",
+        "ck_outbox__job_type": "CHECK ((job_type IN ('ambient_tick'::STRING,)))",
+        "ck_outbox__payload_hash_length": "CHECK ((length(payload_hash) = 32))",
+        "ck_outbox__range": "CHECK (((after_event_sequence >= 0) AND (through_event_sequence > after_event_sequence)))",
+        "ck_outbox__send_attempt_count": "CHECK ((send_attempt_count >= 0))",
+        "fk_outbox__source_event": "FOREIGN KEY (town_id, source_event_id) REFERENCES world_events(town_id, id) ON DELETE RESTRICT",
+        "fk_outbox__visit": "FOREIGN KEY (town_id, visit_id) REFERENCES player_visits(town_id, id) ON DELETE RESTRICT",
+        "pk_outbox": "PRIMARY KEY (town_id ASC, id ASC)",
+        "uq_outbox__job_key": "UNIQUE (town_id ASC, job_key ASC)",
+        "uq_outbox__visit_job_type": "UNIQUE (town_id ASC, visit_id ASC, job_type ASC)"
+      },
+      "indexes": {
+        "ix_outbox__delivery": "CREATE INDEX ix_outbox__delivery ON public.outbox USING btree (town_id ASC, delivery_status ASC, next_send_at ASC, send_expires_at ASC, transition_deadline_at ASC)",
+        "pk_outbox": "CREATE UNIQUE INDEX pk_outbox ON public.outbox USING btree (town_id ASC, id ASC)",
+        "uq_outbox__job_key": "CREATE UNIQUE INDEX uq_outbox__job_key ON public.outbox USING btree (town_id ASC, job_key ASC)",
+        "uq_outbox__visit_job_type": "CREATE UNIQUE INDEX uq_outbox__visit_job_type ON public.outbox USING btree (town_id ASC, visit_id ASC, job_type ASC)"
+      }
+    },
+    "player_actions": {
+      "columns": {
+        "action_kind": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "attempt_count": {
+          "type": "integer",
+          "nullable": false,
+          "default": "0",
+          "generated": ""
+        },
+        "completed_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "error_code": {
+          "type": "text",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "idempotency_key": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "outcome": {
+          "type": "text",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "player_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "processing_expires_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "processing_token": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "request_hash": {
+          "type": "bytea",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "request_payload": {
+          "type": "jsonb",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "response_payload": {
+          "type": "jsonb",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "response_status": {
+          "type": "integer",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "retry_after_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "status": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "target_actor_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "target_entity_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "visit_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_player_actions__action_kind": "CHECK ((action_kind IN ('start_visit'::STRING, 'travel'::STRING, 'inspect'::STRING, 'ask'::STRING, 'normalize_claim'::STRING, 'tell'::STRING, 'show'::STRING, 'give'::STRING, 'accept_promise'::STRING, 'add_note'::STRING, 'leave'::STRING, 'accuse'::STRING, 'resolve'::STRING)))",
+        "ck_player_actions__attempt_count": "CHECK ((attempt_count >= 0))",
+        "ck_player_actions__claim": "CHECK ((CASE status WHEN 'processing'::STRING THEN (processing_token IS NOT NULL) AND (processing_expires_at IS NOT NULL) ELSE (processing_token IS NULL) AND (processing_expires_at IS NULL) END))",
+        "ck_player_actions__outcome": "CHECK (((outcome IS NULL) OR (outcome IN ('applied'::STRING, 'no_change'::STRING, 'denied'::STRING))))",
+        "ck_player_actions__request_hash_length": "CHECK ((length(request_hash) = 32))",
+        "ck_player_actions__state_fields": "CHECK ((CASE status WHEN 'processing'::STRING THEN (((((outcome IS NULL) AND (response_status IS NULL)) AND (response_payload IS NULL)) AND (error_code IS NULL)) AND (retry_after_at IS NULL)) AND (completed_at IS NULL) WHEN 'retryable'::STRING THEN (((((outcome IS NULL) AND (response_status = 409)) AND (error_code = 'ACTION_CONFLICT'::STRING)) AND (response_payload IS NOT NULL)) AND (retry_after_at IS NOT NULL)) AND (completed_at IS NULL) WHEN 'completed'::STRING THEN ((((outcome IS NOT NULL) AND (response_status IS NOT NULL)) AND (response_payload IS NOT NULL)) AND (retry_after_at IS NULL)) AND (completed_at IS NOT NULL) WHEN 'failed'::STRING THEN (((((outcome IS NULL) AND (response_status IS NOT NULL)) AND (response_payload IS NOT NULL)) AND (error_code IS NOT NULL)) AND (retry_after_at IS NULL)) AND (completed_at IS NOT NULL) ELSE false END))",
+        "ck_player_actions__status": "CHECK ((status IN ('processing'::STRING, 'retryable'::STRING, 'completed'::STRING, 'failed'::STRING)))",
+        "fk_player_actions__player": "FOREIGN KEY (town_id, player_id) REFERENCES players(town_id, id) ON DELETE RESTRICT",
+        "fk_player_actions__target_actor": "FOREIGN KEY (town_id, target_actor_id) REFERENCES actors(town_id, id) ON DELETE RESTRICT",
+        "fk_player_actions__target_entity": "FOREIGN KEY (town_id, target_entity_id) REFERENCES story_entities(town_id, id) ON DELETE RESTRICT",
+        "fk_player_actions__visit": "FOREIGN KEY (town_id, visit_id) REFERENCES player_visits(town_id, id) ON DELETE RESTRICT",
+        "pk_player_actions": "PRIMARY KEY (town_id ASC, id ASC)",
+        "uq_player_actions__idempotency_key": "UNIQUE (town_id ASC, player_id ASC, idempotency_key ASC)",
+        "uq_player_actions__one_processing": "UNIQUE (town_id ASC, player_id ASC) WHERE (status = 'processing'::STRING)"
+      },
+      "indexes": {
+        "ix_player_actions__retryable": "CREATE INDEX ix_player_actions__retryable ON public.player_actions USING btree (retry_after_at ASC) WHERE (status = 'retryable'::STRING)",
+        "ix_player_actions__stale": "CREATE INDEX ix_player_actions__stale ON public.player_actions USING btree (processing_expires_at ASC) WHERE (status = 'processing'::STRING)",
+        "pk_player_actions": "CREATE UNIQUE INDEX pk_player_actions ON public.player_actions USING btree (town_id ASC, id ASC)",
+        "uq_player_actions__idempotency_key": "CREATE UNIQUE INDEX uq_player_actions__idempotency_key ON public.player_actions USING btree (town_id ASC, player_id ASC, idempotency_key ASC)",
+        "uq_player_actions__one_processing": "CREATE UNIQUE INDEX uq_player_actions__one_processing ON public.player_actions USING btree (town_id ASC, player_id ASC) WHERE (status = 'processing'::STRING)"
+      }
+    },
+    "player_capabilities": {
+      "columns": {
+        "capability_key": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "granted_event_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "player_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "revoked_event_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "status": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_player_capabilities__revocation": "CHECK (((status = 'revoked'::STRING) = (revoked_event_id IS NOT NULL)))",
+        "ck_player_capabilities__status": "CHECK ((status IN ('granted'::STRING, 'revoked'::STRING)))",
+        "fk_player_capabilities__granted_event": "FOREIGN KEY (town_id, granted_event_id) REFERENCES world_events(town_id, id) ON DELETE RESTRICT",
+        "fk_player_capabilities__player": "FOREIGN KEY (town_id, player_id) REFERENCES players(town_id, id) ON DELETE RESTRICT",
+        "fk_player_capabilities__revoked_event": "FOREIGN KEY (town_id, revoked_event_id) REFERENCES world_events(town_id, id) ON DELETE RESTRICT",
+        "pk_player_capabilities": "PRIMARY KEY (town_id ASC, id ASC)",
+        "uq_player_capabilities__player_key": "UNIQUE (town_id ASC, player_id ASC, capability_key ASC)"
+      },
+      "indexes": {
+        "pk_player_capabilities": "CREATE UNIQUE INDEX pk_player_capabilities ON public.player_capabilities USING btree (town_id ASC, id ASC)",
+        "uq_player_capabilities__player_key": "CREATE UNIQUE INDEX uq_player_capabilities__player_key ON public.player_capabilities USING btree (town_id ASC, player_id ASC, capability_key ASC)"
+      }
+    },
+    "player_sessions": {
+      "columns": {
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "join_request_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "last_cookie_issued_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "player_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "status": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "token_hash": {
+          "type": "bytea",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_player_sessions__cookie_issued_after_creation": "CHECK ((last_cookie_issued_at >= created_at))",
+        "ck_player_sessions__status": "CHECK ((status IN ('active'::STRING, 'revoked'::STRING)))",
+        "ck_player_sessions__token_hash_length": "CHECK ((length(token_hash) = 32))",
+        "fk_player_sessions__join_request": "FOREIGN KEY (town_id, join_request_id) REFERENCES join_requests(town_id, idempotency_key) ON DELETE RESTRICT",
+        "fk_player_sessions__player": "FOREIGN KEY (town_id, player_id) REFERENCES players(town_id, id) ON DELETE RESTRICT",
+        "pk_player_sessions": "PRIMARY KEY (town_id ASC, id ASC)",
+        "uq_player_sessions__token_hash": "UNIQUE (town_id ASC, token_hash ASC)"
+      },
+      "indexes": {
+        "ix_player_sessions__join_request": "CREATE INDEX ix_player_sessions__join_request ON public.player_sessions USING btree (town_id ASC, join_request_id ASC)",
+        "ix_player_sessions__player_status": "CREATE INDEX ix_player_sessions__player_status ON public.player_sessions USING btree (town_id ASC, player_id ASC, status ASC)",
+        "pk_player_sessions": "CREATE UNIQUE INDEX pk_player_sessions ON public.player_sessions USING btree (town_id ASC, id ASC)",
+        "uq_player_sessions__token_hash": "CREATE UNIQUE INDEX uq_player_sessions__token_hash ON public.player_sessions USING btree (town_id ASC, token_hash ASC)"
+      }
+    },
+    "player_visits": {
+      "columns": {
+        "current_location_entity_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "current_location_entity_type": {
+          "type": "text",
+          "nullable": false,
+          "default": "'location'",
+          "generated": ""
+        },
+        "end_reason": {
+          "type": "text",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "end_revision": {
+          "type": "bigint",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "ended_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "ended_by_action_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "player_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "start_revision": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "started_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "started_by_action_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "status": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_player_visits__bounds": "CHECK ((((ended_at IS NULL) OR (ended_at >= started_at)) AND ((end_revision IS NULL) OR (end_revision >= start_revision))))",
+        "ck_player_visits__end_fields": "CHECK ((CASE status WHEN 'active'::STRING THEN (((end_revision IS NULL) AND (ended_by_action_id IS NULL)) AND (end_reason IS NULL)) AND (ended_at IS NULL) WHEN 'ended'::STRING THEN (((end_revision IS NOT NULL) AND (ended_by_action_id IS NOT NULL)) AND (end_reason IS NOT NULL)) AND (ended_at IS NOT NULL) ELSE false END))",
+        "ck_player_visits__end_reason": "CHECK (((end_reason IS NULL) OR (end_reason IN ('left_town'::STRING, 'town_resolved'::STRING))))",
+        "ck_player_visits__location_entity_type": "CHECK ((current_location_entity_type = 'location'::STRING))",
+        "ck_player_visits__start_revision": "CHECK ((start_revision >= 0))",
+        "ck_player_visits__status": "CHECK ((status IN ('active'::STRING, 'ended'::STRING)))",
+        "fk_player_visits__ended_by_action": "FOREIGN KEY (town_id, ended_by_action_id) REFERENCES player_actions(town_id, id) ON DELETE RESTRICT",
+        "fk_player_visits__location": "FOREIGN KEY (town_id, current_location_entity_id, current_location_entity_type) REFERENCES story_entities(town_id, id, entity_type) ON DELETE RESTRICT",
+        "fk_player_visits__player": "FOREIGN KEY (town_id, player_id) REFERENCES players(town_id, id) ON DELETE RESTRICT",
+        "fk_player_visits__started_by_action": "FOREIGN KEY (town_id, started_by_action_id) REFERENCES player_actions(town_id, id) ON DELETE RESTRICT",
+        "pk_player_visits": "PRIMARY KEY (town_id ASC, id ASC)",
+        "uq_player_visits__active": "UNIQUE (town_id ASC, player_id ASC) WHERE (status = 'active'::STRING)"
+      },
+      "indexes": {
+        "pk_player_visits": "CREATE UNIQUE INDEX pk_player_visits ON public.player_visits USING btree (town_id ASC, id ASC)",
+        "uq_player_visits__active": "CREATE UNIQUE INDEX uq_player_visits__active ON public.player_visits USING btree (town_id ASC, player_id ASC) WHERE (status = 'active'::STRING)"
+      }
+    },
+    "players": {
+      "columns": {
+        "actor_type": {
+          "type": "text",
+          "nullable": false,
+          "default": "'player'",
+          "generated": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "last_seen_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_players__actor_type": "CHECK ((actor_type = 'player'::STRING))",
+        "fk_players__actor": "FOREIGN KEY (town_id, id, actor_type) REFERENCES actors(town_id, id, actor_type) ON DELETE RESTRICT",
+        "pk_players": "PRIMARY KEY (town_id ASC, id ASC)"
+      },
+      "indexes": {
+        "pk_players": "CREATE UNIQUE INDEX pk_players ON public.players USING btree (town_id ASC, id ASC)"
+      }
+    },
+    "promises": {
+      "columns": {
+        "accepted_event_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "item_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "kind": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "npc_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "player_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "protected_claim_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "resolved_event_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "status": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "terms_version": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_promises__kind": "CHECK ((kind IN ('keep_secret'::STRING, 'return_item'::STRING)))",
+        "ck_promises__resolution": "CHECK (((status != 'active'::STRING) = (resolved_event_id IS NOT NULL)))",
+        "ck_promises__status": "CHECK ((status IN ('active'::STRING, 'fulfilled'::STRING, 'broken'::STRING)))",
+        "ck_promises__subject_matches_kind": "CHECK ((CASE kind WHEN 'keep_secret'::STRING THEN (protected_claim_id IS NOT NULL) AND (item_id IS NULL) WHEN 'return_item'::STRING THEN (item_id IS NOT NULL) AND (protected_claim_id IS NULL) ELSE false END))",
+        "fk_promises__accepted_event": "FOREIGN KEY (town_id, accepted_event_id) REFERENCES world_events(town_id, id) ON DELETE RESTRICT",
+        "fk_promises__item": "FOREIGN KEY (town_id, item_id) REFERENCES items(town_id, id) ON DELETE RESTRICT",
+        "fk_promises__npc": "FOREIGN KEY (town_id, npc_id) REFERENCES npcs(town_id, id) ON DELETE RESTRICT",
+        "fk_promises__player": "FOREIGN KEY (town_id, player_id) REFERENCES players(town_id, id) ON DELETE RESTRICT",
+        "fk_promises__protected_claim": "FOREIGN KEY (town_id, protected_claim_id) REFERENCES claims(town_id, id) ON DELETE RESTRICT",
+        "fk_promises__resolved_event": "FOREIGN KEY (town_id, resolved_event_id) REFERENCES world_events(town_id, id) ON DELETE RESTRICT",
+        "pk_promises": "PRIMARY KEY (town_id ASC, id ASC)",
+        "uq_promises__active_item": "UNIQUE (town_id ASC, npc_id ASC, player_id ASC, item_id ASC) WHERE ((status = 'active'::STRING) AND (kind = 'return_item'::STRING))",
+        "uq_promises__active_secret": "UNIQUE (town_id ASC, npc_id ASC, player_id ASC, protected_claim_id ASC) WHERE ((status = 'active'::STRING) AND (kind = 'keep_secret'::STRING))"
+      },
+      "indexes": {
+        "pk_promises": "CREATE UNIQUE INDEX pk_promises ON public.promises USING btree (town_id ASC, id ASC)",
+        "uq_promises__active_item": "CREATE UNIQUE INDEX uq_promises__active_item ON public.promises USING btree (town_id ASC, npc_id ASC, player_id ASC, item_id ASC) WHERE ((status = 'active'::STRING) AND (kind = 'return_item'::STRING))",
+        "uq_promises__active_secret": "CREATE UNIQUE INDEX uq_promises__active_secret ON public.promises USING btree (town_id ASC, npc_id ASC, player_id ASC, protected_claim_id ASC) WHERE ((status = 'active'::STRING) AND (kind = 'keep_secret'::STRING))"
+      }
+    },
+    "relationship_changes": {
+      "columns": {
+        "claim_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "clue_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "event_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "item_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "npc_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "player_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "promise_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "reason_kind": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "rule_version": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "source_root_transmission_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "suspicion_delta": {
+          "type": "integer",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "trust_delta": {
+          "type": "integer",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_relationship_changes__delta_range": "CHECK (((trust_delta BETWEEN -200 AND 200) AND (suspicion_delta BETWEEN -200 AND 200)))",
+        "ck_relationship_changes__non_zero": "CHECK (((trust_delta != 0) OR (suspicion_delta != 0)))",
+        "ck_relationship_changes__reason_kind": "CHECK ((reason_kind IN ('verified_testimony'::STRING, 'evidence_presented'::STRING, 'requested_item_given'::STRING, 'promise_fulfilled'::STRING, 'lie_established'::STRING, 'promise_broken'::STRING)))",
+        "ck_relationship_changes__shape": "CHECK ((CASE reason_kind WHEN 'verified_testimony'::STRING THEN ((((claim_id IS NOT NULL) AND (clue_id IS NOT NULL)) AND (source_root_transmission_id IS NOT NULL)) AND (item_id IS NULL)) AND (promise_id IS NULL) WHEN 'evidence_presented'::STRING THEN ((clue_id IS NOT NULL) AND (item_id IS NULL)) AND (promise_id IS NULL) WHEN 'requested_item_given'::STRING THEN (((item_id IS NOT NULL) AND (claim_id IS NULL)) AND (clue_id IS NULL)) AND (promise_id IS NULL) WHEN 'promise_fulfilled'::STRING THEN (((promise_id IS NOT NULL) AND (claim_id IS NULL)) AND (clue_id IS NULL)) AND (item_id IS NULL) WHEN 'promise_broken'::STRING THEN (((promise_id IS NOT NULL) AND (claim_id IS NULL)) AND (clue_id IS NULL)) AND (item_id IS NULL) WHEN 'lie_established'::STRING THEN (((claim_id IS NOT NULL) AND (source_root_transmission_id IS NOT NULL)) AND (item_id IS NULL)) AND (promise_id IS NULL) ELSE false END))",
+        "fk_relationship_changes__claim": "FOREIGN KEY (town_id, claim_id) REFERENCES claims(town_id, id) ON DELETE RESTRICT",
+        "fk_relationship_changes__clue": "FOREIGN KEY (town_id, clue_id) REFERENCES clues(town_id, id) ON DELETE RESTRICT",
+        "fk_relationship_changes__event": "FOREIGN KEY (town_id, event_id) REFERENCES world_events(town_id, id) ON DELETE RESTRICT",
+        "fk_relationship_changes__item": "FOREIGN KEY (town_id, item_id) REFERENCES items(town_id, id) ON DELETE RESTRICT",
+        "fk_relationship_changes__npc": "FOREIGN KEY (town_id, npc_id) REFERENCES npcs(town_id, id) ON DELETE RESTRICT",
+        "fk_relationship_changes__player": "FOREIGN KEY (town_id, player_id) REFERENCES players(town_id, id) ON DELETE RESTRICT",
+        "fk_relationship_changes__promise": "FOREIGN KEY (town_id, promise_id) REFERENCES promises(town_id, id) ON DELETE RESTRICT",
+        "fk_relationship_changes__source_root": "FOREIGN KEY (town_id, source_root_transmission_id) REFERENCES claim_transmissions(town_id, id) ON DELETE RESTRICT",
+        "pk_relationship_changes": "PRIMARY KEY (town_id ASC, id ASC)",
+        "uq_relationship_changes__claim_trigger": "UNIQUE (town_id ASC, npc_id ASC, player_id ASC, reason_kind ASC, claim_id ASC) WHERE (reason_kind IN ('verified_testimony'::STRING, 'lie_established'::STRING))",
+        "uq_relationship_changes__clue_trigger": "UNIQUE (town_id ASC, npc_id ASC, player_id ASC, reason_kind ASC, clue_id ASC) WHERE (reason_kind = 'evidence_presented'::STRING)",
+        "uq_relationship_changes__item_trigger": "UNIQUE (town_id ASC, npc_id ASC, player_id ASC, reason_kind ASC, item_id ASC) WHERE (reason_kind = 'requested_item_given'::STRING)",
+        "uq_relationship_changes__promise_trigger": "UNIQUE (town_id ASC, promise_id ASC, reason_kind ASC) WHERE (reason_kind IN ('promise_fulfilled'::STRING, 'promise_broken'::STRING))"
+      },
+      "indexes": {
+        "ix_relationship_changes__timeline": "CREATE INDEX ix_relationship_changes__timeline ON public.relationship_changes USING btree (town_id ASC, npc_id ASC, player_id ASC, created_at ASC)",
+        "pk_relationship_changes": "CREATE UNIQUE INDEX pk_relationship_changes ON public.relationship_changes USING btree (town_id ASC, id ASC)",
+        "uq_relationship_changes__claim_trigger": "CREATE UNIQUE INDEX uq_relationship_changes__claim_trigger ON public.relationship_changes USING btree (town_id ASC, npc_id ASC, player_id ASC, reason_kind ASC, claim_id ASC) WHERE (reason_kind IN ('verified_testimony'::STRING, 'lie_established'::STRING))",
+        "uq_relationship_changes__clue_trigger": "CREATE UNIQUE INDEX uq_relationship_changes__clue_trigger ON public.relationship_changes USING btree (town_id ASC, npc_id ASC, player_id ASC, reason_kind ASC, clue_id ASC) WHERE (reason_kind = 'evidence_presented'::STRING)",
+        "uq_relationship_changes__item_trigger": "CREATE UNIQUE INDEX uq_relationship_changes__item_trigger ON public.relationship_changes USING btree (town_id ASC, npc_id ASC, player_id ASC, reason_kind ASC, item_id ASC) WHERE (reason_kind = 'requested_item_given'::STRING)",
+        "uq_relationship_changes__promise_trigger": "CREATE UNIQUE INDEX uq_relationship_changes__promise_trigger ON public.relationship_changes USING btree (town_id ASC, promise_id ASC, reason_kind ASC) WHERE (reason_kind IN ('promise_fulfilled'::STRING, 'promise_broken'::STRING))"
+      }
+    },
+    "schema_migrations": {
+      "columns": {
+        "applied_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()",
+          "generated": ""
+        },
+        "checksum": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "name": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "version": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "schema_migrations_pkey": "PRIMARY KEY (version ASC)"
+      },
+      "indexes": {
+        "schema_migrations_pkey": "CREATE UNIQUE INDEX schema_migrations_pkey ON public.schema_migrations USING btree (version ASC)"
+      }
+    },
+    "story_entities": {
+      "columns": {
+        "content_key": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "display_name": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "entity_key": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "entity_type": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_story_entities__entity_type": "CHECK ((entity_type IN ('character'::STRING, 'location'::STRING, 'item'::STRING, 'motive'::STRING)))",
+        "fk_story_entities__town": "FOREIGN KEY (town_id) REFERENCES towns(id) ON DELETE RESTRICT",
+        "pk_story_entities": "PRIMARY KEY (town_id ASC, id ASC)",
+        "uq_story_entities__entity_key": "UNIQUE (town_id ASC, entity_key ASC)",
+        "uq_story_entities__typed_identity": "UNIQUE (town_id ASC, id ASC, entity_type ASC)"
+      },
+      "indexes": {
+        "pk_story_entities": "CREATE UNIQUE INDEX pk_story_entities ON public.story_entities USING btree (town_id ASC, id ASC)",
+        "uq_story_entities__entity_key": "CREATE UNIQUE INDEX uq_story_entities__entity_key ON public.story_entities USING btree (town_id ASC, entity_key ASC)",
+        "uq_story_entities__typed_identity": "CREATE UNIQUE INDEX uq_story_entities__typed_identity ON public.story_entities USING btree (town_id ASC, id ASC, entity_type ASC)"
+      }
+    },
+    "town_creation_requests": {
+      "columns": {
+        "attempt_count": {
+          "type": "integer",
+          "nullable": false,
+          "default": "0",
+          "generated": ""
+        },
+        "completed_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "content_version": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "error_code": {
+          "type": "text",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "idempotency_key": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "processing_expires_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "processing_token": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "request_hash": {
+          "type": "bytea",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "response_payload": {
+          "type": "jsonb",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "response_status": {
+          "type": "integer",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "security_key_version": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "status": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_town_creation_requests__attempt_count": "CHECK ((attempt_count >= 0))",
+        "ck_town_creation_requests__claim": "CHECK ((CASE status WHEN 'processing'::STRING THEN (processing_token IS NOT NULL) AND (processing_expires_at IS NOT NULL) ELSE (processing_token IS NULL) AND (processing_expires_at IS NULL) END))",
+        "ck_town_creation_requests__request_hash_length": "CHECK ((length(request_hash) = 32))",
+        "ck_town_creation_requests__status": "CHECK ((status IN ('processing'::STRING, 'completed'::STRING, 'failed'::STRING)))",
+        "ck_town_creation_requests__terminal_fields": "CHECK ((CASE status WHEN 'processing'::STRING THEN ((((town_id IS NULL) AND (response_status IS NULL)) AND (response_payload IS NULL)) AND (error_code IS NULL)) AND (completed_at IS NULL) WHEN 'completed'::STRING THEN ((((town_id IS NOT NULL) AND (response_status IS NOT NULL)) AND (response_payload IS NOT NULL)) AND (error_code IS NULL)) AND (completed_at IS NOT NULL) WHEN 'failed'::STRING THEN (((response_status IS NOT NULL) AND (response_payload IS NOT NULL)) AND (error_code IS NOT NULL)) AND (completed_at IS NOT NULL) ELSE false END))",
+        "fk_town_creation_requests__town": "FOREIGN KEY (town_id) REFERENCES towns(id) ON DELETE RESTRICT",
+        "pk_town_creation_requests": "PRIMARY KEY (idempotency_key ASC)"
+      },
+      "indexes": {
+        "ix_town_creation_requests__stale": "CREATE INDEX ix_town_creation_requests__stale ON public.town_creation_requests USING btree (processing_expires_at ASC) WHERE (status = 'processing'::STRING)",
+        "pk_town_creation_requests": "CREATE UNIQUE INDEX pk_town_creation_requests ON public.town_creation_requests USING btree (idempotency_key ASC)"
+      }
+    },
+    "town_resolutions": {
+      "columns": {
+        "case_attempt_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "choice": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "chosen_by_player_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "event_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_town_resolutions__choice": "CHECK ((choice IN ('expose_cover_up'::STRING, 'restore_bell_quietly'::STRING)))",
+        "fk_town_resolutions__attempt": "FOREIGN KEY (town_id, case_attempt_id) REFERENCES case_attempts(town_id, id) ON DELETE RESTRICT",
+        "fk_town_resolutions__event": "FOREIGN KEY (town_id, event_id) REFERENCES world_events(town_id, id) ON DELETE RESTRICT",
+        "fk_town_resolutions__player": "FOREIGN KEY (town_id, chosen_by_player_id) REFERENCES players(town_id, id) ON DELETE RESTRICT",
+        "fk_town_resolutions__town": "FOREIGN KEY (town_id) REFERENCES towns(id) ON DELETE RESTRICT",
+        "pk_town_resolutions": "PRIMARY KEY (town_id ASC)"
+      },
+      "indexes": {
+        "pk_town_resolutions": "CREATE UNIQUE INDEX pk_town_resolutions ON public.town_resolutions USING btree (town_id ASC)"
+      }
+    },
+    "towns": {
+      "columns": {
+        "ambient_scheduled_through_sequence": {
+          "type": "bigint",
+          "nullable": false,
+          "default": "0",
+          "generated": ""
+        },
+        "content_version": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "invite_token_hash": {
+          "type": "bytea",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "last_event_sequence": {
+          "type": "bigint",
+          "nullable": false,
+          "default": "0",
+          "generated": ""
+        },
+        "resolution_owner_player_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "resolution_reservation_expires_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "resolved_at": {
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "revision": {
+          "type": "bigint",
+          "nullable": false,
+          "default": "0",
+          "generated": ""
+        },
+        "status": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "winning_case_attempt_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_towns__ambient_boundary": "CHECK ((ambient_scheduled_through_sequence <= last_event_sequence))",
+        "ck_towns__counters_non_negative": "CHECK ((((revision >= 0) AND (last_event_sequence >= 0)) AND (ambient_scheduled_through_sequence >= 0)))",
+        "ck_towns__invite_token_hash_length": "CHECK ((length(invite_token_hash) = 32))",
+        "ck_towns__resolution_reservation": "CHECK ((CASE status WHEN 'active'::STRING THEN ((winning_case_attempt_id IS NULL) AND (resolution_owner_player_id IS NULL)) AND (resolution_reservation_expires_at IS NULL) WHEN 'awaiting_resolution'::STRING THEN ((winning_case_attempt_id IS NOT NULL) AND (resolution_owner_player_id IS NOT NULL)) AND (resolution_reservation_expires_at IS NOT NULL) WHEN 'resolved'::STRING THEN ((winning_case_attempt_id IS NOT NULL) AND (resolution_owner_player_id IS NOT NULL)) AND (resolution_reservation_expires_at IS NOT NULL) ELSE true END))",
+        "ck_towns__resolved_at": "CHECK ((CASE status WHEN 'active'::STRING THEN resolved_at IS NULL WHEN 'awaiting_resolution'::STRING THEN resolved_at IS NULL WHEN 'resolved'::STRING THEN resolved_at IS NOT NULL ELSE true END))",
+        "ck_towns__status": "CHECK ((status IN ('active'::STRING, 'awaiting_resolution'::STRING, 'resolved'::STRING, 'retired'::STRING)))",
+        "fk_towns__resolution_owner": "FOREIGN KEY (id, resolution_owner_player_id) REFERENCES players(town_id, id) ON DELETE RESTRICT",
+        "fk_towns__winning_case_attempt": "FOREIGN KEY (id, winning_case_attempt_id) REFERENCES case_attempts(town_id, id) ON DELETE RESTRICT",
+        "pk_towns": "PRIMARY KEY (id ASC)",
+        "uq_towns__invite_token_hash": "UNIQUE (invite_token_hash ASC)"
+      },
+      "indexes": {
+        "pk_towns": "CREATE UNIQUE INDEX pk_towns ON public.towns USING btree (id ASC)",
+        "uq_towns__invite_token_hash": "CREATE UNIQUE INDEX uq_towns__invite_token_hash ON public.towns USING btree (invite_token_hash ASC)"
+      }
+    },
+    "world_events": {
+      "columns": {
+        "actor_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "ambient_eligible": {
+          "type": "boolean",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "ambient_job_execution_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "claim_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "clue_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "effect_index": {
+          "type": "integer",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "effect_key": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "event_type": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "location_entity_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "occurred_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "origin_kind": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "payload": {
+          "type": "jsonb",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "player_action_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "promise_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "sequence_no": {
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "subject_entity_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "target_actor_id": {
+          "type": "uuid",
+          "nullable": true,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_world_events__effect_index": "CHECK ((effect_index >= 0))",
+        "ck_world_events__event_type": "CHECK ((event_type IN ('authored_observation'::STRING, 'visit_started'::STRING, 'travelled'::STRING, 'inspected'::STRING, 'clue_discovered'::STRING, 'npc_interaction'::STRING, 'claim_transmitted'::STRING, 'evidence_shown'::STRING, 'item_transferred'::STRING, 'item_relocated'::STRING, 'promise_accepted'::STRING, 'promise_fulfilled'::STRING, 'promise_broken'::STRING, 'capability_changed'::STRING, 'note_added'::STRING, 'visit_ended'::STRING, 'relationship_changed'::STRING, 'source_discredited'::STRING, 'case_attempted'::STRING, 'case_resolved'::STRING)))",
+        "ck_world_events__origin_kind": "CHECK ((origin_kind IN ('player_action'::STRING, 'ambient_job'::STRING, 'system_seed'::STRING)))",
+        "ck_world_events__origin_shape": "CHECK ((CASE origin_kind WHEN 'player_action'::STRING THEN (player_action_id IS NOT NULL) AND (ambient_job_execution_id IS NULL) WHEN 'ambient_job'::STRING THEN (ambient_job_execution_id IS NOT NULL) AND (player_action_id IS NULL) WHEN 'system_seed'::STRING THEN (player_action_id IS NULL) AND (ambient_job_execution_id IS NULL) ELSE false END))",
+        "ck_world_events__sequence_positive": "CHECK ((sequence_no > 0))",
+        "fk_world_events__actor": "FOREIGN KEY (town_id, actor_id) REFERENCES actors(town_id, id) ON DELETE RESTRICT",
+        "fk_world_events__ambient_execution": "FOREIGN KEY (town_id, ambient_job_execution_id) REFERENCES ambient_job_executions(town_id, id) ON DELETE RESTRICT",
+        "fk_world_events__claim": "FOREIGN KEY (town_id, claim_id) REFERENCES claims(town_id, id) ON DELETE RESTRICT",
+        "fk_world_events__clue": "FOREIGN KEY (town_id, clue_id) REFERENCES clues(town_id, id) ON DELETE RESTRICT",
+        "fk_world_events__location_entity": "FOREIGN KEY (town_id, location_entity_id) REFERENCES story_entities(town_id, id) ON DELETE RESTRICT",
+        "fk_world_events__player_action": "FOREIGN KEY (town_id, player_action_id) REFERENCES player_actions(town_id, id) ON DELETE RESTRICT",
+        "fk_world_events__promise": "FOREIGN KEY (town_id, promise_id) REFERENCES promises(town_id, id) ON DELETE RESTRICT",
+        "fk_world_events__subject_entity": "FOREIGN KEY (town_id, subject_entity_id) REFERENCES story_entities(town_id, id) ON DELETE RESTRICT",
+        "fk_world_events__target_actor": "FOREIGN KEY (town_id, target_actor_id) REFERENCES actors(town_id, id) ON DELETE RESTRICT",
+        "pk_world_events": "PRIMARY KEY (town_id ASC, id ASC)",
+        "uq_world_events__ambient_effect": "UNIQUE (town_id ASC, ambient_job_execution_id ASC, effect_index ASC) WHERE (ambient_job_execution_id IS NOT NULL)",
+        "uq_world_events__effect_key": "UNIQUE (town_id ASC, effect_key ASC)",
+        "uq_world_events__player_effect": "UNIQUE (town_id ASC, player_action_id ASC, effect_index ASC) WHERE (player_action_id IS NOT NULL)",
+        "uq_world_events__sequence": "UNIQUE (town_id ASC, sequence_no ASC)"
+      },
+      "indexes": {
+        "ix_world_events__type_time": "CREATE INDEX ix_world_events__type_time ON public.world_events USING btree (town_id ASC, event_type ASC, occurred_at DESC)",
+        "pk_world_events": "CREATE UNIQUE INDEX pk_world_events ON public.world_events USING btree (town_id ASC, id ASC)",
+        "uq_world_events__ambient_effect": "CREATE UNIQUE INDEX uq_world_events__ambient_effect ON public.world_events USING btree (town_id ASC, ambient_job_execution_id ASC, effect_index ASC) WHERE (ambient_job_execution_id IS NOT NULL)",
+        "uq_world_events__effect_key": "CREATE UNIQUE INDEX uq_world_events__effect_key ON public.world_events USING btree (town_id ASC, effect_key ASC)",
+        "uq_world_events__player_effect": "CREATE UNIQUE INDEX uq_world_events__player_effect ON public.world_events USING btree (town_id ASC, player_action_id ASC, effect_index ASC) WHERE (player_action_id IS NOT NULL)",
+        "uq_world_events__sequence": "CREATE UNIQUE INDEX uq_world_events__sequence ON public.world_events USING btree (town_id ASC, sequence_no ASC)"
+      }
+    },
+    "world_facts": {
+      "columns": {
+        "claim_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "fact_key": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "town_id": {
+          "type": "uuid",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        },
+        "visibility": {
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "generated": ""
+        }
+      },
+      "constraints": {
+        "ck_world_facts__visibility": "CHECK ((visibility IN ('hidden'::STRING, 'discoverable'::STRING, 'public'::STRING)))",
+        "fk_world_facts__claim": "FOREIGN KEY (town_id, claim_id) REFERENCES claims(town_id, id) ON DELETE RESTRICT",
+        "pk_world_facts": "PRIMARY KEY (town_id ASC, id ASC)",
+        "uq_world_facts__claim": "UNIQUE (town_id ASC, claim_id ASC)",
+        "uq_world_facts__fact_key": "UNIQUE (town_id ASC, fact_key ASC)"
+      },
+      "indexes": {
+        "pk_world_facts": "CREATE UNIQUE INDEX pk_world_facts ON public.world_facts USING btree (town_id ASC, id ASC)",
+        "uq_world_facts__claim": "CREATE UNIQUE INDEX uq_world_facts__claim ON public.world_facts USING btree (town_id ASC, claim_id ASC)",
+        "uq_world_facts__fact_key": "CREATE UNIQUE INDEX uq_world_facts__fact_key ON public.world_facts USING btree (town_id ASC, fact_key ASC)"
+      }
+    }
+  },
+  "views": []
+}
