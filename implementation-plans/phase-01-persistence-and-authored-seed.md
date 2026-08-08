@@ -1,7 +1,6 @@
 # Phase 1 — Persistence and Authored Seed
 
-- **Status:** Detailed implementation plan — see
-  [execution detail](phase-01-execution-detail.md)
+- **Status:** Complete — see [execution detail](phase-01-execution-detail.md)
 - **Depends on:** Phase 0 exit gate
 - **Produces:** The accepted 40-table CockroachDB model, inspection surface,
   and repeatable `bell-mystery-v1` town materialization

@@ -1,7 +1,7 @@
 # Phased MVP Implementation Plan
 
 - **Project:** The Town Remembers
-- **Status:** Phase 0 complete; Phases 1–8 pending
+- **Status:** Phases 0 and 1 complete; Phases 2–8 pending
 - **Date:** 2026-08-04
 - **Scope:** Implementation sequence from accepted contracts to a deployed,
   repeatable hackathon demo
@@ -63,7 +63,7 @@ rather than silently changing what an existing ID means.
 | Phase | Detailed plan | Task IDs |
 |---:|---|---|
 | 0 | [Engineering foundation](phase-00-engineering-foundation.md) — complete | `P0-01`–`P0-14` |
-| 1 | [Persistence and authored seed](phase-01-persistence-and-authored-seed.md) | `P1-01`–`P1-21` |
+| 1 | [Persistence and authored seed](phase-01-persistence-and-authored-seed.md) — complete | `P1-01`–`P1-21` |
 | 2 | [Deterministic simulation core](phase-02-deterministic-simulation-core.md) | `P2-01`–`P2-21` |
 | 3 | [First playable vertical slice](phase-03-first-playable-vertical-slice.md) | `P3-01`–`P3-19` |
 | 4 | [Grounded NPC and memory loop](phase-04-grounded-npc-and-memory-loop.md) | `P4-01`–`P4-24` |

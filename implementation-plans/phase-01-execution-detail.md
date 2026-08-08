@@ -1,6 +1,6 @@
 # Phase 1 — Execution Detail
 
-- **Status:** Working execution plan for
+- **Status:** Complete. Execution record for
   [Phase 1 — Persistence and Authored Seed](phase-01-persistence-and-authored-seed.md)
 - **Scope:** Measured database capabilities, package layout, migration file plan,
   exact seed inventory, module contracts, test cases, and command definitions for
@@ -8,6 +8,49 @@
 - **Authority:** This document refines *how* Phase 1 is built. It never redefines
   *what* decisions 001–011 accept. Where the phase plan and an accepted decision
   disagree, the decision wins and the discrepancy is recorded in section 10.
+
+## 0. Completion state
+
+All twenty-one goals are met. `pnpm validate` passes end to end, including 496
+tests of which 148 run against a real CockroachDB node.
+
+| Work | Commits |
+|---|---|
+| `P1-01` CockroachDB harness and capability probe | `01311f5`, `c3da1f4` |
+| `P1-02`/`P1-03` Migration runner, ledger, roles | `88b1142`, `3a66905` |
+| `P1-04`–`P1-10` The forty tables and deferred keys | `a897ffc`, `082a973`, `0757ded`, `baa7843` |
+| `P1-11` Required indexes and the catalog audit | `d2e18a0` |
+| `P1-19` Inspection views and least-privilege grants | `5282c75` |
+| `P1-12`/`P1-14` Bounded pool and serializable transactions | `b9b7f58` |
+| `P1-15`/`P1-16` Content registry and validation | `57a54f7` |
+| `P1-17`/`P1-18` Town materialization and seed fixtures | `5674282` |
+| `P1-20` Invariant, vector, concurrency, and inspection suites | `1c6cac7`, `2c2c387` |
+| `P1-13` Generated Kysely interface | `b079d2d` |
+| `P1-21` Documentation | `2c2c387`, `b079d2d` |
+
+Deviations from the plan below, each made during execution and each recorded
+where it was made:
+
+1. **Migration order swapped.** `0004` is claims and memory, `0005` is authored
+   truth. `world_facts` and `clue_claim_effects` reference `claims`, so putting
+   claims first removed four deferred foreign keys rather than staging them.
+2. **`episode_references` gained a surrogate key.** Without one CockroachDB adds
+   a hidden `rowid`, which would appear in the catalog audit as an unexplained
+   column.
+3. **Two provenance rules became foreign keys.** A stored `parent_eligible`
+   computed column proved sufficient to make "no hop-4 transmission may become a
+   parent" a key rather than a repository validator, and a
+   `recipient_actor_type` discriminator does the same for the NPC hop-3 ceiling.
+   Both were verified against the engine before being relied on.
+4. **`D1-D` reversed: types are generated, not hand-declared.** Generating from
+   the committed snapshot gives a chain the audit already anchors, where a
+   hand-written interface would be an independent claim needing its own proof.
+5. **The database suite runs one file at a time.** Six concurrent migration runs
+   against one local node turned a fast suite into a 120-second timeout, and
+   CockroachDB serializes schema changes regardless.
+6. **Constraint assertions read the driver's `constraint` field.** CockroachDB
+   prints the check *expression* in the message, so message matching would break
+   whenever a rendered domain list changed.
 
 ## 1. Feasibility spike
 
@@ -46,7 +89,7 @@ inherit them.
 | `D1-A` | The test database is a pinned CockroachDB binary (`v25.4.3`) downloaded into a gitignored `.cockroach/`, run as `start-single-node --insecure`. Not Docker | The Docker daemon is not reliably running on the development machine, an arm64 binary is published, and a single node satisfies every schema, constraint, grant, vector, and serialization-conflict check the phase promises |
 | `D1-B` | Every migration file runs inside one transaction with `autocommit_before_ddl = false`, together with its ledger row | Section 1 shows the default silently commits partial DDL, which would leave a half-migrated schema with no ledger entry |
 | `D1-C` | The vector index is created with its `embedding_status = 'ready'` predicate, and recall queries still filter `embedding_status = 'ready'` explicitly | The predicate is supported here, but the query-side filter keeps the accepted fallback shape correct on any cluster that lacks it |
-| `D1-D` | Kysely types are hand-declared and drift-tested against `information_schema`, not generated | `VECTOR`, `BYTES`, `DECIMAL(12,6)`, composite primary keys, and the closed string domains need branded types and insert/update narrowing that no generator emits. The drift test is the real guarantee either way |
+| `D1-D` | Kysely types are generated from the committed schema snapshot and drift-tested against it, not hand-declared (revised during execution; see section 0) | The audit already proves the snapshot matches a freshly migrated database, so generating from it extends a chain that is anchored. Branded types and update narrowing come from the generator's own rules rather than from a generator's defaults |
 | `D1-E` | Four new workspace packages: `database`, `database-admin`, `content`, `town-seed` | One package per artifact row of the phase plan. `content` has no database dependency, so authored data stays testable without a cluster, and only `database-admin` may read the operator credential |
 | `D1-F` | `claimKeyV1()` lives in `packages/content` and is implemented as `domainSeparatedPreimage("claim-key:v1", tuple)` from `@the-town-remembers/serialization` | Decision 005 defines `claim-key:v1` as the representation, not its hash. Phase 0 already exported the pre-image builder separately for exactly this |
 | `D1-G` | New configuration category `runtime-config/database` supplies `TTR_DATABASE_URL` for `app_runtime`. `TTR_MIGRATION_DATABASE_URL` stays operator-only. `TTR_TEST_DATABASE_URL` joins the test category | Keeps the three credentials in three categories with three import boundaries the workspace check can enforce |
@@ -804,3 +847,11 @@ CockroachDB has no grapheme-aware length function, so the bound is enforced by
 the write boundary using the Phase 0 `Intl.Segmenter` helper, with a coarse SQL
 byte-length check as a backstop. `P1-20` proves the bound through the repository
 path and proves that direct SQL alone cannot be relied on.
+
+### 10.6 The public schema grants CREATE to everyone by default
+
+CockroachDB follows PostgreSQL before 15: every role holds `CREATE` on the
+`public` schema unless it is revoked. `app_runtime` could therefore add tables
+while holding no explicit DDL grant at all. The grant test caught it, and
+`0013_grants.sql` now revokes that first. Least privilege here means taking
+something away before granting anything.
