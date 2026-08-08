@@ -24,3 +24,6 @@ export * from "./ambient/eligibility.js";
 export * from "./ambient/selection.js";
 export * from "./board/provenance.js";
 export * from "./board/case.js";
+export * from "./actions/dispatcher.js";
+export * from "./actions/deterministic.js";
+export * from "./actions/model-backed.js";
