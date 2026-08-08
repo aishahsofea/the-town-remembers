@@ -15,7 +15,6 @@
     }
   },
   "dependencies": {
-    "@the-town-remembers/database": "workspace:*",
     "@the-town-remembers/database-admin": "workspace:*",
     "@the-town-remembers/runtime-config": "workspace:*",
     "pg": "^8.16.3"

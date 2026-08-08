@@ -229,9 +229,6 @@ importers:
 
   packages/test-support:
     dependencies:
-      '@the-town-remembers/database':
-        specifier: workspace:*
-        version: link:../database
       '@the-town-remembers/database-admin':
         specifier: workspace:*
         version: link:../database-admin
