@@ -15,3 +15,4 @@ export * from "./beliefs/labels.js";
 export * from "./beliefs/relationships.js";
 export * from "./disclosure/tiers.js";
 export * from "./disclosure/bundle.js";
+export * from "./world/clues.js";
