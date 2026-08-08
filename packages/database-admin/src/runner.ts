@@ -64,6 +64,7 @@ import {
   VISIT_END_REASONS,
   VISIT_STATUSES,
   WORLD_FACT_VISIBILITIES,
+  sqlClaimEntityMatrix,
   sqlValueList,
 } from "@the-town-remembers/database";
 import { sha256Base64Url } from "@the-town-remembers/serialization";
@@ -79,12 +80,9 @@ export const MIGRATIONS_DIRECTORY = fileURLToPath(
   new URL("../migrations/", import.meta.url),
 );
 
-/**
- * Every substitution a migration template may reference. An unknown or unused
- * placeholder is an error, so a renamed domain cannot leave stale SQL behind.
- */
-export const SQL_SUBSTITUTIONS: Readonly<Record<string, readonly string[]>> =
-  Object.freeze({
+/** Closed domains, rendered into the `IN (…)` lists migrations embed. */
+const DOMAIN_SUBSTITUTIONS: Readonly<Record<string, readonly string[]>> = Object.freeze(
+  {
     ACTION_KINDS,
     ACTION_OUTCOMES,
     ACTION_STATUSES,
@@ -130,7 +128,24 @@ export const SQL_SUBSTITUTIONS: Readonly<Record<string, readonly string[]>> =
     VISIT_END_REASONS,
     VISIT_STATUSES,
     WORLD_FACT_VISIBILITIES,
-  });
+  },
+);
+
+/**
+ * Every substitution a migration template may reference, as finished SQL. An
+ * unknown placeholder is an error, so a renamed domain cannot leave stale SQL
+ * behind, and `{{…}}` is invalid SQL, so a missed one fails at apply time
+ * rather than creating a check that matches nothing.
+ */
+export const SQL_SUBSTITUTIONS: Readonly<Record<string, string>> = Object.freeze({
+  ...Object.fromEntries(
+    Object.entries(DOMAIN_SUBSTITUTIONS).map(([name, values]) => [
+      name,
+      sqlValueList(values),
+    ]),
+  ),
+  CLAIM_ENTITY_MATRIX: sqlClaimEntityMatrix(),
+});
 
 const PLACEHOLDER = /\{\{([A-Z0-9_]+)\}\}/g;
 const FILE_NAME = /^(\d{4})_([a-z0-9_]+)\.sql$/;
@@ -153,17 +168,17 @@ export interface Migration {
   readonly checksum: string;
 }
 
-/** Replaces `{{DOMAIN}}` with its quoted SQL value list. */
+/** Replaces `{{NAME}}` with its rendered SQL fragment. */
 export function renderSql(
   template: string,
-  substitutions: Readonly<Record<string, readonly string[]>> = SQL_SUBSTITUTIONS,
+  substitutions: Readonly<Record<string, string>> = SQL_SUBSTITUTIONS,
 ): string {
   return template.replace(PLACEHOLDER, (_match, name: string) => {
-    const values = substitutions[name];
-    if (values === undefined) {
+    const fragment = substitutions[name];
+    if (fragment === undefined) {
       throw new MigrationError(`Unknown SQL substitution {{${name}}}.`);
     }
-    return sqlValueList(values);
+    return fragment;
   });
 }
 

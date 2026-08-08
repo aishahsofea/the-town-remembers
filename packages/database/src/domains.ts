@@ -387,3 +387,26 @@ export function beliefLabelFor(score: number): BeliefLabel {
 export function sqlValueList(values: readonly string[]): string {
   return values.map((value) => `'${value}'`).join(", ");
 }
+
+/**
+ * Renders the predicate/type matrix as a SQL disjunction.
+ *
+ * Decision 005 requires the database, not application code, to enforce which
+ * entity types each predicate may relate. Generating the expression from
+ * {@link CLAIM_ENTITY_MATRIX} means `claims` and `claim_drafts` cannot disagree
+ * with each other or with the TypeScript union.
+ */
+export function sqlClaimEntityMatrix(
+  subjectColumn = "subject_entity_type",
+  predicateColumn = "predicate",
+  objectColumn = "object_entity_type",
+): string {
+  return Object.entries(CLAIM_ENTITY_MATRIX)
+    .map(
+      ([predicate, roles]) =>
+        `(${predicateColumn} = '${predicate}'` +
+        ` AND ${subjectColumn} = '${roles.subject}'` +
+        ` AND ${objectColumn} = '${roles.object}')`,
+    )
+    .join("\n    OR ");
+}
