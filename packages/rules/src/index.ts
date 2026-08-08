@@ -11,3 +11,4 @@ export * from "./claims/grammar.js";
 export * from "./claims/canonical.js";
 export * from "./claims/relations.js";
 export * from "./beliefs/evidence.js";
+export * from "./beliefs/labels.js";
