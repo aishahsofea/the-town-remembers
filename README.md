@@ -164,13 +164,19 @@ in Phases 1 through 6, and no shell in this phase claims otherwise.
 CockroachDB is the durable memory, and the tests prove it against a real one.
 
 ```sh
+corepack pnpm build
 corepack pnpm db:up
+export TTR_MIGRATION_DATABASE_URL="postgresql://root@127.0.0.1:26257/defaultdb?sslmode=disable"
 corepack pnpm db:migrate
 corepack pnpm db:seed
 ```
 
-The first command downloads a pinned CockroachDB build into an ignored
-`.cockroach/` and starts a single node; no Docker daemon is involved. The last
+`db:up` downloads a pinned CockroachDB build into an ignored `.cockroach/` and
+starts a single node; no Docker daemon is involved. The build has to come first
+because the operator commands import workspace packages through `dist`, and the
+migration credential has to be named explicitly because it is the one identity
+that can reshape the schema — it never defaults, so a mistyped command fails
+closed instead of migrating something you did not choose. The last
 prints one town's opaque ID and the beliefs its three residents start with —
 Mara convinced her sister damaged the bell, Nessa leaning toward a cover story
 she was told, Corin quietly disbelieving the story he invented.

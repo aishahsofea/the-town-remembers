@@ -61,9 +61,30 @@ or a serialization conflict, and those are precisely what the schema promises.
 a single insecure node on the loopback interface. Docker is not involved.
 
 ```sh
+corepack pnpm build
 corepack pnpm db:up
 corepack pnpm db:doctor
 ```
+
+The build comes first because the operator commands import workspace packages
+through their `dist` output, the same reason `pnpm typecheck` precedes
+`pnpm lint`. On a fresh checkout `db:doctor`, `db:migrate`, and `db:seed` fail
+with a missing-module error until something has built.
+
+Only one node can hold port 26257, and every checkout resolves the same
+`127.0.0.1:26257` by default. Start it once from whichever checkout you like;
+`db:up` in another sees the running node and reuses it rather than downloading
+a second 1.9 GB copy.
+
+`db:migrate` and `db:seed` additionally need the operator credential, which
+never defaults:
+
+```sh
+export TTR_MIGRATION_DATABASE_URL="postgresql://root@127.0.0.1:26257/defaultdb?sslmode=disable"
+```
+
+The test suite does not need it. It creates its own disposable databases
+through the test category, which does default to the local node.
 
 | Command | What it does |
 |---|---|
