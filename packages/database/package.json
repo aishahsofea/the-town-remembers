@@ -8,6 +8,18 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./schema": {
+      "types": "./dist/schema.d.ts",
+      "import": "./dist/schema.js"
+    },
+    "./brands": {
+      "types": "./dist/brands.d.ts",
+      "import": "./dist/brands.js"
+    },
+    "./domains": {
+      "types": "./dist/domains.d.ts",
+      "import": "./dist/domains.js"
     }
   },
   "dependencies": {

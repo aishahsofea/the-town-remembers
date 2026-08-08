@@ -1,0 +1,24 @@
+{
+  "name": "@the-town-remembers/rules",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@the-town-remembers/content": "workspace:*",
+    "@the-town-remembers/database": "workspace:*",
+    "@the-town-remembers/http-contracts": "workspace:*",
+    "@the-town-remembers/model-contracts": "workspace:*",
+    "@the-town-remembers/serialization": "workspace:*"
+  },
+  "devDependencies": {
+    "kysely": "^0.28.9",
+    "zod": "^4.4.3"
+  }
+}
