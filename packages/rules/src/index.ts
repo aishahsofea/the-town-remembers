@@ -18,3 +18,4 @@ export * from "./disclosure/bundle.js";
 export * from "./world/clues.js";
 export * from "./world/promises.js";
 export * from "./world/visits.js";
+export * from "./world/lies.js";
