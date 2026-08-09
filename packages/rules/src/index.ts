@@ -30,3 +30,6 @@ export * from "./actions/model-backed.js";
 export * from "./projection/view-version.js";
 export * from "./projection/player-view.js";
 export * from "./projection/action-result.js";
+export * from "./content-validation/reachability.js";
+export * from "./content-validation/solvability.js";
+export * from "./content-validation/fallback-coverage.js";
