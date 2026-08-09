@@ -7,6 +7,7 @@ import {
   isGrievanceReason,
   isRepeatRelationshipContribution,
   relationshipDeltaFor,
+  RelationshipSnapshotMismatchError,
   stanceFor,
   sumRelationshipDeltas,
   type GrievanceRecord,
@@ -67,13 +68,92 @@ describe("aggregateRelationshipUpdates", () => {
     expect(aggregate).toMatchObject({ trustScore: 75, suspicionScore: 35 });
   });
 
-  it("skips a relationship it holds no snapshot for, rather than guessing a revision", () => {
-    expect(
+  it("throws rather than silently skipping a relationship it holds no snapshot for", () => {
+    // Returning [] here would let the caller commit its ledger insert and
+    // promise settlement while the current row kept its stale scores.
+    expect(() =>
       aggregateRelationshipUpdates(
         [],
         [{ npcId: "npc-1", playerId: "player-1", reasonKind: "promise_broken" }],
       ),
-    ).toStrictEqual([]);
+    ).toThrow(RelationshipSnapshotMismatchError);
+  });
+
+  it("names every uncovered pair once, however many contributions it had", () => {
+    try {
+      aggregateRelationshipUpdates(
+        [neutral],
+        [
+          { npcId: "npc-2", playerId: "player-1", reasonKind: "promise_broken" },
+          { npcId: "npc-2", playerId: "player-1", reasonKind: "promise_fulfilled" },
+          { npcId: "npc-3", playerId: "player-1", reasonKind: "promise_broken" },
+        ],
+      );
+      expect.unreachable("expected a RelationshipSnapshotMismatchError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(RelationshipSnapshotMismatchError);
+      const mismatch = error as RelationshipSnapshotMismatchError;
+      expect(mismatch.missingPairs).toStrictEqual([
+        "(npc-2, player-1)",
+        "(npc-3, player-1)",
+      ]);
+      expect(mismatch.duplicatedPairs).toStrictEqual([]);
+    }
+  });
+
+  it("throws on two snapshots for one pair, whose revisions cannot both be the guard", () => {
+    try {
+      aggregateRelationshipUpdates(
+        [neutral, { ...neutral, revision: 9 }],
+        [{ npcId: "npc-1", playerId: "player-1", reasonKind: "promise_broken" }],
+      );
+      expect.unreachable("expected a RelationshipSnapshotMismatchError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(RelationshipSnapshotMismatchError);
+      const mismatch = error as RelationshipSnapshotMismatchError;
+      expect(mismatch.duplicatedPairs).toStrictEqual(["(npc-1, player-1)"]);
+      expect(mismatch.message).toContain("more than one snapshot");
+    }
+  });
+
+  it("tolerates an unused snapshot — over-fetching is not a mismatch", () => {
+    expect(
+      aggregateRelationshipUpdates(
+        [neutral, { ...neutral, npcId: "npc-9" }],
+        [{ npcId: "npc-1", playerId: "player-1", reasonKind: "promise_broken" }],
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("keys pairs injectively, so ids containing the separator cannot collide", () => {
+    // Without length-prefixing, ("a:b", "c") and ("a", "b:c") share a key and
+    // one settlement would be attributed to the other's row.
+    const aggregates = aggregateRelationshipUpdates(
+      [
+        { npcId: "a:b", playerId: "c", trustScore: 0, suspicionScore: 0, revision: 1 },
+        { npcId: "a", playerId: "b:c", trustScore: 0, suspicionScore: 0, revision: 2 },
+      ],
+      [
+        { npcId: "a:b", playerId: "c", reasonKind: "promise_fulfilled" },
+        { npcId: "a", playerId: "b:c", reasonKind: "promise_broken" },
+      ],
+    );
+    expect(aggregates).toStrictEqual([
+      {
+        npcId: "a",
+        playerId: "b:c",
+        expectedRevision: 2,
+        trustScore: -40,
+        suspicionScore: 35,
+      },
+      {
+        npcId: "a:b",
+        playerId: "c",
+        expectedRevision: 1,
+        trustScore: 25,
+        suspicionScore: -15,
+      },
+    ]);
   });
 
   it("skips a row whose clamped scores did not move", () => {

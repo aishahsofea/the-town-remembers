@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { RelationshipSnapshotMismatchError } from "../beliefs/relationships.js";
 import {
   planAccuse,
   planAddNoteAction,
@@ -542,6 +543,15 @@ describe("planResolve", () => {
           requesterHoldsItemAtResolution: true,
         },
       ],
+      relationships: [
+        {
+          npcId: "npc-1",
+          playerId: "p1",
+          trustScore: 0,
+          suspicionScore: 0,
+          revision: 0,
+        },
+      ],
     });
     const promiseChange = result.effects.find(
       (effect) =>
@@ -580,6 +590,15 @@ describe("planResolve", () => {
           kind: "keep_secret",
           protectedClaimEntersPublicResolution: true,
           requesterHoldsItemAtResolution: false,
+        },
+      ],
+      relationships: [
+        {
+          npcId: "npc-2",
+          playerId: "p2",
+          trustScore: 0,
+          suspicionScore: 0,
+          revision: 0,
         },
       ],
     });
@@ -695,6 +714,31 @@ describe("planResolve", () => {
       expectedRevision: 2,
       change: { trust_score: -40, suspicion_score: 35 },
     });
+  });
+
+  it("refuses to settle a promise it was given no relationship row for", () => {
+    // The promise update and the ledger insert are already queued by this
+    // point; committing them without advancing npc_player_relationships
+    // would leave the settlement half-applied.
+    expect(() =>
+      planResolve({
+        townAlreadyResolved: false,
+        ...baseInputs,
+        choice: "expose_cover_up",
+        bellCurrentlyAtOldChapel: false,
+        activePromises: [
+          {
+            promiseId: "promise-1",
+            npcId: "npc-1",
+            playerId: "p1",
+            kind: "keep_secret",
+            protectedClaimEntersPublicResolution: true,
+            requesterHoldsItemAtResolution: false,
+          },
+        ],
+        relationships: [],
+      }),
+    ).toThrow(RelationshipSnapshotMismatchError);
   });
 
   it("emits no relationship state change for a promise that did not settle", () => {
