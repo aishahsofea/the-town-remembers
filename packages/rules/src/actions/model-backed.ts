@@ -16,9 +16,11 @@ import type {
   DisclosureCandidateInput,
 } from "../disclosure/bundle.js";
 import { beliefLabelFor } from "../beliefs/labels.js";
-import { sumRelationshipDeltas } from "../beliefs/relationships.js";
+import { relationshipDeltaFor } from "../beliefs/relationships.js";
 import { deniedResult } from "../kernel/decision.js";
 import type { EffectPlanEntry } from "../kernel/effects.js";
+import { sumEventContributions } from "../kernel/numeric.js";
+import { RULES_REGISTRY } from "../kernel/version.js";
 import {
   isShowAuthorized,
   planGiveCustody,
@@ -109,15 +111,33 @@ export function planTell(inputs: TellInputs): ActionPlanResult {
 // --- show -------------------------------------------------------------------------------------
 
 /**
- * One authored `clue_claim_effects` linkage plus the listening NPC's current
- * belief state on that claim — the caller already joins these when building
- * the candidate list, since applying the structured effect needs both the
- * authored `signed_weight` and the pre-effect score/revision to update.
+ * One authored `clue_claim_effects` linkage: a clue may support or
+ * contradict several claims at once, so a single `clueId` can appear more
+ * than once across this list, each with a different `claimId`.
  */
 export interface ShowClueEvidenceLink extends ClueClaimEffectLink {
   readonly signedWeight: number;
-  readonly npcBeliefScore: number;
-  readonly npcBeliefRevision: number;
+}
+
+/** Already-recorded evidence for one (npc, claim, clue) triple, so a repeat Show is skipped. */
+export interface ShowAlreadyRecordedEvidence {
+  readonly claimId: string;
+  readonly clueId: string;
+}
+
+/** The listening NPC's current belief state on one claim, prior to this Show. */
+export interface ShowClaimBeliefState {
+  readonly claimId: string;
+  readonly score: number;
+  readonly revision: number;
+}
+
+export interface ShowRelationshipReason {
+  readonly reasonKind: RelationshipReasonKind;
+  /** Set for `verified_testimony`/`lie_established`. */
+  readonly claimId?: string;
+  /** Set for `evidence_presented`. */
+  readonly clueId?: string;
 }
 
 export interface ShowInputs extends DisclosureBundleInputs {
@@ -126,9 +146,19 @@ export interface ShowInputs extends DisclosureBundleInputs {
   readonly itemCurrentlyHeldByPlayer: boolean;
   readonly shownClueIds: readonly string[];
   readonly clueClaimEffects: readonly ShowClueEvidenceLink[];
-  readonly relationshipReasons: readonly RelationshipReasonKind[];
+  readonly alreadyRecordedEvidence: readonly ShowAlreadyRecordedEvidence[];
+  readonly claimBeliefs: readonly ShowClaimBeliefState[];
+  readonly relationshipReasons: readonly ShowRelationshipReason[];
+  readonly playerId: string;
   /** The NPC being shown evidence. */
   readonly npcId: string;
+  /** The pre-allocated id of the `evidence_shown` event this plan creates. */
+  readonly evidenceShownEventId: string;
+}
+
+interface ShowScoreContribution {
+  readonly claimId: string;
+  readonly delta: number;
 }
 
 export function planShow(inputs: ShowInputs): ActionPlanResult {
@@ -150,41 +180,92 @@ export function planShow(inputs: ShowInputs): ActionPlanResult {
     { kind: "event_origin", eventType: "evidence_shown", effectIndex: 0 },
   ];
   if (structuredEffectPlan.structuredEffect === "applied") {
-    const linksByClueId = new Map(
-      inputs.clueClaimEffects.map((link) => [link.clueId, link]),
+    const appliedClueIds = new Set(structuredEffectPlan.appliedClueIds);
+    const alreadyRecordedKeys = new Set(
+      inputs.alreadyRecordedEvidence.map((entry) => `${entry.claimId}:${entry.clueId}`),
     );
-    for (const clueId of structuredEffectPlan.appliedClueIds) {
-      const link = linksByClueId.get(clueId);
-      if (link === undefined) continue;
-      const newScore = link.npcBeliefScore + link.signedWeight;
-      effects.push(
-        {
-          kind: "insert",
-          table: "belief_evidence",
-          row: {
-            npc_id: inputs.npcId,
-            claim_id: link.claimId,
-            clue_id: link.clueId,
-            evidence_kind: "physical_clue",
-            signed_weight: link.signedWeight,
-          },
-        },
-        {
-          kind: "conditional_state_change",
-          table: "npc_beliefs",
-          key: { npc_id: inputs.npcId, claim_id: link.claimId },
-          expectedRevision: link.npcBeliefRevision,
-          change: { score: newScore, label: beliefLabelFor(newScore) },
-        },
+    const beliefByClaimId = new Map(
+      inputs.claimBeliefs.map((belief) => [belief.claimId, belief]),
+    );
+
+    // A clue can support or contradict several claims, so every matching
+    // link is applied — not just the first one found for its clue.
+    const newLinks = inputs.clueClaimEffects
+      .filter((link) => appliedClueIds.has(link.clueId))
+      .filter((link) => !alreadyRecordedKeys.has(`${link.claimId}:${link.clueId}`))
+      .toSorted(
+        (left, right) =>
+          left.claimId.localeCompare(right.claimId) ||
+          left.clueId.localeCompare(right.clueId),
       );
+
+    for (const link of newLinks) {
+      effects.push({
+        kind: "insert",
+        table: "belief_evidence",
+        row: {
+          npc_id: inputs.npcId,
+          claim_id: link.claimId,
+          clue_id: link.clueId,
+          evidence_kind: link.signedWeight < 0 ? "contradiction" : "physical_clue",
+          signed_weight: link.signedWeight,
+        },
+      });
+    }
+
+    // Multiple new links to the same claim (from one clue or several) are
+    // summed against that claim's pre-effect score from one snapshot and
+    // clamped once, never clamped per contribution.
+    const affectedClaimIds = [
+      ...new Set(newLinks.map((link) => link.claimId)),
+    ].toSorted();
+    const contributions: ShowScoreContribution[] = [];
+    for (const claimId of affectedClaimIds) {
+      const belief = beliefByClaimId.get(claimId);
+      if (belief === undefined) continue;
+      contributions.push({ claimId, delta: belief.score });
+    }
+    for (const link of newLinks) {
+      contributions.push({ claimId: link.claimId, delta: link.signedWeight });
+    }
+    const newScoresByClaimId = sumEventContributions(
+      contributions,
+      (contribution) => contribution.claimId,
+      (contribution) => contribution.delta,
+    );
+
+    for (const claimId of affectedClaimIds) {
+      const belief = beliefByClaimId.get(claimId);
+      const newScore = newScoresByClaimId.get(claimId);
+      if (belief === undefined || newScore === undefined) continue;
+      effects.push({
+        kind: "conditional_state_change",
+        table: "npc_beliefs",
+        key: { npc_id: inputs.npcId, claim_id: claimId },
+        expectedRevision: belief.revision,
+        change: {
+          score: newScore,
+          label: beliefLabelFor(newScore),
+          updated_event_id: inputs.evidenceShownEventId,
+        },
+      });
     }
   }
-  if (inputs.relationshipReasons.length > 0) {
-    const delta = sumRelationshipDeltas(inputs.relationshipReasons);
+  for (const reason of inputs.relationshipReasons) {
+    const delta = relationshipDeltaFor(reason.reasonKind);
     effects.push({
       kind: "insert",
       table: "relationship_changes",
-      row: { trust_delta: delta.trust, suspicion_delta: delta.suspicion },
+      row: {
+        npc_id: inputs.npcId,
+        player_id: inputs.playerId,
+        reason_kind: reason.reasonKind,
+        rule_version: RULES_REGISTRY.rulesVersion,
+        claim_id: reason.claimId ?? null,
+        clue_id: reason.clueId ?? null,
+        trust_delta: delta.trust,
+        suspicion_delta: delta.suspicion,
+      },
     });
   }
 
@@ -206,6 +287,7 @@ export interface GiveActionInputs extends DisclosureBundleInputs {
   readonly itemRevision: number;
   /** The NPC receiving custody on a successful transfer. */
   readonly recipientActorId: string;
+  readonly playerId: string;
   readonly relationshipReasons: readonly RelationshipReasonKind[];
 }
 
@@ -230,12 +312,20 @@ export function planGive(inputs: GiveActionInputs): ActionPlanResult {
       change: { held_by_actor_id: inputs.recipientActorId },
     });
   }
-  if (inputs.relationshipReasons.length > 0) {
-    const delta = sumRelationshipDeltas(inputs.relationshipReasons);
+  for (const reasonKind of inputs.relationshipReasons) {
+    const delta = relationshipDeltaFor(reasonKind);
     effects.push({
       kind: "insert",
       table: "relationship_changes",
-      row: { trust_delta: delta.trust, suspicion_delta: delta.suspicion },
+      row: {
+        npc_id: inputs.recipientActorId,
+        player_id: inputs.playerId,
+        reason_kind: reasonKind,
+        rule_version: RULES_REGISTRY.rulesVersion,
+        item_id: inputs.itemId,
+        trust_delta: delta.trust,
+        suspicion_delta: delta.suspicion,
+      },
     });
   }
 

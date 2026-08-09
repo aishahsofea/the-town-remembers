@@ -97,6 +97,14 @@ describe("planTell", () => {
 });
 
 describe("planShow", () => {
+  const baseShowInputs = {
+    npcId: "npc-1",
+    playerId: "player-1",
+    alreadyRecordedEvidence: [],
+    evidenceShownEventId: "event-1",
+    ...EMPTY_BUNDLE,
+  };
+
   it("denies an item Show without holding the item", () => {
     const result = planShow({
       evidenceKind: "item",
@@ -104,9 +112,9 @@ describe("planShow", () => {
       itemCurrentlyHeldByPlayer: false,
       shownClueIds: [],
       clueClaimEffects: [],
+      claimBeliefs: [],
       relationshipReasons: [],
-      npcId: "npc-1",
-      ...EMPTY_BUNDLE,
+      ...baseShowInputs,
     });
     if (!isExternalSelectionRequired(result))
       expect(result.reasonCode).toBe("EVIDENCE_NOT_AUTHORIZED");
@@ -118,22 +126,17 @@ describe("planShow", () => {
       clueDiscoveredInTown: true,
       itemCurrentlyHeldByPlayer: false,
       shownClueIds: ["clue-1"],
-      clueClaimEffects: [
-        {
-          clueId: "clue-1",
-          claimId: "claim-1",
-          signedWeight: 70,
-          npcBeliefScore: 10,
-          npcBeliefRevision: 2,
-        },
+      clueClaimEffects: [{ clueId: "clue-1", claimId: "claim-1", signedWeight: 70 }],
+      claimBeliefs: [{ claimId: "claim-1", score: 10, revision: 2 }],
+      relationshipReasons: [
+        { reasonKind: "verified_testimony", claimId: "claim-1" },
+        { reasonKind: "evidence_presented", clueId: "clue-1" },
       ],
-      relationshipReasons: ["verified_testimony", "evidence_presented"],
-      npcId: "npc-1",
-      ...EMPTY_BUNDLE,
+      ...baseShowInputs,
     });
     expect(isExternalSelectionRequired(result)).toBe(true);
     if (isExternalSelectionRequired(result)) {
-      expect(result.effects).toHaveLength(4);
+      expect(result.effects).toHaveLength(5);
       const evidenceInsert = result.effects.find(
         (effect) => effect.kind === "insert" && effect.table === "belief_evidence",
       );
@@ -153,7 +156,19 @@ describe("planShow", () => {
       expect(beliefChange).toMatchObject({
         key: { npc_id: "npc-1", claim_id: "claim-1" },
         expectedRevision: 2,
-        change: { score: 80, label: "convinced" },
+        change: { score: 80, label: "convinced", updated_event_id: "event-1" },
+      });
+      const relationshipInserts = result.effects.filter(
+        (effect) => effect.kind === "insert" && effect.table === "relationship_changes",
+      );
+      expect(relationshipInserts).toHaveLength(2);
+      expect(relationshipInserts[0]).toMatchObject({
+        row: {
+          npc_id: "npc-1",
+          player_id: "player-1",
+          reason_kind: "verified_testimony",
+          claim_id: "claim-1",
+        },
       });
     }
   });
@@ -165,9 +180,9 @@ describe("planShow", () => {
       itemCurrentlyHeldByPlayer: false,
       shownClueIds: ["clue-unlinked"],
       clueClaimEffects: [],
+      claimBeliefs: [],
       relationshipReasons: [],
-      npcId: "npc-1",
-      ...EMPTY_BUNDLE,
+      ...baseShowInputs,
     });
     if (isExternalSelectionRequired(result)) {
       expect(
@@ -177,19 +192,126 @@ describe("planShow", () => {
       ).toBe(false);
     }
   });
+
+  it("applies every link for a clue that affects multiple claims (guard_cart_ruts-style)", () => {
+    const result = planShow({
+      evidenceKind: "clue",
+      clueDiscoveredInTown: true,
+      itemCurrentlyHeldByPlayer: false,
+      shownClueIds: ["clue-multi"],
+      clueClaimEffects: [
+        { clueId: "clue-multi", claimId: "claim-a", signedWeight: 70 },
+        { clueId: "clue-multi", claimId: "claim-b", signedWeight: 70 },
+        { clueId: "clue-multi", claimId: "claim-c", signedWeight: 70 },
+      ],
+      claimBeliefs: [
+        { claimId: "claim-a", score: 0, revision: 0 },
+        { claimId: "claim-b", score: 0, revision: 0 },
+        { claimId: "claim-c", score: 0, revision: 0 },
+      ],
+      relationshipReasons: [],
+      ...baseShowInputs,
+    });
+    if (isExternalSelectionRequired(result)) {
+      const evidenceInserts = result.effects.filter(
+        (effect) => effect.kind === "insert" && effect.table === "belief_evidence",
+      );
+      expect(evidenceInserts).toHaveLength(3);
+      const beliefChanges = result.effects.filter(
+        (effect) =>
+          effect.kind === "conditional_state_change" && effect.table === "npc_beliefs",
+      );
+      expect(beliefChanges).toHaveLength(3);
+    }
+  });
+
+  it("classifies a negative-weight link as contradiction, not physical_clue", () => {
+    const result = planShow({
+      evidenceKind: "clue",
+      clueDiscoveredInTown: true,
+      itemCurrentlyHeldByPlayer: false,
+      shownClueIds: ["clue-1"],
+      clueClaimEffects: [{ clueId: "clue-1", claimId: "claim-1", signedWeight: -70 }],
+      claimBeliefs: [{ claimId: "claim-1", score: 0, revision: 0 }],
+      relationshipReasons: [],
+      ...baseShowInputs,
+    });
+    if (isExternalSelectionRequired(result)) {
+      const evidenceInsert = result.effects.find(
+        (effect) => effect.kind === "insert" && effect.table === "belief_evidence",
+      );
+      expect(evidenceInsert).toMatchObject({ row: { evidence_kind: "contradiction" } });
+    }
+  });
+
+  it("skips already-recorded evidence instead of double-counting it", () => {
+    const result = planShow({
+      evidenceKind: "clue",
+      clueDiscoveredInTown: true,
+      itemCurrentlyHeldByPlayer: false,
+      shownClueIds: ["clue-1"],
+      clueClaimEffects: [{ clueId: "clue-1", claimId: "claim-1", signedWeight: 70 }],
+      claimBeliefs: [{ claimId: "claim-1", score: 10, revision: 2 }],
+      relationshipReasons: [],
+      ...baseShowInputs,
+      alreadyRecordedEvidence: [{ claimId: "claim-1", clueId: "clue-1" }],
+    });
+    if (isExternalSelectionRequired(result)) {
+      expect(
+        result.effects.some(
+          (effect) => effect.kind === "insert" && effect.table === "belief_evidence",
+        ),
+      ).toBe(false);
+      expect(
+        result.effects.some(
+          (effect) =>
+            effect.kind === "conditional_state_change" &&
+            effect.table === "npc_beliefs",
+        ),
+      ).toBe(false);
+    }
+  });
+
+  it("clamps the summed score to 100 instead of letting it overflow the database constraint", () => {
+    const result = planShow({
+      evidenceKind: "clue",
+      clueDiscoveredInTown: true,
+      itemCurrentlyHeldByPlayer: false,
+      shownClueIds: ["clue-1", "clue-2"],
+      clueClaimEffects: [
+        { clueId: "clue-1", claimId: "claim-1", signedWeight: 70 },
+        { clueId: "clue-2", claimId: "claim-1", signedWeight: 70 },
+      ],
+      claimBeliefs: [{ claimId: "claim-1", score: 80, revision: 2 }],
+      relationshipReasons: [],
+      ...baseShowInputs,
+    });
+    if (isExternalSelectionRequired(result)) {
+      const beliefChange = result.effects.find(
+        (effect) =>
+          effect.kind === "conditional_state_change" && effect.table === "npc_beliefs",
+      );
+      expect(beliefChange).toMatchObject({ change: { score: 100 } });
+    }
+  });
 });
 
 describe("planGive", () => {
+  const baseGiveInputs = {
+    itemId: "item-1",
+    itemRevision: 4,
+    recipientActorId: "npc-1",
+    playerId: "player-1",
+    ...EMPTY_BUNDLE,
+  };
+
   it("denies when the item is not held", () => {
     const result = planGive({
       npcPresent: true,
       itemHeldByPlayer: false,
       npcAcceptsItem: true,
-      itemId: "item-1",
-      itemRevision: 4,
-      recipientActorId: "npc-1",
       relationshipReasons: [],
-      ...EMPTY_BUNDLE,
+      ...baseGiveInputs,
     });
     if (!isExternalSelectionRequired(result))
       expect(result.reasonCode).toBe("ITEM_NOT_HELD");
@@ -200,11 +322,8 @@ describe("planGive", () => {
       npcPresent: true,
       itemHeldByPlayer: true,
       npcAcceptsItem: true,
-      itemId: "item-1",
-      itemRevision: 4,
-      recipientActorId: "npc-1",
       relationshipReasons: ["requested_item_given"],
-      ...EMPTY_BUNDLE,
+      ...baseGiveInputs,
     });
     expect(isExternalSelectionRequired(result)).toBe(true);
     if (isExternalSelectionRequired(result)) {
@@ -217,6 +336,17 @@ describe("planGive", () => {
         expectedRevision: 4,
         change: { held_by_actor_id: "npc-1" },
       });
+      const relationshipInsert = result.effects.find(
+        (effect) => effect.kind === "insert" && effect.table === "relationship_changes",
+      );
+      expect(relationshipInsert).toMatchObject({
+        row: {
+          npc_id: "npc-1",
+          player_id: "player-1",
+          reason_kind: "requested_item_given",
+          item_id: "item-1",
+        },
+      });
     }
   });
 
@@ -225,11 +355,8 @@ describe("planGive", () => {
       npcPresent: true,
       itemHeldByPlayer: true,
       npcAcceptsItem: false,
-      itemId: "item-1",
-      itemRevision: 4,
-      recipientActorId: "npc-1",
       relationshipReasons: [],
-      ...EMPTY_BUNDLE,
+      ...baseGiveInputs,
     });
     if (isExternalSelectionRequired(result)) {
       expect(

@@ -17,9 +17,14 @@ export interface InsertEffect<TTable extends string = string, TRow = unknown> {
 }
 
 /**
- * A change to an existing row, guarded by the revision the rule read the row
- * at. Orchestration must fail the whole plan (not apply a partial subset) if
- * the row's revision no longer matches at commit time.
+ * A change to an existing row. When the target table owns a `revision`
+ * column, `expectedRevision` is the value the rule read that row at, and
+ * orchestration must fail the whole plan (not apply a partial subset) if the
+ * row's revision no longer matches at commit time. Some tables (for example
+ * `player_visits`, `promises`) carry no `revision` column of their own —
+ * `expectedRevision` is omitted for those, and the change is instead only
+ * ever applied as part of a plan that also carries a `towns` conditional
+ * state change guarding the whole transaction's revision.
  */
 export interface ConditionalStateChangeEffect<
   TTable extends string = string,
@@ -28,7 +33,7 @@ export interface ConditionalStateChangeEffect<
   readonly kind: "conditional_state_change";
   readonly table: TTable;
   readonly key: Readonly<Record<string, unknown>>;
-  readonly expectedRevision: number;
+  readonly expectedRevision?: number;
   readonly change: TChange;
 }
 

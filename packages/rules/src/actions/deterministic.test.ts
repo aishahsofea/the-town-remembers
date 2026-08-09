@@ -55,14 +55,19 @@ describe("planStartVisit", () => {
 });
 
 describe("planTravel", () => {
+  const baseTravelInputs = {
+    visitId: "visit-1",
+    townId: "town-1",
+    townRevision: 5,
+  };
+
   it("denies an unknown destination", () => {
     const result = planTravel({
       currentLocationId: "festival_square",
       destinationLocationId: "nowhere",
       destinationKnown: false,
       destinationAccess: { state: "open" },
-      visitId: "visit-1",
-      townRevision: 5,
+      ...baseTravelInputs,
     });
     expect(result.reasonCode).toBe("DESTINATION_UNKNOWN");
   });
@@ -73,8 +78,7 @@ describe("planTravel", () => {
       destinationLocationId: "old_chapel",
       destinationKnown: true,
       destinationAccess: { state: "locked" },
-      visitId: "visit-1",
-      townRevision: 5,
+      ...baseTravelInputs,
     });
     expect(result.reasonCode).toBe("LOCATION_LOCKED");
   });
@@ -85,30 +89,39 @@ describe("planTravel", () => {
       destinationLocationId: "festival_square",
       destinationKnown: true,
       destinationAccess: { state: "open" },
-      visitId: "visit-1",
-      townRevision: 5,
+      ...baseTravelInputs,
     });
     expect(result.outcome).toBe("no_change");
   });
 
-  it("applies arrival at a new open destination against the real visit key and town revision", () => {
+  it("applies arrival guarded by a real towns revision, then updates the visit's location with no fake revision", () => {
     const result = planTravel({
       currentLocationId: "festival_square",
       destinationLocationId: "lantern_inn",
       destinationKnown: true,
       destinationAccess: { state: "open" },
-      visitId: "visit-1",
-      townRevision: 5,
+      ...baseTravelInputs,
     });
     expect(result.outcome).toBe("applied");
-    const change = result.effects.find(
-      (effect) => effect.kind === "conditional_state_change",
+
+    const townChange = result.effects.find(
+      (effect) =>
+        effect.kind === "conditional_state_change" && effect.table === "towns",
     );
-    expect(change).toMatchObject({
-      table: "player_visits",
-      key: { id: "visit-1" },
+    expect(townChange).toMatchObject({
+      key: { id: "town-1" },
       expectedRevision: 5,
     });
+
+    const visitChange = result.effects.find(
+      (effect) =>
+        effect.kind === "conditional_state_change" && effect.table === "player_visits",
+    );
+    expect(visitChange).toMatchObject({
+      key: { id: "visit-1" },
+      change: { current_location_entity_id: "lantern_inn" },
+    });
+    expect(visitChange).not.toHaveProperty("expectedRevision");
   });
 });
 
@@ -189,35 +202,58 @@ describe("planAddNoteAction", () => {
 });
 
 describe("planLeaveVisit", () => {
+  const baseLeaveInputs = {
+    townId: "town-1",
+    townRevision: 7,
+    visitId: "visit-1",
+    actionId: "action-1",
+    now: new Date("2026-01-01T00:00:00.000Z"),
+  };
+
   it("denies without an active visit", () => {
     const result = planLeaveVisit({
       hasActiveVisit: false,
       lastEventSequenceAtLeave: 10,
       eligibleEventCountInRange: 0,
-      townId: "town-1",
-      townRevision: 7,
+      ...baseLeaveInputs,
     });
     expect(result.reasonCode).toBe("VISIT_NOT_ACTIVE");
   });
 
-  it("applies with no outbox intent when no eligible event occurred", () => {
+  it("applies with no outbox intent when no eligible event occurred, and ends the visit", () => {
     const result = planLeaveVisit({
       hasActiveVisit: true,
       lastEventSequenceAtLeave: 10,
       eligibleEventCountInRange: 0,
-      townId: "town-1",
-      townRevision: 7,
+      ...baseLeaveInputs,
     });
     expect(result.outcome).toBe("applied");
-    expect(result.effects).toHaveLength(2);
-    const change = result.effects.find(
-      (effect) => effect.kind === "conditional_state_change",
+    expect(result.effects).toHaveLength(3);
+
+    const townChange = result.effects.find(
+      (effect) =>
+        effect.kind === "conditional_state_change" && effect.table === "towns",
     );
-    expect(change).toMatchObject({
-      table: "towns",
+    expect(townChange).toMatchObject({
       key: { id: "town-1" },
       expectedRevision: 7,
     });
+
+    const visitChange = result.effects.find(
+      (effect) =>
+        effect.kind === "conditional_state_change" && effect.table === "player_visits",
+    );
+    expect(visitChange).toMatchObject({
+      key: { id: "visit-1" },
+      change: {
+        status: "ended",
+        end_revision: 8,
+        ended_at: "2026-01-01T00:00:00.000Z",
+        ended_by_action_id: "action-1",
+        end_reason: "left_town",
+      },
+    });
+    expect(visitChange).not.toHaveProperty("expectedRevision");
   });
 
   it("applies with an outbox intent when at least one eligible event occurred", () => {
@@ -225,10 +261,9 @@ describe("planLeaveVisit", () => {
       hasActiveVisit: true,
       lastEventSequenceAtLeave: 10,
       eligibleEventCountInRange: 2,
-      townId: "town-1",
-      townRevision: 7,
+      ...baseLeaveInputs,
     });
-    expect(result.effects).toHaveLength(3);
+    expect(result.effects).toHaveLength(4);
   });
 });
 
@@ -244,6 +279,7 @@ describe("planAccuse", () => {
     townId: "town-1",
     townRevision: 9,
     wonAt: new Date("2026-01-01T00:00:00.000Z"),
+    caseAttemptId: "case-attempt-1",
   };
 
   it("denies while the confrontation gate is locked", () => {
@@ -286,9 +322,9 @@ describe("planAccuse", () => {
       },
       ...baseInputs,
     });
-    expect((result.effects[1] as { row: { outcome: string } }).row.outcome).toBe(
-      "correct",
-    );
+    expect(
+      (result.effects[1] as { row: { outcome: string; id: string } }).row,
+    ).toMatchObject({ outcome: "correct", id: "case-attempt-1" });
     const reservation = result.effects.find(
       (effect) => effect.kind === "conditional_state_change",
     );
@@ -300,6 +336,7 @@ describe("planAccuse", () => {
         status: "awaiting_resolution",
         resolution_owner_player_id: "p1",
         resolution_reservation_expires_at: "2026-01-01T00:10:00.000Z",
+        winning_case_attempt_id: "case-attempt-1",
       },
     });
   });
@@ -321,6 +358,10 @@ describe("planResolve", () => {
     festivalSquareLocationId: "festival_square",
     townId: "town-1",
     townRevision: 12,
+    winningCaseAttemptId: "case-attempt-1",
+    actionId: "resolve-action-1",
+    resolutionEventId: "event-resolution-1",
+    activeVisits: [],
     activePromises: [],
   };
 
@@ -345,7 +386,7 @@ describe("planResolve", () => {
     expect(result.reasonCode).toBe("RESOLUTION_NOT_ELIGIBLE");
   });
 
-  it("applies the winning resolution, marks the town resolved against its real key/revision, and relocates the bell", () => {
+  it("applies the winning resolution, marks the town resolved with resolved_at, and relocates the bell", () => {
     const result = planResolve({
       townAlreadyResolved: false,
       ...baseInputs,
@@ -360,6 +401,13 @@ describe("planResolve", () => {
       ),
     ).toBe(true);
 
+    const resolutionInsert = result.effects.find(
+      (effect) => effect.kind === "insert" && effect.table === "town_resolutions",
+    );
+    expect(resolutionInsert).toMatchObject({
+      row: { case_attempt_id: "case-attempt-1", chosen_by_player_id: "p1" },
+    });
+
     const townChange = result.effects.find(
       (effect) =>
         effect.kind === "conditional_state_change" && effect.table === "towns",
@@ -367,7 +415,7 @@ describe("planResolve", () => {
     expect(townChange).toMatchObject({
       key: { id: "town-1" },
       expectedRevision: 12,
-      change: { status: "resolved" },
+      change: { status: "resolved", resolved_at: "2026-01-01T00:05:00.000Z" },
     });
 
     const bellChange = result.effects.find(
@@ -402,7 +450,33 @@ describe("planResolve", () => {
     ).toBe(false);
   });
 
-  it("fulfills an active return_item promise when the requester holds the item, with a relationship effect", () => {
+  it("ends every other active visit with the town_resolved reason, guarded by no fake revision", () => {
+    const result = planResolve({
+      townAlreadyResolved: false,
+      ...baseInputs,
+      choice: "restore_bell_quietly",
+      bellCurrentlyAtOldChapel: false,
+      activeVisits: [{ visitId: "visit-2" }, { visitId: "visit-3" }],
+    });
+    const visitChanges = result.effects.filter(
+      (effect) =>
+        effect.kind === "conditional_state_change" && effect.table === "player_visits",
+    );
+    expect(visitChanges).toHaveLength(2);
+    expect(visitChanges[0]).toMatchObject({
+      key: { id: "visit-2" },
+      change: {
+        status: "ended",
+        end_revision: 13,
+        ended_at: "2026-01-01T00:05:00.000Z",
+        ended_by_action_id: "resolve-action-1",
+        end_reason: "town_resolved",
+      },
+    });
+    expect(visitChanges[0]).not.toHaveProperty("expectedRevision");
+  });
+
+  it("fulfills an active return_item promise when the requester holds the item, with a schema-valid relationship row", () => {
     const result = planResolve({
       townAlreadyResolved: false,
       ...baseInputs,
@@ -412,6 +486,7 @@ describe("planResolve", () => {
         {
           promiseId: "promise-1",
           npcId: "npc-1",
+          playerId: "p1",
           kind: "return_item",
           protectedClaimEntersPublicResolution: false,
           requesterHoldsItemAtResolution: true,
@@ -424,14 +499,20 @@ describe("planResolve", () => {
     );
     expect(promiseChange).toMatchObject({
       key: { id: "promise-1" },
-      expectedRevision: 12,
-      change: { status: "fulfilled" },
+      change: { status: "fulfilled", resolved_event_id: "event-resolution-1" },
     });
+    expect(promiseChange).not.toHaveProperty("expectedRevision");
+
     const relationshipInsert = result.effects.find(
       (effect) => effect.kind === "insert" && effect.table === "relationship_changes",
     );
     expect(relationshipInsert).toMatchObject({
-      row: { npc_id: "npc-1", promise_id: "promise-1" },
+      row: {
+        npc_id: "npc-1",
+        player_id: "p1",
+        promise_id: "promise-1",
+        reason_kind: "promise_fulfilled",
+      },
     });
   });
 
@@ -445,6 +526,7 @@ describe("planResolve", () => {
         {
           promiseId: "promise-2",
           npcId: "npc-2",
+          playerId: "p2",
           kind: "keep_secret",
           protectedClaimEntersPublicResolution: true,
           requesterHoldsItemAtResolution: false,
@@ -457,7 +539,13 @@ describe("planResolve", () => {
     );
     expect(promiseChange).toMatchObject({
       key: { id: "promise-2" },
-      change: { status: "broken" },
+      change: { status: "broken", resolved_event_id: "event-resolution-1" },
+    });
+    const relationshipInsert = result.effects.find(
+      (effect) => effect.kind === "insert" && effect.table === "relationship_changes",
+    );
+    expect(relationshipInsert).toMatchObject({
+      row: { reason_kind: "promise_broken", player_id: "p2" },
     });
   });
 
@@ -471,6 +559,7 @@ describe("planResolve", () => {
         {
           promiseId: "promise-3",
           npcId: "npc-3",
+          playerId: "p3",
           kind: "keep_secret",
           protectedClaimEntersPublicResolution: false,
           requesterHoldsItemAtResolution: false,

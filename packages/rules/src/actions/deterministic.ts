@@ -17,6 +17,7 @@ import {
 } from "../board/case.js";
 import { deniedResult, type DecisionResult } from "../kernel/decision.js";
 import type { EffectPlanEntry } from "../kernel/effects.js";
+import { RULES_REGISTRY } from "../kernel/version.js";
 import { classifyInspectDiscovery, shouldRecordClueDiscovery } from "../world/clues.js";
 import {
   keepSecretEndingOutcome,
@@ -85,7 +86,8 @@ export interface TravelInputs {
   readonly destinationAccess: LocationAccessState;
   /** The active visit being travelled on. */
   readonly visitId: string;
-  /** Travel conditionally updates the town revision (docs/005 §player_visits). */
+  readonly townId: string;
+  /** `player_visits` has no revision column; the town's own revision guards the plan. */
   readonly townRevision: number;
 }
 
@@ -112,9 +114,15 @@ export function planTravel(inputs: TravelInputs): DecisionResult<EffectPlanEntry
     { kind: "event_origin", eventType: "travelled", effectIndex: 0 },
     {
       kind: "conditional_state_change",
+      table: "towns",
+      key: { id: inputs.townId },
+      expectedRevision: inputs.townRevision,
+      change: {},
+    },
+    {
+      kind: "conditional_state_change",
       table: "player_visits",
       key: { id: inputs.visitId },
-      expectedRevision: inputs.townRevision,
       change: { current_location_entity_id: inputs.destinationLocationId },
     },
   ];
@@ -205,6 +213,9 @@ export interface LeaveInputs {
   readonly eligibleEventCountInRange: number;
   readonly townId: string;
   readonly townRevision: number;
+  readonly visitId: string;
+  readonly actionId: string;
+  readonly now: Date;
 }
 
 export function planLeaveVisit(inputs: LeaveInputs): DecisionResult<EffectPlanEntry> {
@@ -224,6 +235,18 @@ export function planLeaveVisit(inputs: LeaveInputs): DecisionResult<EffectPlanEn
       expectedRevision: inputs.townRevision,
       change: {
         ambient_scheduled_through_sequence: leavePlan.newScheduledThroughSequence,
+      },
+    },
+    {
+      kind: "conditional_state_change",
+      table: "player_visits",
+      key: { id: inputs.visitId },
+      change: {
+        status: "ended",
+        end_revision: inputs.townRevision + 1,
+        ended_at: inputs.now.toISOString(),
+        ended_by_action_id: inputs.actionId,
+        end_reason: "left_town",
       },
     },
   ];
@@ -248,6 +271,12 @@ export interface AccuseInputs {
   readonly townRevision: number;
   /** The moment this attempt is won, seeding the ten-minute reservation window. */
   readonly wonAt: Date;
+  /**
+   * Pre-allocated by the caller so this same attempt can be referenced by
+   * `towns.winning_case_attempt_id` within this plan — a rule can never
+   * generate the id itself.
+   */
+  readonly caseAttemptId: string;
 }
 
 export function planAccuse(inputs: AccuseInputs): DecisionResult<EffectPlanEntry> {
@@ -261,6 +290,7 @@ export function planAccuse(inputs: AccuseInputs): DecisionResult<EffectPlanEntry
       kind: "insert",
       table: "case_attempts",
       row: {
+        id: inputs.caseAttemptId,
         outcome,
         player_id: inputs.playerId,
         suspect_entity_id: inputs.guess.suspectId,
@@ -270,9 +300,10 @@ export function planAccuse(inputs: AccuseInputs): DecisionResult<EffectPlanEntry
     },
   ];
   // A correct attempt atomically reserves the ending choice: the town moves
-  // to awaiting_resolution, records the winner, and starts the ten-minute
-  // window `resolve` consumes. An incorrect attempt is immutable and applied
-  // on its own — it creates shared history, never a silent no_change.
+  // to awaiting_resolution, records the winner and the winning attempt, and
+  // starts the ten-minute window `resolve` consumes. An incorrect attempt is
+  // immutable and applied on its own — it creates shared history, never a
+  // silent no_change.
   if (outcome === "correct") {
     effects.push({
       kind: "conditional_state_change",
@@ -285,6 +316,7 @@ export function planAccuse(inputs: AccuseInputs): DecisionResult<EffectPlanEntry
         resolution_reservation_expires_at: resolutionReservationExpiresAt(
           inputs.wonAt,
         ).toISOString(),
+        winning_case_attempt_id: inputs.caseAttemptId,
       },
     });
   }
@@ -301,11 +333,17 @@ export function planAccuse(inputs: AccuseInputs): DecisionResult<EffectPlanEntry
 export interface ResolvePromiseInput {
   readonly promiseId: string;
   readonly npcId: string;
+  readonly playerId: string;
   readonly kind: PromiseKind;
   /** Consulted only for `keep_secret`. */
   readonly protectedClaimEntersPublicResolution: boolean;
   /** Consulted only for `return_item`. */
   readonly requesterHoldsItemAtResolution: boolean;
+}
+
+/** One other player's still-active visit, ended with `town_resolved` by this same transaction. */
+export interface ResolveActiveVisit {
+  readonly visitId: string;
 }
 
 export interface ResolveInputs {
@@ -323,6 +361,13 @@ export interface ResolveInputs {
   readonly festivalSquareLocationId: string;
   readonly townId: string;
   readonly townRevision: number;
+  /** The winning accusation's id, recorded on `towns` when it was accepted. */
+  readonly winningCaseAttemptId: string;
+  /** This Resolve action's own id, recorded as every ended visit's closer. */
+  readonly actionId: string;
+  /** The pre-allocated id of the `case_resolved` event this plan creates. */
+  readonly resolutionEventId: string;
+  readonly activeVisits: readonly ResolveActiveVisit[];
   readonly activePromises: readonly ResolvePromiseInput[];
 }
 
@@ -359,14 +404,18 @@ export function planResolve(inputs: ResolveInputs): DecisionResult<EffectPlanEnt
     {
       kind: "insert",
       table: "town_resolutions",
-      row: { choice: winningPlan.choice, chosen_by_player_id: inputs.playerId },
+      row: {
+        choice: winningPlan.choice,
+        chosen_by_player_id: inputs.playerId,
+        case_attempt_id: inputs.winningCaseAttemptId,
+      },
     },
     {
       kind: "conditional_state_change",
       table: "towns",
       key: { id: inputs.townId },
       expectedRevision: inputs.townRevision,
-      change: { status: "resolved" },
+      change: { status: "resolved", resolved_at: inputs.now.toISOString() },
     },
   ];
   if (winningPlan.relocatesFestivalBell) {
@@ -386,6 +435,23 @@ export function planResolve(inputs: ResolveInputs): DecisionResult<EffectPlanEnt
     );
   }
 
+  for (const visit of inputs.activeVisits.toSorted((left, right) =>
+    left.visitId.localeCompare(right.visitId),
+  )) {
+    effects.push({
+      kind: "conditional_state_change",
+      table: "player_visits",
+      key: { id: visit.visitId },
+      change: {
+        status: "ended",
+        end_revision: inputs.townRevision + 1,
+        ended_at: inputs.now.toISOString(),
+        ended_by_action_id: inputs.actionId,
+        end_reason: "town_resolved",
+      },
+    });
+  }
+
   for (const promise of inputs.activePromises.toSorted((left, right) =>
     left.promiseId.localeCompare(right.promiseId),
   )) {
@@ -398,22 +464,23 @@ export function planResolve(inputs: ResolveInputs): DecisionResult<EffectPlanEnt
         : returnItemEndingOutcome(promise.requesterHoldsItemAtResolution);
     if (outcome === "unchanged") continue;
 
-    const delta = relationshipDeltaFor(
-      outcome === "fulfilled" ? "promise_fulfilled" : "promise_broken",
-    );
+    const reasonKind = outcome === "fulfilled" ? "promise_fulfilled" : "promise_broken";
+    const delta = relationshipDeltaFor(reasonKind);
     effects.push(
       {
         kind: "conditional_state_change",
         table: "promises",
         key: { id: promise.promiseId },
-        expectedRevision: inputs.townRevision,
-        change: { status: outcome },
+        change: { status: outcome, resolved_event_id: inputs.resolutionEventId },
       },
       {
         kind: "insert",
         table: "relationship_changes",
         row: {
           npc_id: promise.npcId,
+          player_id: promise.playerId,
+          reason_kind: reasonKind,
+          rule_version: RULES_REGISTRY.rulesVersion,
           promise_id: promise.promiseId,
           trust_delta: delta.trust,
           suspicion_delta: delta.suspicion,

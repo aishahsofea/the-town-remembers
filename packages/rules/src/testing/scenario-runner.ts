@@ -19,12 +19,16 @@ import {
 } from "../actions/dispatcher.js";
 import { planShow } from "../actions/model-backed.js";
 import {
+  ACTION_ID,
   BELL_ITEM_ID,
+  CASE_ATTEMPT_ID,
   CASE_SOLUTION_REFERENCE,
   CORRECT_GUESS,
+  EVIDENCE_SHOWN_EVENT_ID,
   FESTIVAL_SQUARE_LOCATION_ID,
   INCORRECT_GUESS,
   PLAYER_ID,
+  RESOLUTION_EVENT_ID,
   TOWN_ID,
   VISIT_ID,
 } from "./fixtures.js";
@@ -57,6 +61,7 @@ function startAndTravel(): readonly ScenarioStepRecord[] {
     destinationKnown: true,
     destinationAccess: { state: "open" },
     visitId: VISIT_ID,
+    townId: TOWN_ID,
     townRevision: 0,
   });
   const travelAgain = planTravel({
@@ -65,6 +70,7 @@ function startAndTravel(): readonly ScenarioStepRecord[] {
     destinationKnown: true,
     destinationAccess: { state: "open" },
     visitId: VISIT_ID,
+    townId: TOWN_ID,
     townRevision: 1,
   });
   return [
@@ -109,6 +115,7 @@ function bothAccusationOutcomes(): readonly ScenarioStepRecord[] {
     townId: TOWN_ID,
     townRevision: 0,
     wonAt,
+    caseAttemptId: "case-attempt-incorrect",
   });
   const correct = planAccuse({
     confrontationGateOpen: true,
@@ -118,6 +125,7 @@ function bothAccusationOutcomes(): readonly ScenarioStepRecord[] {
     townId: TOWN_ID,
     townRevision: 1,
     wonAt,
+    caseAttemptId: CASE_ATTEMPT_ID,
   });
   return [
     { actionKind: "accuse", result: incorrect },
@@ -144,6 +152,10 @@ function bothEndings(): readonly ScenarioStepRecord[] {
     festivalSquareLocationId: FESTIVAL_SQUARE_LOCATION_ID,
     townId: TOWN_ID,
     townRevision: 0,
+    winningCaseAttemptId: CASE_ATTEMPT_ID,
+    actionId: ACTION_ID,
+    resolutionEventId: RESOLUTION_EVENT_ID,
+    activeVisits: [],
     activePromises: [],
   });
   const restoreQuietly = planResolve({
@@ -158,6 +170,10 @@ function bothEndings(): readonly ScenarioStepRecord[] {
     festivalSquareLocationId: FESTIVAL_SQUARE_LOCATION_ID,
     townId: TOWN_ID,
     townRevision: 1,
+    winningCaseAttemptId: CASE_ATTEMPT_ID,
+    actionId: ACTION_ID,
+    resolutionEventId: RESOLUTION_EVENT_ID,
+    activeVisits: [],
     activePromises: [],
   });
   return [
@@ -173,16 +189,17 @@ function showEvidenceFlow(): readonly ScenarioStepRecord[] {
     itemCurrentlyHeldByPlayer: false,
     shownClueIds: ["bent_clapper_pin"],
     clueClaimEffects: [
-      {
-        clueId: "bent_clapper_pin",
-        claimId: "lark_damaged_bell",
-        signedWeight: 70,
-        npcBeliefScore: 0,
-        npcBeliefRevision: 0,
-      },
+      { clueId: "bent_clapper_pin", claimId: "lark_damaged_bell", signedWeight: 70 },
     ],
-    relationshipReasons: ["verified_testimony", "evidence_presented"],
+    alreadyRecordedEvidence: [],
+    claimBeliefs: [{ claimId: "lark_damaged_bell", score: 0, revision: 0 }],
+    relationshipReasons: [
+      { reasonKind: "verified_testimony", claimId: "lark_damaged_bell" },
+      { reasonKind: "evidence_presented", clueId: "bent_clapper_pin" },
+    ],
     npcId: "mara_venn",
+    playerId: PLAYER_ID,
+    evidenceShownEventId: EVIDENCE_SHOWN_EVENT_ID,
     disclosureCandidates: [],
     requiredDisclosureIds: [],
     approvedOutcomes: [],

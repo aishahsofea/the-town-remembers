@@ -12,6 +12,10 @@ export const PLAYER_ID = "player-1";
 export const TOWN_ID = "town-1";
 export const VISIT_ID = "visit-1";
 export const BELL_ITEM_ID = "festival_bell";
+export const CASE_ATTEMPT_ID = "case-attempt-1";
+export const ACTION_ID = "action-1";
+export const RESOLUTION_EVENT_ID = "event-resolution-1";
+export const EVIDENCE_SHOWN_EVENT_ID = "event-evidence-shown-1";
 
 export const CASE_SOLUTION_REFERENCE = Object.freeze({
   culpritKey: BELL_MYSTERY_V1.caseSolution.culpritKey,
