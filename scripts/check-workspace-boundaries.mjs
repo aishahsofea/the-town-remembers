@@ -81,6 +81,25 @@ export const TEST_SUPPORT_EXPORTS = Object.freeze({
   },
 });
 
+export const DATABASE_EXPORTS = Object.freeze({
+  ".": {
+    types: "./dist/index.d.ts",
+    import: "./dist/index.js",
+  },
+  "./schema": {
+    types: "./dist/schema.d.ts",
+    import: "./dist/schema.js",
+  },
+  "./brands": {
+    types: "./dist/brands.d.ts",
+    import: "./dist/brands.js",
+  },
+  "./domains": {
+    types: "./dist/domains.d.ts",
+    import: "./dist/domains.js",
+  },
+});
+
 const HTTP_CONTRACTS = `${SCOPE}http-contracts`;
 const MODEL_CONTRACTS = `${SCOPE}model-contracts`;
 const SERIALIZATION = `${SCOPE}serialization`;
@@ -91,6 +110,7 @@ const CONTENT = `${SCOPE}content`;
 const DATABASE = `${SCOPE}database`;
 const DATABASE_ADMIN = `${SCOPE}database-admin`;
 const TOWN_SEED = `${SCOPE}town-seed`;
+const RULES = `${SCOPE}rules`;
 
 export const EXPECTED_PACKAGES = Object.freeze([
   {
@@ -174,8 +194,21 @@ export const EXPECTED_PACKAGES = Object.freeze([
     path: "packages/database",
     name: DATABASE,
     kind: "library",
-    exports: STANDARD_EXPORTS,
+    exports: DATABASE_EXPORTS,
     allowedDependencies: [SERIALIZATION, RUNTIME_CONFIG],
+  },
+  {
+    path: "packages/rules",
+    name: RULES,
+    kind: "library",
+    exports: STANDARD_EXPORTS,
+    allowedDependencies: [
+      CONTENT,
+      DATABASE,
+      HTTP_CONTRACTS,
+      MODEL_CONTRACTS,
+      SERIALIZATION,
+    ],
   },
   {
     path: "packages/database-admin",
@@ -340,6 +373,36 @@ function validateRuntimeConfigImport(
   }
 }
 
+const FORBIDDEN_DATABASE_SPECIFIERS_FOR_RULES = new Set([
+  DATABASE,
+  `${DATABASE}/client`,
+  `${DATABASE}/transaction`,
+  `${DATABASE}/errors`,
+]);
+
+/**
+ * `packages/rules` must stay free of a real database client (§1.1 of the
+ * Phase 2 execution plan): it may only import the type/constant subpaths
+ * `./schema`, `./brands`, `./domains`, never the bare specifier or
+ * `./client`/`./transaction`/`./errors`.
+ */
+function validateRulesDatabaseImport(
+  packageDefinition,
+  specifier,
+  violations,
+  filePath,
+) {
+  if (packageDefinition.name !== RULES) return;
+  if (!FORBIDDEN_DATABASE_SPECIFIERS_FOR_RULES.has(specifier)) return;
+
+  addViolation(
+    violations,
+    "forbidden_rules_database_import",
+    `${RULES} may only import ${DATABASE}/schema, ${DATABASE}/brands, or ${DATABASE}/domains.`,
+    filePath,
+  );
+}
+
 function validateManifest(
   rootDir,
   packageDefinition,
@@ -484,6 +547,7 @@ function validateSourceImports(
       }
 
       validateRuntimeConfigImport(packageDefinition, specifier, violations, sourceFile);
+      validateRulesDatabaseImport(packageDefinition, specifier, violations, sourceFile);
     }
   }
 }

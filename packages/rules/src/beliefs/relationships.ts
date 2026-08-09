@@ -1,0 +1,313 @@
+/**
+ * Relationship changes, stance, and grievances — Decision 008's six-reason
+ * delta table, stance precedence, stacking, exclusivity, and repeat-key
+ * scoping, implemented exactly.
+ */
+
+import type { RelationshipReasonKind } from "@the-town-remembers/database/domains";
+
+import { clampScore } from "../kernel/numeric.js";
+import { RULES_REGISTRY } from "../kernel/version.js";
+
+export interface RelationshipDelta {
+  readonly trust: number;
+  readonly suspicion: number;
+}
+
+export function relationshipDeltaFor(
+  reasonKind: RelationshipReasonKind,
+): RelationshipDelta {
+  return RULES_REGISTRY.relationshipDeltas[reasonKind];
+}
+
+const ZERO_DELTA: RelationshipDelta = { trust: 0, suspicion: 0 };
+
+/** Sums the deltas for every reason a single action produced (stacking). */
+export function sumRelationshipDeltas(
+  reasonKinds: readonly RelationshipReasonKind[],
+): RelationshipDelta {
+  return reasonKinds.reduce((total, reasonKind) => {
+    const delta = relationshipDeltaFor(reasonKind);
+    return {
+      trust: total.trust + delta.trust,
+      suspicion: total.suspicion + delta.suspicion,
+    };
+  }, ZERO_DELTA);
+}
+
+// --- Current-row aggregation ------------------------------------------------------
+
+/**
+ * One `npc_player_relationships` row as the plan read it. There is no trigger
+ * that rebuilds the current row from `relationship_changes`, so a plan that
+ * appends history must also advance this row or every later trust gate keeps
+ * reading the pre-action scores.
+ */
+export interface RelationshipScores {
+  readonly trustScore: number;
+  readonly suspicionScore: number;
+  readonly revision: number;
+}
+
+export interface RelationshipSnapshot extends RelationshipScores {
+  readonly npcId: string;
+  readonly playerId: string;
+}
+
+/** One reason's contribution to one relationship, before summation. */
+export interface RelationshipContribution {
+  readonly npcId: string;
+  readonly playerId: string;
+  readonly reasonKind: RelationshipReasonKind;
+}
+
+/** The post-event row a plan compare-and-swaps into `npc_player_relationships`. */
+export interface RelationshipAggregate {
+  readonly npcId: string;
+  readonly playerId: string;
+  readonly expectedRevision: number;
+  readonly trustScore: number;
+  readonly suspicionScore: number;
+}
+
+/**
+ * Length-prefixing the first id keeps this mapping injective, so no pair can
+ * be confused with another whose ids happen to contain the separator: a raw
+ * join would give ("a:b", "c") and ("a", "b:c") the same key.
+ */
+function relationshipKey(npcId: string, playerId: string): string {
+  return `${npcId.length}:${npcId}:${playerId}`;
+}
+
+function describePair(npcId: string, playerId: string): string {
+  return `(${npcId}, ${playerId})`;
+}
+
+/**
+ * The caller's snapshot set does not match the relationships its own
+ * contributions touch, so no aggregate can be computed for at least one of
+ * them.
+ */
+export class RelationshipSnapshotMismatchError extends Error {
+  readonly missingPairs: readonly string[];
+  readonly duplicatedPairs: readonly string[];
+
+  constructor(missingPairs: readonly string[], duplicatedPairs: readonly string[]) {
+    const problems: string[] = [];
+    if (missingPairs.length > 0) {
+      problems.push(`no snapshot for ${missingPairs.join(", ")}`);
+    }
+    if (duplicatedPairs.length > 0) {
+      problems.push(`more than one snapshot for ${duplicatedPairs.join(", ")}`);
+    }
+    super(
+      `A relationship change needs exactly one current row per affected ` +
+        `(npc, player) pair: ${problems.join("; ")}.`,
+    );
+    this.name = "RelationshipSnapshotMismatchError";
+    this.missingPairs = missingPairs;
+    this.duplicatedPairs = duplicatedPairs;
+  }
+}
+
+/**
+ * Groups one event's contributions by the relationship they touch, sums each
+ * group against that row's pre-event snapshot, and clamps once per row —
+ * never per contribution, which would round a stacked `Show` differently from
+ * the same deltas applied one at a time.
+ *
+ * Fails closed when the snapshots do not cover the contributions exactly,
+ * before returning any effect at all. Quietly skipping an uncovered
+ * contribution would let a plan commit its `relationship_changes` insert and
+ * its terminal promise update while `npc_player_relationships` kept the stale
+ * scores — a half-applied settlement nothing downstream could detect. A row
+ * whose clamped scores did not move is still omitted: that is nothing to
+ * apply, not something applied halfway.
+ */
+export function aggregateRelationshipUpdates(
+  snapshots: readonly RelationshipSnapshot[],
+  contributions: readonly RelationshipContribution[],
+): readonly RelationshipAggregate[] {
+  const snapshotByKey = new Map<string, RelationshipSnapshot>();
+  const duplicatedPairs = new Set<string>();
+  for (const snapshot of snapshots) {
+    const key = relationshipKey(snapshot.npcId, snapshot.playerId);
+    if (snapshotByKey.has(key)) {
+      duplicatedPairs.add(describePair(snapshot.npcId, snapshot.playerId));
+      continue;
+    }
+    snapshotByKey.set(key, snapshot);
+  }
+
+  // Keyed by the snapshot itself, so once validation passes every total
+  // already carries the row it applies to — there is no second lookup that
+  // could come back empty.
+  const totals = new Map<RelationshipSnapshot, RelationshipDelta>();
+  const missingPairs = new Set<string>();
+  for (const contribution of contributions) {
+    const key = relationshipKey(contribution.npcId, contribution.playerId);
+    const snapshot = snapshotByKey.get(key);
+    if (snapshot === undefined) {
+      missingPairs.add(describePair(contribution.npcId, contribution.playerId));
+      continue;
+    }
+    const running = totals.get(snapshot) ?? ZERO_DELTA;
+    const delta = relationshipDeltaFor(contribution.reasonKind);
+    totals.set(snapshot, {
+      trust: running.trust + delta.trust,
+      suspicion: running.suspicion + delta.suspicion,
+    });
+  }
+  if (missingPairs.size > 0 || duplicatedPairs.size > 0) {
+    throw new RelationshipSnapshotMismatchError(
+      [...missingPairs],
+      [...duplicatedPairs],
+    );
+  }
+
+  const aggregates: RelationshipAggregate[] = [];
+  for (const [snapshot, total] of totals) {
+    const trustScore = clampScore(snapshot.trustScore + total.trust);
+    const suspicionScore = clampScore(snapshot.suspicionScore + total.suspicion);
+    if (
+      trustScore === snapshot.trustScore &&
+      suspicionScore === snapshot.suspicionScore
+    ) {
+      continue;
+    }
+    aggregates.push({
+      npcId: snapshot.npcId,
+      playerId: snapshot.playerId,
+      expectedRevision: snapshot.revision,
+      trustScore,
+      suspicionScore,
+    });
+  }
+  return aggregates.toSorted(
+    (left, right) =>
+      left.npcId.localeCompare(right.npcId) ||
+      left.playerId.localeCompare(right.playerId),
+  );
+}
+
+export type RelationshipStance = "suspicious" | "trusting" | "wary" | "neutral";
+
+/**
+ * Suspicion is checked unconditionally first: a highly trusted NPC who has
+ * just become highly suspicious of the player is `suspicious`, not
+ * `trusting`.
+ */
+export function stanceFor(trust: number, suspicion: number): RelationshipStance {
+  const { suspicionSuspicious, trustTrusting, trustWary } =
+    RULES_REGISTRY.stanceThresholds;
+  if (suspicion >= suspicionSuspicious) return "suspicious";
+  if (trust >= trustTrusting) return "trusting";
+  if (trust <= trustWary) return "wary";
+  return "neutral";
+}
+
+export interface ShowRelationshipInputs {
+  readonly verifiesEarlierTestimony: boolean;
+  readonly presentsRelevantClue: boolean;
+  readonly establishesLie: boolean;
+}
+
+/**
+ * A `Show` that both verifies earlier testimony and presents a relevant clue
+ * stacks both positive rows. A clue that establishes a lie in that same
+ * `Show` applies only `lie_established` — the two positive reasons are
+ * mutually exclusive with it, never additionally applied.
+ */
+export function applicableReasonKindsForShow(
+  input: ShowRelationshipInputs,
+): readonly RelationshipReasonKind[] {
+  if (input.establishesLie) return ["lie_established"];
+
+  const reasons: RelationshipReasonKind[] = [];
+  if (input.verifiesEarlierTestimony) reasons.push("verified_testimony");
+  if (input.presentsRelevantClue) reasons.push("evidence_presented");
+  return reasons;
+}
+
+// --- Repeat-key scoping --------------------------------------------------------
+
+export interface RelationshipContributionKey {
+  readonly reasonKind: RelationshipReasonKind;
+  readonly npcId: string;
+  readonly playerId: string;
+  readonly claimId?: string | null;
+  readonly clueId?: string | null;
+  readonly requestItemKey?: string | null;
+  readonly promiseId?: string | null;
+}
+
+function repeatIdentity(key: RelationshipContributionKey): string | undefined {
+  switch (key.reasonKind) {
+    case "verified_testimony":
+    case "lie_established":
+      return key.claimId
+        ? `${key.reasonKind}:${key.npcId}:${key.playerId}:${key.claimId}`
+        : undefined;
+    case "evidence_presented":
+      return key.clueId
+        ? `${key.reasonKind}:${key.npcId}:${key.playerId}:${key.clueId}`
+        : undefined;
+    case "requested_item_given":
+      return key.requestItemKey
+        ? `${key.reasonKind}:${key.npcId}:${key.playerId}:${key.requestItemKey}`
+        : undefined;
+    case "promise_fulfilled":
+    case "promise_broken":
+      // A promise's terminal state is itself the guard: once fulfilled or
+      // broken it never resolves a second time, so the promise ID alone
+      // scopes the repeat key.
+      return key.promiseId ? `${key.reasonKind}:${key.promiseId}` : undefined;
+    default:
+      return undefined;
+  }
+}
+
+export function isRepeatRelationshipContribution(
+  existingActive: readonly RelationshipContributionKey[],
+  candidate: RelationshipContributionKey,
+): boolean {
+  const identity = repeatIdentity(candidate);
+  if (identity === undefined) return false;
+  return existingActive.some((existing) => repeatIdentity(existing) === identity);
+}
+
+// --- Grievances ------------------------------------------------------------------
+
+export type GrievanceKind = "promise_broken" | "lie_established";
+
+export function isGrievanceReason(
+  reasonKind: RelationshipReasonKind,
+): reasonKind is GrievanceKind {
+  return reasonKind === "promise_broken" || reasonKind === "lie_established";
+}
+
+export interface GrievanceRecord {
+  readonly npcId: string;
+  readonly playerId: string;
+  readonly kind: GrievanceKind;
+}
+
+/**
+ * Grievances never expire: there is no time or trust-recovery parameter
+ * here by design, because a later trust recovery must not silently clear
+ * one. Callers that need "ever broken a promise to this NPC" simply keep
+ * every grievance row forever and ask this function whether one exists.
+ */
+export function hasGrievance(
+  grievances: readonly GrievanceRecord[],
+  npcId: string,
+  playerId: string,
+  kind?: GrievanceKind,
+): boolean {
+  return grievances.some(
+    (grievance) =>
+      grievance.npcId === npcId &&
+      grievance.playerId === playerId &&
+      (kind === undefined || grievance.kind === kind),
+  );
+}

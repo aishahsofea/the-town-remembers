@@ -33,6 +33,13 @@ export default defineConfig({
       },
       {
         test: {
+          name: "rules",
+          environment: "node",
+          include: ["packages/rules/src/**/*.test.ts"],
+        },
+      },
+      {
+        test: {
           name: "database",
           environment: "node",
           globalSetup: ["./scripts/vitest-database-setup.mjs"],

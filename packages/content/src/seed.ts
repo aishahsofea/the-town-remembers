@@ -424,21 +424,28 @@ function labelFor(score: number): SeedBelief["label"] {
  */
 export function seedBeliefs(): readonly SeedBelief[] {
   const order = new Map(SEED_EVENTS.map((event, index) => [event.seedEventKey, index]));
-  const totals = new Map<string, { score: number; eventIndex: number }>();
+  // Length-prefixing the first key keeps this composite key injective, and
+  // the pair is carried on the value so it never has to be parsed back out.
+  const totals = new Map<
+    string,
+    { score: number; eventIndex: number; npcKey: string; claimKey: string }
+  >();
 
   for (const evidence of SEED_EVIDENCE) {
-    const key = `${evidence.npcKey} ${evidence.claimKey}`;
+    const key = `${evidence.npcKey.length}:${evidence.npcKey}:${evidence.claimKey}`;
     const eventIndex = order.get(evidence.seedEventKey) ?? 0;
     const existing = totals.get(key);
     totals.set(key, {
       score: (existing?.score ?? 0) + evidence.signedWeight,
       eventIndex: Math.max(existing?.eventIndex ?? 0, eventIndex),
+      npcKey: evidence.npcKey,
+      claimKey: evidence.claimKey,
     });
   }
 
-  return [...totals.entries()]
-    .map(([key, total]) => {
-      const [npcKey = "", claimKey = ""] = key.split(" ");
+  return [...totals.values()]
+    .map((total) => {
+      const { npcKey, claimKey } = total;
       const clamped = Math.max(-100, Math.min(100, total.score));
       return {
         npcKey,

@@ -24,6 +24,9 @@
       "path": "./packages/database"
     },
     {
+      "path": "./packages/rules"
+    },
+    {
       "path": "./packages/database-admin"
     },
     {

@@ -17,6 +17,9 @@ importers:
       '@the-town-remembers/database-admin':
         specifier: workspace:*
         version: link:packages/database-admin
+      '@the-town-remembers/rules':
+        specifier: workspace:*
+        version: link:packages/rules
       '@the-town-remembers/runtime-config':
         specifier: workspace:*
         version: link:packages/runtime-config
@@ -228,6 +231,31 @@ importers:
 
   packages/model-contracts:
     dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+
+  packages/rules:
+    dependencies:
+      '@the-town-remembers/content':
+        specifier: workspace:*
+        version: link:../content
+      '@the-town-remembers/database':
+        specifier: workspace:*
+        version: link:../database
+      '@the-town-remembers/http-contracts':
+        specifier: workspace:*
+        version: link:../http-contracts
+      '@the-town-remembers/model-contracts':
+        specifier: workspace:*
+        version: link:../model-contracts
+      '@the-town-remembers/serialization':
+        specifier: workspace:*
+        version: link:../serialization
+    devDependencies:
+      kysely:
+        specifier: ^0.28.9
+        version: 0.28.17
       zod:
         specifier: ^4.4.3
         version: 4.4.3
