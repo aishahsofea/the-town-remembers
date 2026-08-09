@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { RULES_REGISTRY } from "../kernel/version.js";
 import { isExternalSelectionRequired } from "./dispatcher.js";
 import {
   planAcceptPromise,
@@ -102,6 +103,7 @@ describe("planShow", () => {
     playerId: "player-1",
     alreadyRecordedEvidence: [],
     evidenceShownEventId: "event-1",
+    relationship: { trustScore: 0, suspicionScore: 0, revision: 3 },
     ...EMPTY_BUNDLE,
   };
 
@@ -129,14 +131,19 @@ describe("planShow", () => {
       clueClaimEffects: [{ clueId: "clue-1", claimId: "claim-1", signedWeight: 70 }],
       claimBeliefs: [{ claimId: "claim-1", score: 10, revision: 2 }],
       relationshipReasons: [
-        { reasonKind: "verified_testimony", claimId: "claim-1" },
+        {
+          reasonKind: "verified_testimony",
+          claimId: "claim-1",
+          clueId: "clue-1",
+          sourceRootTransmissionId: "transmission-1",
+        },
         { reasonKind: "evidence_presented", clueId: "clue-1" },
       ],
       ...baseShowInputs,
     });
     expect(isExternalSelectionRequired(result)).toBe(true);
     if (isExternalSelectionRequired(result)) {
-      expect(result.effects).toHaveLength(5);
+      expect(result.effects).toHaveLength(6);
       const evidenceInsert = result.effects.find(
         (effect) => effect.kind === "insert" && effect.table === "belief_evidence",
       );
@@ -147,6 +154,7 @@ describe("planShow", () => {
           clue_id: "clue-1",
           evidence_kind: "physical_clue",
           signed_weight: 70,
+          rule_version: RULES_REGISTRY.rulesVersion,
         },
       });
       const beliefChange = result.effects.find(
@@ -167,9 +175,146 @@ describe("planShow", () => {
           npc_id: "npc-1",
           player_id: "player-1",
           reason_kind: "verified_testimony",
+          rule_version: RULES_REGISTRY.rulesVersion,
           claim_id: "claim-1",
+          clue_id: "clue-1",
+          source_root_transmission_id: "transmission-1",
         },
       });
+      expect(relationshipInserts[1]).toMatchObject({
+        row: {
+          reason_kind: "evidence_presented",
+          claim_id: null,
+          clue_id: "clue-1",
+        },
+      });
+      // ck_relationship_changes__shape leaves item_id/promise_id NULL for
+      // both of these reasons, so the row must not carry them at all.
+      expect(relationshipInserts[1]).not.toMatchObject({
+        row: { item_id: expect.anything() },
+      });
+    }
+  });
+
+  it("advances the current relationship row by the summed, clamped deltas", () => {
+    const result = planShow({
+      evidenceKind: "clue",
+      clueDiscoveredInTown: true,
+      itemCurrentlyHeldByPlayer: false,
+      shownClueIds: [],
+      clueClaimEffects: [],
+      claimBeliefs: [],
+      relationshipReasons: [
+        {
+          reasonKind: "verified_testimony",
+          claimId: "claim-1",
+          clueId: "clue-1",
+          sourceRootTransmissionId: "transmission-1",
+        },
+        { reasonKind: "evidence_presented", clueId: "clue-1" },
+      ],
+      ...baseShowInputs,
+    });
+    if (isExternalSelectionRequired(result)) {
+      const relationshipChange = result.effects.find(
+        (effect) =>
+          effect.kind === "conditional_state_change" &&
+          effect.table === "npc_player_relationships",
+      );
+      // trust 0 + 10 + 5, suspicion 0 - 5 - 5, against the row's own revision.
+      expect(relationshipChange).toMatchObject({
+        key: { npc_id: "npc-1", player_id: "player-1" },
+        expectedRevision: 3,
+        change: { trust_score: 15, suspicion_score: -10, updated_event_id: "event-1" },
+      });
+    }
+  });
+
+  it("clamps the relationship aggregate once rather than per reason", () => {
+    const result = planShow({
+      evidenceKind: "clue",
+      clueDiscoveredInTown: true,
+      itemCurrentlyHeldByPlayer: false,
+      shownClueIds: [],
+      clueClaimEffects: [],
+      claimBeliefs: [],
+      relationshipReasons: [
+        {
+          reasonKind: "verified_testimony",
+          claimId: "claim-1",
+          clueId: "clue-1",
+          sourceRootTransmissionId: "transmission-1",
+        },
+        { reasonKind: "evidence_presented", clueId: "clue-1" },
+      ],
+      ...baseShowInputs,
+      relationship: { trustScore: 95, suspicionScore: -98, revision: 3 },
+    });
+    if (isExternalSelectionRequired(result)) {
+      const relationshipChange = result.effects.find(
+        (effect) =>
+          effect.kind === "conditional_state_change" &&
+          effect.table === "npc_player_relationships",
+      );
+      expect(relationshipChange).toMatchObject({
+        change: { trust_score: 100, suspicion_score: -100 },
+      });
+    }
+  });
+
+  it("cites the claim and root transmission on a lie_established row, and no clue", () => {
+    const result = planShow({
+      evidenceKind: "clue",
+      clueDiscoveredInTown: true,
+      itemCurrentlyHeldByPlayer: false,
+      shownClueIds: [],
+      clueClaimEffects: [],
+      claimBeliefs: [],
+      relationshipReasons: [
+        {
+          reasonKind: "lie_established",
+          claimId: "claim-1",
+          sourceRootTransmissionId: "transmission-1",
+        },
+      ],
+      ...baseShowInputs,
+    });
+    if (isExternalSelectionRequired(result)) {
+      const relationshipInsert = result.effects.find(
+        (effect) => effect.kind === "insert" && effect.table === "relationship_changes",
+      );
+      expect(relationshipInsert).toMatchObject({
+        row: {
+          reason_kind: "lie_established",
+          claim_id: "claim-1",
+          clue_id: null,
+          source_root_transmission_id: "transmission-1",
+          trust_delta: -30,
+          suspicion_delta: 40,
+        },
+      });
+    }
+  });
+
+  it("emits no relationship state change when the plan produced no reason", () => {
+    const result = planShow({
+      evidenceKind: "clue",
+      clueDiscoveredInTown: true,
+      itemCurrentlyHeldByPlayer: false,
+      shownClueIds: [],
+      clueClaimEffects: [],
+      claimBeliefs: [],
+      relationshipReasons: [],
+      ...baseShowInputs,
+    });
+    if (isExternalSelectionRequired(result)) {
+      expect(
+        result.effects.some(
+          (effect) =>
+            effect.kind === "conditional_state_change" &&
+            effect.table === "npc_player_relationships",
+        ),
+      ).toBe(false);
     }
   });
 
@@ -302,6 +447,8 @@ describe("planGive", () => {
     itemRevision: 4,
     recipientActorId: "npc-1",
     playerId: "player-1",
+    itemTransferredEventId: "event-give-1",
+    relationship: { trustScore: 20, suspicionScore: 10, revision: 6 },
     ...EMPTY_BUNDLE,
   };
 
@@ -345,6 +492,20 @@ describe("planGive", () => {
           player_id: "player-1",
           reason_kind: "requested_item_given",
           item_id: "item-1",
+        },
+      });
+      const relationshipChange = result.effects.find(
+        (effect) =>
+          effect.kind === "conditional_state_change" &&
+          effect.table === "npc_player_relationships",
+      );
+      expect(relationshipChange).toMatchObject({
+        key: { npc_id: "npc-1", player_id: "player-1" },
+        expectedRevision: 6,
+        change: {
+          trust_score: 35,
+          suspicion_score: 5,
+          updated_event_id: "event-give-1",
         },
       });
     }

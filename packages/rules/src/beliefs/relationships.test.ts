@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  aggregateRelationshipUpdates,
   applicableReasonKindsForShow,
   hasGrievance,
   isGrievanceReason,
@@ -21,6 +22,85 @@ describe("relationshipDeltaFor", () => {
     ["promise_broken", { trust: -40, suspicion: 35 }],
   ] as const)("names the exact delta for %s", (reasonKind, expected) => {
     expect(relationshipDeltaFor(reasonKind)).toStrictEqual(expected);
+  });
+});
+
+describe("aggregateRelationshipUpdates", () => {
+  const neutral = {
+    npcId: "npc-1",
+    playerId: "player-1",
+    trustScore: 0,
+    suspicionScore: 0,
+    revision: 4,
+  };
+
+  it("sums one event's reasons against the snapshot and carries its revision", () => {
+    expect(
+      aggregateRelationshipUpdates(
+        [neutral],
+        [
+          { npcId: "npc-1", playerId: "player-1", reasonKind: "verified_testimony" },
+          { npcId: "npc-1", playerId: "player-1", reasonKind: "evidence_presented" },
+        ],
+      ),
+    ).toStrictEqual([
+      {
+        npcId: "npc-1",
+        playerId: "player-1",
+        expectedRevision: 4,
+        trustScore: 15,
+        suspicionScore: -10,
+      },
+    ]);
+  });
+
+  it("clamps the total once, not each contribution", () => {
+    // Clamping per contribution would stop at 100 after the first reason and
+    // then subtract nothing; clamping once keeps the arithmetic honest.
+    const [aggregate] = aggregateRelationshipUpdates(
+      [{ ...neutral, trustScore: 95 }],
+      [
+        { npcId: "npc-1", playerId: "player-1", reasonKind: "verified_testimony" },
+        { npcId: "npc-1", playerId: "player-1", reasonKind: "lie_established" },
+      ],
+    );
+    expect(aggregate).toMatchObject({ trustScore: 75, suspicionScore: 35 });
+  });
+
+  it("skips a relationship it holds no snapshot for, rather than guessing a revision", () => {
+    expect(
+      aggregateRelationshipUpdates(
+        [],
+        [{ npcId: "npc-1", playerId: "player-1", reasonKind: "promise_broken" }],
+      ),
+    ).toStrictEqual([]);
+  });
+
+  it("skips a row whose clamped scores did not move", () => {
+    expect(
+      aggregateRelationshipUpdates(
+        [{ ...neutral, trustScore: 100, suspicionScore: -100 }],
+        [{ npcId: "npc-1", playerId: "player-1", reasonKind: "evidence_presented" }],
+      ),
+    ).toStrictEqual([]);
+  });
+
+  it("orders several relationships by npc then player", () => {
+    const aggregates = aggregateRelationshipUpdates(
+      [
+        { ...neutral, npcId: "npc-b" },
+        { ...neutral, npcId: "npc-a", playerId: "player-2" },
+        { ...neutral, npcId: "npc-a" },
+      ],
+      [
+        { npcId: "npc-b", playerId: "player-1", reasonKind: "promise_broken" },
+        { npcId: "npc-a", playerId: "player-2", reasonKind: "promise_broken" },
+        { npcId: "npc-a", playerId: "player-1", reasonKind: "promise_broken" },
+      ],
+    );
+    expect(aggregates.map((entry) => `${entry.npcId}/${entry.playerId}`)).toStrictEqual(
+      ["npc-a/player-1", "npc-a/player-2", "npc-b/player-1"],
+    );
   });
 });
 

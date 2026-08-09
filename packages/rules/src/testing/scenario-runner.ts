@@ -29,6 +29,7 @@ import {
   INCORRECT_GUESS,
   PLAYER_ID,
   RESOLUTION_EVENT_ID,
+  SOURCE_ROOT_TRANSMISSION_ID,
   TOWN_ID,
   VISIT_ID,
 } from "./fixtures.js";
@@ -157,6 +158,7 @@ function bothEndings(): readonly ScenarioStepRecord[] {
     resolutionEventId: RESOLUTION_EVENT_ID,
     activeVisits: [],
     activePromises: [],
+    relationships: [],
   });
   const restoreQuietly = planResolve({
     townAlreadyResolved: false,
@@ -175,6 +177,7 @@ function bothEndings(): readonly ScenarioStepRecord[] {
     resolutionEventId: RESOLUTION_EVENT_ID,
     activeVisits: [],
     activePromises: [],
+    relationships: [],
   });
   return [
     { actionKind: "resolve", result: exposeCoverUp },
@@ -194,9 +197,15 @@ function showEvidenceFlow(): readonly ScenarioStepRecord[] {
     alreadyRecordedEvidence: [],
     claimBeliefs: [{ claimId: "lark_damaged_bell", score: 0, revision: 0 }],
     relationshipReasons: [
-      { reasonKind: "verified_testimony", claimId: "lark_damaged_bell" },
+      {
+        reasonKind: "verified_testimony",
+        claimId: "lark_damaged_bell",
+        clueId: "bent_clapper_pin",
+        sourceRootTransmissionId: SOURCE_ROOT_TRANSMISSION_ID,
+      },
       { reasonKind: "evidence_presented", clueId: "bent_clapper_pin" },
     ],
+    relationship: { trustScore: 0, suspicionScore: 0, revision: 0 },
     npcId: "mara_venn",
     playerId: PLAYER_ID,
     evidenceShownEventId: EVIDENCE_SHOWN_EVENT_ID,

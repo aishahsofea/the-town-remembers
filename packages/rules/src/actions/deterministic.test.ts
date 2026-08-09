@@ -207,6 +207,7 @@ describe("planLeaveVisit", () => {
     townRevision: 7,
     visitId: "visit-1",
     actionId: "action-1",
+    ambientScheduledThroughSequence: 4,
     now: new Date("2026-01-01T00:00:00.000Z"),
   };
 
@@ -264,6 +265,54 @@ describe("planLeaveVisit", () => {
       ...baseLeaveInputs,
     });
     expect(result.effects).toHaveLength(4);
+
+    const outboxInsert = result.effects.find(
+      (effect) => effect.kind === "insert" && effect.table === "outbox",
+    );
+    // The half-open range this departure claims: everything after the last
+    // already-scheduled sequence, through the departure event itself.
+    expect(outboxInsert).toStrictEqual({
+      kind: "insert",
+      table: "outbox",
+      row: {
+        job_type: "ambient_tick",
+        visit_id: "visit-1",
+        after_event_sequence: 4,
+        through_event_sequence: 10,
+      },
+    });
+  });
+
+  it("claims a range disjoint from the one an earlier departure already scheduled", () => {
+    const first = planLeaveVisit({
+      hasActiveVisit: true,
+      lastEventSequenceAtLeave: 10,
+      eligibleEventCountInRange: 2,
+      ...baseLeaveInputs,
+    });
+    const second = planLeaveVisit({
+      hasActiveVisit: true,
+      lastEventSequenceAtLeave: 19,
+      eligibleEventCountInRange: 1,
+      ...baseLeaveInputs,
+      visitId: "visit-2",
+      // The town advanced to the first departure's upper bound.
+      ambientScheduledThroughSequence: 10,
+    });
+    const rangeOf = (result: typeof first) => {
+      const insert = result.effects.find(
+        (effect) => effect.kind === "insert" && effect.table === "outbox",
+      );
+      return insert?.kind === "insert" ? insert.row : undefined;
+    };
+    expect(rangeOf(first)).toMatchObject({
+      after_event_sequence: 4,
+      through_event_sequence: 10,
+    });
+    expect(rangeOf(second)).toMatchObject({
+      after_event_sequence: 10,
+      through_event_sequence: 19,
+    });
   });
 });
 
@@ -363,6 +412,7 @@ describe("planResolve", () => {
     resolutionEventId: "event-resolution-1",
     activeVisits: [],
     activePromises: [],
+    relationships: [],
   };
 
   it("is no_change when the town is already resolved", () => {
@@ -570,6 +620,114 @@ describe("planResolve", () => {
       result.effects.some(
         (effect) =>
           effect.kind === "conditional_state_change" && effect.table === "promises",
+      ),
+    ).toBe(false);
+  });
+
+  it("advances each settling promise's current relationship row, summed once per pair", () => {
+    const result = planResolve({
+      townAlreadyResolved: false,
+      ...baseInputs,
+      choice: "expose_cover_up",
+      bellCurrentlyAtOldChapel: false,
+      activePromises: [
+        {
+          promiseId: "promise-1",
+          npcId: "npc-1",
+          playerId: "p1",
+          kind: "return_item",
+          protectedClaimEntersPublicResolution: false,
+          requesterHoldsItemAtResolution: true,
+        },
+        {
+          promiseId: "promise-2",
+          npcId: "npc-1",
+          playerId: "p1",
+          kind: "keep_secret",
+          protectedClaimEntersPublicResolution: true,
+          requesterHoldsItemAtResolution: false,
+        },
+        {
+          promiseId: "promise-3",
+          npcId: "npc-2",
+          playerId: "p1",
+          kind: "keep_secret",
+          protectedClaimEntersPublicResolution: true,
+          requesterHoldsItemAtResolution: false,
+        },
+      ],
+      relationships: [
+        {
+          npcId: "npc-1",
+          playerId: "p1",
+          trustScore: 30,
+          suspicionScore: 0,
+          revision: 5,
+        },
+        {
+          npcId: "npc-2",
+          playerId: "p1",
+          trustScore: 0,
+          suspicionScore: 0,
+          revision: 2,
+        },
+      ],
+    });
+    const relationshipChanges = result.effects.filter(
+      (effect) =>
+        effect.kind === "conditional_state_change" &&
+        effect.table === "npc_player_relationships",
+    );
+    // Two promises settle against npc-1 (fulfilled +25/-15, broken -40/+35):
+    // one row carrying the summed deltas, not one row per promise.
+    expect(relationshipChanges).toHaveLength(2);
+    expect(relationshipChanges[0]).toMatchObject({
+      key: { npc_id: "npc-1", player_id: "p1" },
+      expectedRevision: 5,
+      change: {
+        trust_score: 15,
+        suspicion_score: 20,
+        updated_event_id: "event-resolution-1",
+      },
+    });
+    expect(relationshipChanges[1]).toMatchObject({
+      key: { npc_id: "npc-2", player_id: "p1" },
+      expectedRevision: 2,
+      change: { trust_score: -40, suspicion_score: 35 },
+    });
+  });
+
+  it("emits no relationship state change for a promise that did not settle", () => {
+    const result = planResolve({
+      townAlreadyResolved: false,
+      ...baseInputs,
+      choice: "expose_cover_up",
+      bellCurrentlyAtOldChapel: false,
+      activePromises: [
+        {
+          promiseId: "promise-3",
+          npcId: "npc-3",
+          playerId: "p3",
+          kind: "keep_secret",
+          protectedClaimEntersPublicResolution: false,
+          requesterHoldsItemAtResolution: false,
+        },
+      ],
+      relationships: [
+        {
+          npcId: "npc-3",
+          playerId: "p3",
+          trustScore: 10,
+          suspicionScore: 0,
+          revision: 1,
+        },
+      ],
+    });
+    expect(
+      result.effects.some(
+        (effect) =>
+          effect.kind === "conditional_state_change" &&
+          effect.table === "npc_player_relationships",
       ),
     ).toBe(false);
   });

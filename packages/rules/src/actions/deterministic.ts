@@ -6,7 +6,11 @@
 
 import type { PromiseKind } from "@the-town-remembers/database/domains";
 
-import { relationshipDeltaFor } from "../beliefs/relationships.js";
+import {
+  relationshipDeltaFor,
+  type RelationshipContribution,
+  type RelationshipSnapshot,
+} from "../beliefs/relationships.js";
 import {
   caseAttemptOutcome,
   canResolve,
@@ -29,11 +33,13 @@ import {
   canTravelTo,
   classifyStartVisit,
   classifyTravel,
+  computeAmbientEventRange,
   planLeave,
   type LocationAccessState,
   type PriorAmbientJobStatus,
 } from "../world/visits.js";
 import { dispatcherTrace as makeTrace } from "./dispatcher.js";
+import { relationshipStateChangeEffects } from "./relationship-effects.js";
 
 // --- start_visit ------------------------------------------------------------------
 
@@ -211,6 +217,13 @@ export interface LeaveInputs {
   readonly hasActiveVisit: boolean;
   readonly lastEventSequenceAtLeave: number;
   readonly eligibleEventCountInRange: number;
+  /**
+   * `towns.ambient_scheduled_through_sequence` as this plan read it — the
+   * exclusive lower bound of the range this departure claims. Concurrent
+   * departures get disjoint ranges precisely because each one starts where
+   * the last committed one stopped.
+   */
+  readonly ambientScheduledThroughSequence: number;
   readonly townId: string;
   readonly townRevision: number;
   readonly visitId: string;
@@ -251,10 +264,23 @@ export function planLeaveVisit(inputs: LeaveInputs): DecisionResult<EffectPlanEn
     },
   ];
   if (leavePlan.createsOutboxIntent) {
+    // The job is bound to the departing visit and to the half-open range
+    // `(scheduled_through, last_event]` it is allowed to react to; without
+    // both, `uq_outbox__visit_job_type` and `ck_outbox__range` reject it and
+    // a second tick could re-read the same events.
+    const range = computeAmbientEventRange(
+      inputs.ambientScheduledThroughSequence,
+      inputs.lastEventSequenceAtLeave,
+    );
     effects.push({
       kind: "insert",
       table: "outbox",
-      row: { job_type: "ambient_tick" },
+      row: {
+        job_type: "ambient_tick",
+        visit_id: inputs.visitId,
+        after_event_sequence: range.lowerExclusive,
+        through_event_sequence: range.upperInclusive,
+      },
     });
   }
   return { outcome: "applied", reasonCode: "OK", effects, preconditions: {}, trace };
@@ -369,6 +395,12 @@ export interface ResolveInputs {
   readonly resolutionEventId: string;
   readonly activeVisits: readonly ResolveActiveVisit[];
   readonly activePromises: readonly ResolvePromiseInput[];
+  /**
+   * The current relationship row for every (npc, player) pair a settling
+   * promise touches. Two promises between the same pair are summed against
+   * one snapshot and clamped once, so only one row per pair is needed.
+   */
+  readonly relationships: readonly RelationshipSnapshot[];
 }
 
 export function planResolve(inputs: ResolveInputs): DecisionResult<EffectPlanEntry> {
@@ -452,6 +484,7 @@ export function planResolve(inputs: ResolveInputs): DecisionResult<EffectPlanEnt
     });
   }
 
+  const relationshipContributions: RelationshipContribution[] = [];
   for (const promise of inputs.activePromises.toSorted((left, right) =>
     left.promiseId.localeCompare(right.promiseId),
   )) {
@@ -466,6 +499,11 @@ export function planResolve(inputs: ResolveInputs): DecisionResult<EffectPlanEnt
 
     const reasonKind = outcome === "fulfilled" ? "promise_fulfilled" : "promise_broken";
     const delta = relationshipDeltaFor(reasonKind);
+    relationshipContributions.push({
+      npcId: promise.npcId,
+      playerId: promise.playerId,
+      reasonKind,
+    });
     effects.push(
       {
         kind: "conditional_state_change",
@@ -488,6 +526,13 @@ export function planResolve(inputs: ResolveInputs): DecisionResult<EffectPlanEnt
       },
     );
   }
+  effects.push(
+    ...relationshipStateChangeEffects(
+      inputs.relationships,
+      relationshipContributions,
+      inputs.resolutionEventId,
+    ),
+  );
 
   return { outcome: "applied", reasonCode: "OK", effects, preconditions: {}, trace };
 }

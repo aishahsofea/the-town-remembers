@@ -26,6 +26,7 @@ export * from "./board/provenance.js";
 export * from "./board/case.js";
 export * from "./actions/dispatcher.js";
 export * from "./actions/deterministic.js";
+export * from "./actions/relationship-effects.js";
 export * from "./actions/model-backed.js";
 export * from "./projection/view-version.js";
 export * from "./projection/player-view.js";

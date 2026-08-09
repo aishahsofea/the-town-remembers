@@ -16,6 +16,9 @@ export const CASE_ATTEMPT_ID = "case-attempt-1";
 export const ACTION_ID = "action-1";
 export const RESOLUTION_EVENT_ID = "event-resolution-1";
 export const EVIDENCE_SHOWN_EVENT_ID = "event-evidence-shown-1";
+export const ITEM_TRANSFERRED_EVENT_ID = "event-item-transferred-1";
+/** The root transmission a `verified_testimony`/`lie_established` row must cite. */
+export const SOURCE_ROOT_TRANSMISSION_ID = "transmission-root-1";
 
 export const CASE_SOLUTION_REFERENCE = Object.freeze({
   culpritKey: BELL_MYSTERY_V1.caseSolution.culpritKey,

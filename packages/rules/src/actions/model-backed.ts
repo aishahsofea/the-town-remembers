@@ -6,8 +6,6 @@
  * `external_selection_required` rather than calling a model itself.
  */
 
-import type { RelationshipReasonKind } from "@the-town-remembers/database/domains";
-
 import { buildApprovedDisclosureBundle } from "../disclosure/bundle.js";
 import type {
   ApprovedDisclosureBundle,
@@ -16,7 +14,10 @@ import type {
   DisclosureCandidateInput,
 } from "../disclosure/bundle.js";
 import { beliefLabelFor } from "../beliefs/labels.js";
-import { relationshipDeltaFor } from "../beliefs/relationships.js";
+import {
+  relationshipDeltaFor,
+  type RelationshipScores,
+} from "../beliefs/relationships.js";
 import { deniedResult } from "../kernel/decision.js";
 import type { EffectPlanEntry } from "../kernel/effects.js";
 import { sumEventContributions } from "../kernel/numeric.js";
@@ -28,6 +29,7 @@ import {
   type ClueClaimEffectLink,
 } from "../world/clues.js";
 import { type ActionPlanResult, dispatcherTrace as makeTrace } from "./dispatcher.js";
+import { relationshipStateChangeEffects } from "./relationship-effects.js";
 
 export interface DisclosureBundleInputs {
   readonly disclosureCandidates: readonly DisclosureCandidateInput[];
@@ -132,13 +134,25 @@ export interface ShowClaimBeliefState {
   readonly revision: number;
 }
 
-export interface ShowRelationshipReason {
-  readonly reasonKind: RelationshipReasonKind;
-  /** Set for `verified_testimony`/`lie_established`. */
-  readonly claimId?: string;
-  /** Set for `evidence_presented`. */
-  readonly clueId?: string;
-}
+/**
+ * The three reasons a `Show` can produce, each carrying exactly the keys
+ * `ck_relationship_changes__shape` requires of it — a discriminated union
+ * rather than optional fields, so a row that would violate the constraint
+ * cannot be constructed in the first place.
+ */
+export type ShowRelationshipReason =
+  | {
+      readonly reasonKind: "verified_testimony";
+      readonly claimId: string;
+      readonly clueId: string;
+      readonly sourceRootTransmissionId: string;
+    }
+  | { readonly reasonKind: "evidence_presented"; readonly clueId: string }
+  | {
+      readonly reasonKind: "lie_established";
+      readonly claimId: string;
+      readonly sourceRootTransmissionId: string;
+    };
 
 export interface ShowInputs extends DisclosureBundleInputs {
   readonly evidenceKind: "clue" | "item";
@@ -149,11 +163,39 @@ export interface ShowInputs extends DisclosureBundleInputs {
   readonly alreadyRecordedEvidence: readonly ShowAlreadyRecordedEvidence[];
   readonly claimBeliefs: readonly ShowClaimBeliefState[];
   readonly relationshipReasons: readonly ShowRelationshipReason[];
+  /**
+   * The listening NPC's current relationship scores with this player,
+   * advanced by this plan. The pair is already named by `npcId`/`playerId`,
+   * so it cannot disagree with the row this plan writes.
+   */
+  readonly relationship: RelationshipScores;
   readonly playerId: string;
   /** The NPC being shown evidence. */
   readonly npcId: string;
   /** The pre-allocated id of the `evidence_shown` event this plan creates. */
   readonly evidenceShownEventId: string;
+}
+
+/** The reason-specific provenance columns, keyed off the discriminant. */
+function relationshipProvenanceFor(
+  reason: ShowRelationshipReason,
+): Readonly<Record<string, string | null>> {
+  switch (reason.reasonKind) {
+    case "verified_testimony":
+      return {
+        claim_id: reason.claimId,
+        clue_id: reason.clueId,
+        source_root_transmission_id: reason.sourceRootTransmissionId,
+      };
+    case "evidence_presented":
+      return { claim_id: null, clue_id: reason.clueId };
+    case "lie_established":
+      return {
+        claim_id: reason.claimId,
+        clue_id: null,
+        source_root_transmission_id: reason.sourceRootTransmissionId,
+      };
+  }
 }
 
 interface ShowScoreContribution {
@@ -209,6 +251,7 @@ export function planShow(inputs: ShowInputs): ActionPlanResult {
           clue_id: link.clueId,
           evidence_kind: link.signedWeight < 0 ? "contradiction" : "physical_clue",
           signed_weight: link.signedWeight,
+          rule_version: RULES_REGISTRY.rulesVersion,
         },
       });
     }
@@ -261,13 +304,23 @@ export function planShow(inputs: ShowInputs): ActionPlanResult {
         player_id: inputs.playerId,
         reason_kind: reason.reasonKind,
         rule_version: RULES_REGISTRY.rulesVersion,
-        claim_id: reason.claimId ?? null,
-        clue_id: reason.clueId ?? null,
+        ...relationshipProvenanceFor(reason),
         trust_delta: delta.trust,
         suspicion_delta: delta.suspicion,
       },
     });
   }
+  effects.push(
+    ...relationshipStateChangeEffects(
+      [{ npcId: inputs.npcId, playerId: inputs.playerId, ...inputs.relationship }],
+      inputs.relationshipReasons.map((reason) => ({
+        npcId: inputs.npcId,
+        playerId: inputs.playerId,
+        reasonKind: reason.reasonKind,
+      })),
+      inputs.evidenceShownEventId,
+    ),
+  );
 
   return {
     kind: "external_selection_required",
@@ -288,7 +341,17 @@ export interface GiveActionInputs extends DisclosureBundleInputs {
   /** The NPC receiving custody on a successful transfer. */
   readonly recipientActorId: string;
   readonly playerId: string;
-  readonly relationshipReasons: readonly RelationshipReasonKind[];
+  /**
+   * A Give produces at most `requested_item_given`, whose
+   * `ck_relationship_changes__shape` branch takes the item and nothing else.
+   * Widening this to every reason kind would let a caller ask for a row this
+   * planner cannot fill the provenance columns for.
+   */
+  readonly relationshipReasons: readonly "requested_item_given"[];
+  /** The recipient NPC's current relationship scores with this player. */
+  readonly relationship: RelationshipScores;
+  /** The pre-allocated id of the `item_transferred` event this plan creates. */
+  readonly itemTransferredEventId: string;
 }
 
 export function planGive(inputs: GiveActionInputs): ActionPlanResult {
@@ -328,6 +391,23 @@ export function planGive(inputs: GiveActionInputs): ActionPlanResult {
       },
     });
   }
+  effects.push(
+    ...relationshipStateChangeEffects(
+      [
+        {
+          npcId: inputs.recipientActorId,
+          playerId: inputs.playerId,
+          ...inputs.relationship,
+        },
+      ],
+      inputs.relationshipReasons.map((reasonKind) => ({
+        npcId: inputs.recipientActorId,
+        playerId: inputs.playerId,
+        reasonKind,
+      })),
+      inputs.itemTransferredEventId,
+    ),
+  );
 
   return {
     kind: "external_selection_required",
