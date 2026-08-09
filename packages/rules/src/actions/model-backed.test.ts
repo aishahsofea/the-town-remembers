@@ -105,25 +105,76 @@ describe("planShow", () => {
       shownClueIds: [],
       clueClaimEffects: [],
       relationshipReasons: [],
+      npcId: "npc-1",
       ...EMPTY_BUNDLE,
     });
     if (!isExternalSelectionRequired(result))
       expect(result.reasonCode).toBe("EVIDENCE_NOT_AUTHORIZED");
   });
 
-  it("requires external selection and includes the structured effect insert when a clue is linked", () => {
+  it("appends belief_evidence and updates the affected belief when a clue is linked", () => {
     const result = planShow({
       evidenceKind: "clue",
       clueDiscoveredInTown: true,
       itemCurrentlyHeldByPlayer: false,
       shownClueIds: ["clue-1"],
-      clueClaimEffects: [{ clueId: "clue-1", claimId: "claim-1" }],
+      clueClaimEffects: [
+        {
+          clueId: "clue-1",
+          claimId: "claim-1",
+          signedWeight: 70,
+          npcBeliefScore: 10,
+          npcBeliefRevision: 2,
+        },
+      ],
       relationshipReasons: ["verified_testimony", "evidence_presented"],
+      npcId: "npc-1",
       ...EMPTY_BUNDLE,
     });
     expect(isExternalSelectionRequired(result)).toBe(true);
     if (isExternalSelectionRequired(result)) {
-      expect(result.effects).toHaveLength(3);
+      expect(result.effects).toHaveLength(4);
+      const evidenceInsert = result.effects.find(
+        (effect) => effect.kind === "insert" && effect.table === "belief_evidence",
+      );
+      expect(evidenceInsert).toMatchObject({
+        row: {
+          npc_id: "npc-1",
+          claim_id: "claim-1",
+          clue_id: "clue-1",
+          evidence_kind: "physical_clue",
+          signed_weight: 70,
+        },
+      });
+      const beliefChange = result.effects.find(
+        (effect) =>
+          effect.kind === "conditional_state_change" && effect.table === "npc_beliefs",
+      );
+      expect(beliefChange).toMatchObject({
+        key: { npc_id: "npc-1", claim_id: "claim-1" },
+        expectedRevision: 2,
+        change: { score: 80, label: "convinced" },
+      });
+    }
+  });
+
+  it("produces no belief effect when no shown clue is linked", () => {
+    const result = planShow({
+      evidenceKind: "clue",
+      clueDiscoveredInTown: true,
+      itemCurrentlyHeldByPlayer: false,
+      shownClueIds: ["clue-unlinked"],
+      clueClaimEffects: [],
+      relationshipReasons: [],
+      npcId: "npc-1",
+      ...EMPTY_BUNDLE,
+    });
+    if (isExternalSelectionRequired(result)) {
+      expect(
+        result.effects.some(
+          (effect) => effect.kind === "insert" && effect.table === "belief_evidence",
+        ),
+      ).toBe(false);
     }
   });
 });
@@ -135,6 +186,8 @@ describe("planGive", () => {
       itemHeldByPlayer: false,
       npcAcceptsItem: true,
       itemId: "item-1",
+      itemRevision: 4,
+      recipientActorId: "npc-1",
       relationshipReasons: [],
       ...EMPTY_BUNDLE,
     });
@@ -142,20 +195,28 @@ describe("planGive", () => {
       expect(result.reasonCode).toBe("ITEM_NOT_HELD");
   });
 
-  it("requires external selection with a custody-transfer effect when accepted", () => {
+  it("requires external selection and transfers custody to the recipient NPC against the item's real revision", () => {
     const result = planGive({
       npcPresent: true,
       itemHeldByPlayer: true,
       npcAcceptsItem: true,
       itemId: "item-1",
+      itemRevision: 4,
+      recipientActorId: "npc-1",
       relationshipReasons: ["requested_item_given"],
       ...EMPTY_BUNDLE,
     });
     expect(isExternalSelectionRequired(result)).toBe(true);
     if (isExternalSelectionRequired(result)) {
-      expect(
-        result.effects.some((effect) => effect.kind === "conditional_state_change"),
-      ).toBe(true);
+      const custodyChange = result.effects.find(
+        (effect) => effect.kind === "conditional_state_change",
+      );
+      expect(custodyChange).toMatchObject({
+        table: "items",
+        key: { id: "item-1" },
+        expectedRevision: 4,
+        change: { held_by_actor_id: "npc-1" },
+      });
     }
   });
 
@@ -165,6 +226,8 @@ describe("planGive", () => {
       itemHeldByPlayer: true,
       npcAcceptsItem: false,
       itemId: "item-1",
+      itemRevision: 4,
+      recipientActorId: "npc-1",
       relationshipReasons: [],
       ...EMPTY_BUNDLE,
     });

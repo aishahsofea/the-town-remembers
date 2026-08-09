@@ -268,13 +268,20 @@ describe("planSourceDiscreditedReversal", () => {
     },
     {
       evidenceId: "ev-2",
-      npcId: "npc-2",
+      npcId: "npc-1",
       claimId: "claim-2",
       signedWeight: 40,
       independentSourceActorId: "npc-liar",
     },
     {
       evidenceId: "ev-3",
+      npcId: "npc-2",
+      claimId: "claim-1",
+      signedWeight: 55,
+      independentSourceActorId: "npc-liar",
+    },
+    {
+      evidenceId: "ev-4",
       npcId: "npc-3",
       claimId: "claim-3",
       signedWeight: 80,
@@ -282,10 +289,12 @@ describe("planSourceDiscreditedReversal", () => {
     },
   ];
 
-  it("reverses every active contribution from the discredited source with the exact opposite weight", () => {
+  it("reverses only the discredited (npc, source, claim) contribution with the exact opposite weight", () => {
     const plan = planSourceDiscreditedReversal(
       activeContributions,
       "npc-liar",
+      "npc-1",
+      "claim-1",
       new Set(),
       "event-1",
     );
@@ -298,22 +307,40 @@ describe("planSourceDiscreditedReversal", () => {
         reversesEvidenceId: "ev-1",
         causalEventId: "event-1",
       },
-      {
-        npcId: "npc-2",
-        claimId: "claim-2",
-        evidenceKind: "source_reversal",
-        signedWeight: -40,
-        reversesEvidenceId: "ev-2",
-        causalEventId: "event-1",
-      },
     ]);
+  });
+
+  it("leaves the same source's unrelated claim to the same NPC untouched", () => {
+    const plan = planSourceDiscreditedReversal(
+      activeContributions,
+      "npc-liar",
+      "npc-1",
+      "claim-1",
+      new Set(),
+      "event-1",
+    );
+    expect(plan.some((entry) => entry.reversesEvidenceId === "ev-2")).toBe(false);
+  });
+
+  it("leaves the same source's same claim told to a different NPC untouched — knowledge does not teleport", () => {
+    const plan = planSourceDiscreditedReversal(
+      activeContributions,
+      "npc-liar",
+      "npc-1",
+      "claim-1",
+      new Set(),
+      "event-1",
+    );
+    expect(plan.some((entry) => entry.reversesEvidenceId === "ev-3")).toBe(false);
   });
 
   it("never reverses the same evidence row twice", () => {
     const plan = planSourceDiscreditedReversal(
       activeContributions,
       "npc-liar",
-      new Set(["ev-1", "ev-2"]),
+      "npc-1",
+      "claim-1",
+      new Set(["ev-1"]),
       "event-2",
     );
     expect(plan).toStrictEqual([]);
@@ -323,11 +350,13 @@ describe("planSourceDiscreditedReversal", () => {
     const plan = planSourceDiscreditedReversal(
       activeContributions,
       "npc-honest",
+      "npc-3",
+      "claim-3",
       new Set(),
       "e",
     );
     expect(plan).toHaveLength(1);
-    expect(plan[0]!.reversesEvidenceId).toBe("ev-3");
+    expect(plan[0]!.reversesEvidenceId).toBe("ev-4");
   });
 });
 

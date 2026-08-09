@@ -9,6 +9,9 @@ import { BELL_MYSTERY_V1 } from "@the-town-remembers/content";
 export const FESTIVAL_SQUARE_LOCATION_ID = "festival_square";
 export const OLD_CHAPEL_LOCATION_ID = "old_chapel";
 export const PLAYER_ID = "player-1";
+export const TOWN_ID = "town-1";
+export const VISIT_ID = "visit-1";
+export const BELL_ITEM_ID = "festival_bell";
 
 export const CASE_SOLUTION_REFERENCE = Object.freeze({
   culpritKey: BELL_MYSTERY_V1.caseSolution.culpritKey,

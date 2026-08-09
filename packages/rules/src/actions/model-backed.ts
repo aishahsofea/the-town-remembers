@@ -15,6 +15,7 @@ import type {
   ApprovedOutcome,
   DisclosureCandidateInput,
 } from "../disclosure/bundle.js";
+import { beliefLabelFor } from "../beliefs/labels.js";
 import { sumRelationshipDeltas } from "../beliefs/relationships.js";
 import { deniedResult } from "../kernel/decision.js";
 import type { EffectPlanEntry } from "../kernel/effects.js";
@@ -107,13 +108,27 @@ export function planTell(inputs: TellInputs): ActionPlanResult {
 
 // --- show -------------------------------------------------------------------------------------
 
+/**
+ * One authored `clue_claim_effects` linkage plus the listening NPC's current
+ * belief state on that claim — the caller already joins these when building
+ * the candidate list, since applying the structured effect needs both the
+ * authored `signed_weight` and the pre-effect score/revision to update.
+ */
+export interface ShowClueEvidenceLink extends ClueClaimEffectLink {
+  readonly signedWeight: number;
+  readonly npcBeliefScore: number;
+  readonly npcBeliefRevision: number;
+}
+
 export interface ShowInputs extends DisclosureBundleInputs {
   readonly evidenceKind: "clue" | "item";
   readonly clueDiscoveredInTown: boolean;
   readonly itemCurrentlyHeldByPlayer: boolean;
   readonly shownClueIds: readonly string[];
-  readonly clueClaimEffects: readonly ClueClaimEffectLink[];
+  readonly clueClaimEffects: readonly ShowClueEvidenceLink[];
   readonly relationshipReasons: readonly RelationshipReasonKind[];
+  /** The NPC being shown evidence. */
+  readonly npcId: string;
 }
 
 export function planShow(inputs: ShowInputs): ActionPlanResult {
@@ -135,11 +150,34 @@ export function planShow(inputs: ShowInputs): ActionPlanResult {
     { kind: "event_origin", eventType: "evidence_shown", effectIndex: 0 },
   ];
   if (structuredEffectPlan.structuredEffect === "applied") {
-    effects.push({
-      kind: "insert",
-      table: "clue_claim_effects",
-      row: { clue_ids: structuredEffectPlan.appliedClueIds },
-    });
+    const linksByClueId = new Map(
+      inputs.clueClaimEffects.map((link) => [link.clueId, link]),
+    );
+    for (const clueId of structuredEffectPlan.appliedClueIds) {
+      const link = linksByClueId.get(clueId);
+      if (link === undefined) continue;
+      const newScore = link.npcBeliefScore + link.signedWeight;
+      effects.push(
+        {
+          kind: "insert",
+          table: "belief_evidence",
+          row: {
+            npc_id: inputs.npcId,
+            claim_id: link.claimId,
+            clue_id: link.clueId,
+            evidence_kind: "physical_clue",
+            signed_weight: link.signedWeight,
+          },
+        },
+        {
+          kind: "conditional_state_change",
+          table: "npc_beliefs",
+          key: { npc_id: inputs.npcId, claim_id: link.claimId },
+          expectedRevision: link.npcBeliefRevision,
+          change: { score: newScore, label: beliefLabelFor(newScore) },
+        },
+      );
+    }
   }
   if (inputs.relationshipReasons.length > 0) {
     const delta = sumRelationshipDeltas(inputs.relationshipReasons);
@@ -165,6 +203,9 @@ export interface GiveActionInputs extends DisclosureBundleInputs {
   readonly itemHeldByPlayer: boolean;
   readonly npcAcceptsItem: boolean;
   readonly itemId: string;
+  readonly itemRevision: number;
+  /** The NPC receiving custody on a successful transfer. */
+  readonly recipientActorId: string;
   readonly relationshipReasons: readonly RelationshipReasonKind[];
 }
 
@@ -185,8 +226,8 @@ export function planGive(inputs: GiveActionInputs): ActionPlanResult {
       kind: "conditional_state_change",
       table: "items",
       key: { id: inputs.itemId },
-      expectedRevision: 0,
-      change: { held_by_actor_id: null },
+      expectedRevision: inputs.itemRevision,
+      change: { held_by_actor_id: inputs.recipientActorId },
     });
   }
   if (inputs.relationshipReasons.length > 0) {

@@ -176,14 +176,18 @@ export interface ReversalPlanEntry {
 
 /**
  * `source_discredited` appends one exact opposite row per active
- * contribution from the discredited source. Original rows are append-only
- * and a row is reversed at most once, so the caller passes the set of
- * evidence IDs already reversed and this function skips them rather than
- * reversing twice.
+ * contribution from the discredited source — scoped to the one listening NPC
+ * and the one claim the lie was caught on; knowledge does not teleport to
+ * other NPCs, and an unrelated claim from the same source is untouched.
+ * Original rows are append-only and a row is reversed at most once, so the
+ * caller passes the set of evidence IDs already reversed and this function
+ * skips them rather than reversing twice.
  */
 export function planSourceDiscreditedReversal(
   activeContributions: readonly ActiveContribution[],
   discreditedSourceActorId: string,
+  discreditedNpcId: string,
+  discreditedClaimId: string,
   alreadyReversedEvidenceIds: ReadonlySet<string>,
   causalEventId: string,
 ): readonly ReversalPlanEntry[] {
@@ -191,6 +195,8 @@ export function planSourceDiscreditedReversal(
     .filter(
       (contribution) =>
         contribution.independentSourceActorId === discreditedSourceActorId &&
+        contribution.npcId === discreditedNpcId &&
+        contribution.claimId === discreditedClaimId &&
         !alreadyReversedEvidenceIds.has(contribution.evidenceId),
     )
     .map((contribution) => ({

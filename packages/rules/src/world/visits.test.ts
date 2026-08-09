@@ -33,9 +33,12 @@ describe("canStartNewVisit", () => {
     expect(canStartNewVisit("completed", false)).toBe(true);
   });
 
-  it("blocks a new visit while the prior ambient job is still processing or quarantined", () => {
+  it("blocks a new visit only while the prior ambient job is still processing", () => {
     expect(canStartNewVisit("processing", false)).toBe(false);
-    expect(canStartNewVisit("quarantined", false)).toBe(false);
+  });
+
+  it("allows starting once the prior ambient job is quarantined — quarantined is terminal", () => {
+    expect(canStartNewVisit("quarantined", false)).toBe(true);
   });
 
   it("an already-active visit is never blocked (it's a no_change path, not a denial)", () => {

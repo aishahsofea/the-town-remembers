@@ -86,7 +86,7 @@ describe("scopedSourceDiscreditedTarget", () => {
     });
   });
 
-  it("never propagates to another NPC: the caller passes only this NPC's own contributions", () => {
+  it("never propagates to another NPC or an unrelated claim from the same source", () => {
     const target = scopedSourceDiscreditedTarget(
       "nessa_reed",
       "corin_hale",
@@ -107,19 +107,26 @@ describe("scopedSourceDiscreditedTarget", () => {
         signedWeight: 44,
         independentSourceActorId: "corin_hale",
       },
+      {
+        evidenceId: "ev-nessa-unrelated",
+        npcId: "nessa_reed",
+        claimId: "corin_gave_alibi",
+        signedWeight: 40,
+        independentSourceActorId: "corin_hale",
+      },
     ];
-    const onlyListeningNpcContributions = allActiveContributions.filter(
-      (contribution) => contribution.npcId === target.listeningNpcId,
-    );
 
     const plan = planSourceDiscreditedReversal(
-      onlyListeningNpcContributions,
+      allActiveContributions,
       target.sourceActorId,
+      target.listeningNpcId,
+      target.claimId,
       new Set(),
       "event-1",
     );
 
     expect(plan).toHaveLength(1);
     expect(plan[0]!.npcId).toBe("nessa_reed");
+    expect(plan[0]!.reversesEvidenceId).toBe("ev-nessa");
   });
 });

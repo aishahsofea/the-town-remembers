@@ -19,11 +19,14 @@ import {
 } from "../actions/dispatcher.js";
 import { planShow } from "../actions/model-backed.js";
 import {
+  BELL_ITEM_ID,
   CASE_SOLUTION_REFERENCE,
   CORRECT_GUESS,
   FESTIVAL_SQUARE_LOCATION_ID,
   INCORRECT_GUESS,
   PLAYER_ID,
+  TOWN_ID,
+  VISIT_ID,
 } from "./fixtures.js";
 
 export interface ScenarioStepRecord {
@@ -53,12 +56,16 @@ function startAndTravel(): readonly ScenarioStepRecord[] {
     destinationLocationId: "lantern_inn",
     destinationKnown: true,
     destinationAccess: { state: "open" },
+    visitId: VISIT_ID,
+    townRevision: 0,
   });
   const travelAgain = planTravel({
     currentLocationId: "lantern_inn",
     destinationLocationId: "lantern_inn",
     destinationKnown: true,
     destinationAccess: { state: "open" },
+    visitId: VISIT_ID,
+    townRevision: 1,
   });
   return [
     { actionKind: "start_visit", result: start },
@@ -93,17 +100,24 @@ function inspectNewToTown(): readonly ScenarioStepRecord[] {
 }
 
 function bothAccusationOutcomes(): readonly ScenarioStepRecord[] {
+  const wonAt = new Date("2026-01-01T00:00:00.000Z");
   const incorrect = planAccuse({
     confrontationGateOpen: true,
     guess: INCORRECT_GUESS,
     solution: CASE_SOLUTION_REFERENCE,
     playerId: PLAYER_ID,
+    townId: TOWN_ID,
+    townRevision: 0,
+    wonAt,
   });
   const correct = planAccuse({
     confrontationGateOpen: true,
     guess: CORRECT_GUESS,
     solution: CASE_SOLUTION_REFERENCE,
     playerId: PLAYER_ID,
+    townId: TOWN_ID,
+    townRevision: 1,
+    wonAt,
   });
   return [
     { actionKind: "accuse", result: incorrect },
@@ -125,6 +139,12 @@ function bothEndings(): readonly ScenarioStepRecord[] {
     ...baseTimes,
     choice: "expose_cover_up",
     bellCurrentlyAtOldChapel: true,
+    bellItemId: BELL_ITEM_ID,
+    bellRevision: 0,
+    festivalSquareLocationId: FESTIVAL_SQUARE_LOCATION_ID,
+    townId: TOWN_ID,
+    townRevision: 0,
+    activePromises: [],
   });
   const restoreQuietly = planResolve({
     townAlreadyResolved: false,
@@ -133,6 +153,12 @@ function bothEndings(): readonly ScenarioStepRecord[] {
     ...baseTimes,
     choice: "restore_bell_quietly",
     bellCurrentlyAtOldChapel: true,
+    bellItemId: BELL_ITEM_ID,
+    bellRevision: 1,
+    festivalSquareLocationId: FESTIVAL_SQUARE_LOCATION_ID,
+    townId: TOWN_ID,
+    townRevision: 1,
+    activePromises: [],
   });
   return [
     { actionKind: "resolve", result: exposeCoverUp },
@@ -146,8 +172,17 @@ function showEvidenceFlow(): readonly ScenarioStepRecord[] {
     clueDiscoveredInTown: true,
     itemCurrentlyHeldByPlayer: false,
     shownClueIds: ["bent_clapper_pin"],
-    clueClaimEffects: [{ clueId: "bent_clapper_pin", claimId: "lark_damaged_bell" }],
+    clueClaimEffects: [
+      {
+        clueId: "bent_clapper_pin",
+        claimId: "lark_damaged_bell",
+        signedWeight: 70,
+        npcBeliefScore: 0,
+        npcBeliefRevision: 0,
+      },
+    ],
     relationshipReasons: ["verified_testimony", "evidence_presented"],
+    npcId: "mara_venn",
     disclosureCandidates: [],
     requiredDisclosureIds: [],
     approvedOutcomes: [],

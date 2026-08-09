@@ -4,17 +4,25 @@
  * `resolve`. Each resolves to a complete `DecisionResult` in one call.
  */
 
+import type { PromiseKind } from "@the-town-remembers/database/domains";
+
+import { relationshipDeltaFor } from "../beliefs/relationships.js";
 import {
   caseAttemptOutcome,
   canResolve,
   planWinningResolution,
+  resolutionReservationExpiresAt,
   type CaseSolutionGuess,
   type CaseSolutionReference,
 } from "../board/case.js";
 import { deniedResult, type DecisionResult } from "../kernel/decision.js";
 import type { EffectPlanEntry } from "../kernel/effects.js";
 import { classifyInspectDiscovery, shouldRecordClueDiscovery } from "../world/clues.js";
-import type { EndingChoice } from "../world/promises.js";
+import {
+  keepSecretEndingOutcome,
+  returnItemEndingOutcome,
+  type EndingChoice,
+} from "../world/promises.js";
 import {
   canStartNewVisit,
   canTravelTo,
@@ -75,6 +83,10 @@ export interface TravelInputs {
   readonly destinationLocationId: string;
   readonly destinationKnown: boolean;
   readonly destinationAccess: LocationAccessState;
+  /** The active visit being travelled on. */
+  readonly visitId: string;
+  /** Travel conditionally updates the town revision (docs/005 §player_visits). */
+  readonly townRevision: number;
 }
 
 export function planTravel(inputs: TravelInputs): DecisionResult<EffectPlanEntry> {
@@ -101,8 +113,8 @@ export function planTravel(inputs: TravelInputs): DecisionResult<EffectPlanEntry
     {
       kind: "conditional_state_change",
       table: "player_visits",
-      key: {},
-      expectedRevision: 0,
+      key: { id: inputs.visitId },
+      expectedRevision: inputs.townRevision,
       change: { current_location_entity_id: inputs.destinationLocationId },
     },
   ];
@@ -191,6 +203,8 @@ export interface LeaveInputs {
   readonly hasActiveVisit: boolean;
   readonly lastEventSequenceAtLeave: number;
   readonly eligibleEventCountInRange: number;
+  readonly townId: string;
+  readonly townRevision: number;
 }
 
 export function planLeaveVisit(inputs: LeaveInputs): DecisionResult<EffectPlanEntry> {
@@ -206,8 +220,8 @@ export function planLeaveVisit(inputs: LeaveInputs): DecisionResult<EffectPlanEn
     {
       kind: "conditional_state_change",
       table: "towns",
-      key: {},
-      expectedRevision: 0,
+      key: { id: inputs.townId },
+      expectedRevision: inputs.townRevision,
       change: {
         ambient_scheduled_through_sequence: leavePlan.newScheduledThroughSequence,
       },
@@ -230,6 +244,10 @@ export interface AccuseInputs {
   readonly guess: CaseSolutionGuess;
   readonly solution: CaseSolutionReference;
   readonly playerId: string;
+  readonly townId: string;
+  readonly townRevision: number;
+  /** The moment this attempt is won, seeding the ten-minute reservation window. */
+  readonly wonAt: Date;
 }
 
 export function planAccuse(inputs: AccuseInputs): DecisionResult<EffectPlanEntry> {
@@ -251,12 +269,44 @@ export function planAccuse(inputs: AccuseInputs): DecisionResult<EffectPlanEntry
       },
     },
   ];
-  // An incorrect attempt is immutable and applied — it creates shared
-  // history, never a silent no_change.
+  // A correct attempt atomically reserves the ending choice: the town moves
+  // to awaiting_resolution, records the winner, and starts the ten-minute
+  // window `resolve` consumes. An incorrect attempt is immutable and applied
+  // on its own — it creates shared history, never a silent no_change.
+  if (outcome === "correct") {
+    effects.push({
+      kind: "conditional_state_change",
+      table: "towns",
+      key: { id: inputs.townId },
+      expectedRevision: inputs.townRevision,
+      change: {
+        status: "awaiting_resolution",
+        resolution_owner_player_id: inputs.playerId,
+        resolution_reservation_expires_at: resolutionReservationExpiresAt(
+          inputs.wonAt,
+        ).toISOString(),
+      },
+    });
+  }
   return { outcome: "applied", reasonCode: "OK", effects, preconditions: {}, trace };
 }
 
 // --- resolve ------------------------------------------------------------------------------
+
+/**
+ * One active promise as of resolution time, carrying whichever field its
+ * `kind` needs to compute the ending outcome
+ * (`world/promises.ts#keepSecretEndingOutcome`/`#returnItemEndingOutcome`).
+ */
+export interface ResolvePromiseInput {
+  readonly promiseId: string;
+  readonly npcId: string;
+  readonly kind: PromiseKind;
+  /** Consulted only for `keep_secret`. */
+  readonly protectedClaimEntersPublicResolution: boolean;
+  /** Consulted only for `return_item`. */
+  readonly requesterHoldsItemAtResolution: boolean;
+}
 
 export interface ResolveInputs {
   readonly townAlreadyResolved: boolean;
@@ -268,6 +318,12 @@ export interface ResolveInputs {
   readonly winningAttemptEventAt: Date;
   readonly choice: EndingChoice;
   readonly bellCurrentlyAtOldChapel: boolean;
+  readonly bellItemId: string;
+  readonly bellRevision: number;
+  readonly festivalSquareLocationId: string;
+  readonly townId: string;
+  readonly townRevision: number;
+  readonly activePromises: readonly ResolvePromiseInput[];
 }
 
 export function planResolve(inputs: ResolveInputs): DecisionResult<EffectPlanEntry> {
@@ -308,17 +364,63 @@ export function planResolve(inputs: ResolveInputs): DecisionResult<EffectPlanEnt
     {
       kind: "conditional_state_change",
       table: "towns",
-      key: {},
-      expectedRevision: 0,
+      key: { id: inputs.townId },
+      expectedRevision: inputs.townRevision,
       change: { status: "resolved" },
     },
   ];
   if (winningPlan.relocatesFestivalBell) {
-    effects.push({
-      kind: "event_origin",
-      eventType: "item_relocated",
-      effectIndex: effects.length,
-    });
+    effects.push(
+      {
+        kind: "event_origin",
+        eventType: "item_relocated",
+        effectIndex: effects.length,
+      },
+      {
+        kind: "conditional_state_change",
+        table: "items",
+        key: { id: inputs.bellItemId },
+        expectedRevision: inputs.bellRevision,
+        change: { location_entity_id: inputs.festivalSquareLocationId },
+      },
+    );
   }
+
+  for (const promise of inputs.activePromises.toSorted((left, right) =>
+    left.promiseId.localeCompare(right.promiseId),
+  )) {
+    const outcome =
+      promise.kind === "keep_secret"
+        ? keepSecretEndingOutcome(
+            inputs.choice,
+            promise.protectedClaimEntersPublicResolution,
+          )
+        : returnItemEndingOutcome(promise.requesterHoldsItemAtResolution);
+    if (outcome === "unchanged") continue;
+
+    const delta = relationshipDeltaFor(
+      outcome === "fulfilled" ? "promise_fulfilled" : "promise_broken",
+    );
+    effects.push(
+      {
+        kind: "conditional_state_change",
+        table: "promises",
+        key: { id: promise.promiseId },
+        expectedRevision: inputs.townRevision,
+        change: { status: outcome },
+      },
+      {
+        kind: "insert",
+        table: "relationship_changes",
+        row: {
+          npc_id: promise.npcId,
+          promise_id: promise.promiseId,
+          trust_delta: delta.trust,
+          suspicion_delta: delta.suspicion,
+        },
+      },
+    );
+  }
+
   return { outcome: "applied", reasonCode: "OK", effects, preconditions: {}, trace };
 }

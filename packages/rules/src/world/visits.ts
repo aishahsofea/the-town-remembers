@@ -17,15 +17,16 @@ export type PriorAmbientJobStatus = "processing" | "completed" | "quarantined" |
 
 /**
  * A new visit may start once the player has no active visit and their prior
- * visit's ambient job (if any) has finished — `processing` or `quarantined`
- * blocks a new visit until it completes.
+ * visit's ambient job (if any) has reached a terminal state — only
+ * `processing` blocks a new visit; `quarantined` is terminal and permits
+ * re-entry the same as `completed` or `none`.
  */
 export function canStartNewVisit(
   priorAmbientJobStatus: PriorAmbientJobStatus,
   hasActiveVisit: boolean,
 ): boolean {
   if (hasActiveVisit) return true;
-  return priorAmbientJobStatus === "completed" || priorAmbientJobStatus === "none";
+  return priorAmbientJobStatus !== "processing";
 }
 
 // --- Travel -------------------------------------------------------------------

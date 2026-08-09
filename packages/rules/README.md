@@ -6,7 +6,7 @@ decisions it depends on — 005, 006, 009, 010, 011) fixes for
 `mvp-rules-v1`. This package has no database client, no HTTP server, no
 model client, and no queue — it is pure functions over plain data, built and
 tested entirely offline. See
-[`../../implementation-plans/phase-02-execution-detail.md`](../../implementation-plans/phase-02-execution-detail.md)
+[`../../implementation-plans/phase-02-deterministic-simulation-core.md`](../../implementation-plans/phase-02-deterministic-simulation-core.md)
 for the full plan this package implements; this README is the
 implementer-facing summary a later phase actually needs.
 
