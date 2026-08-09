@@ -17,6 +17,9 @@ importers:
       '@the-town-remembers/database-admin':
         specifier: workspace:*
         version: link:packages/database-admin
+      '@the-town-remembers/rules':
+        specifier: workspace:*
+        version: link:packages/rules
       '@the-town-remembers/runtime-config':
         specifier: workspace:*
         version: link:packages/runtime-config

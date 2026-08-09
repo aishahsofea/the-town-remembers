@@ -33,3 +33,5 @@ export * from "./projection/action-result.js";
 export * from "./content-validation/reachability.js";
 export * from "./content-validation/solvability.js";
 export * from "./content-validation/fallback-coverage.js";
+export * from "./testing/scenario-runner.js";
+export * from "./testing/coverage-map.js";
