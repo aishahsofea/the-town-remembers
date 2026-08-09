@@ -157,4 +157,23 @@ export const COVERAGE_MAP: readonly CoverageMapRow[] = Object.freeze([
     testFile: "content-validation/solvability.test.ts",
     testName: "all five checks pass together",
   },
+  {
+    goal: "G20",
+    requirement:
+      "golden scenarios run through the real dispatcher and are byte-identical across runs",
+    testFile: "testing/scenario-runner.test.ts",
+    testName: "is byte-identical across repeated runs",
+  },
+  {
+    goal: "G21",
+    requirement: "the coverage map is itself checked against real test files",
+    testFile: "testing/coverage-map.test.ts",
+    testName: "resolves to a real test",
+  },
+  {
+    goal: "G22",
+    requirement: "packages/rules/README.md and the CONTRIBUTING.md addition exist",
+    testFile: "testing/documentation.test.ts",
+    testName: "has a Rules package section pointing at packages/rules/README.md",
+  },
 ]);

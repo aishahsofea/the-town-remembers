@@ -242,6 +242,23 @@ Semantics live in `docs/`, not in code. When a contract must change:
 A structural change — a package split, a file move, a script rename — needs
 only this guide updated. An authority change does not.
 
+## Rules package
+
+`packages/rules` is the deterministic simulation core: every belief,
+relationship, disclosure, world-state, recall, ambient, board, and action
+rule Decision 008 (and 005/006/009/010/011) fixes, as pure functions with no
+database client, model client, or queue. See
+[`packages/rules/README.md`](packages/rules/README.md) for the
+authority-boundary pattern, the five-step action order, the stable-ordering
+and external-selection-seam catalogs, and worked handoff examples for the
+phases that call it.
+
+`pnpm test:rules` runs its suite alone;
+`pnpm test:rules -- <topic>` (e.g. `beliefs`, `ambient`, `determinism`) uses
+vitest's positional filename filter against the file-naming convention its
+tests follow. `pnpm rules:scenario [<scenario-name>]` replays one of the
+named golden scenarios and prints its ordered plan and digest.
+
 ## Deferred work
 
 Every shell in this phase names the phase that replaces it.
@@ -255,7 +272,7 @@ Every shell in this phase names the phase that replaces it.
 | `apps/web` asset manifest | Every authored key resolves to a placeholder | Phase 6 |
 | `infrastructure` stack | Lambda bundling contracts only | Phase 7 |
 | Bedrock contracts | Wire shapes only; no semantic validator | Phase 4 |
-| `packages/serialization` | Primitives only; no player-view projection | Phase 2 |
+| `packages/rules` | Pure planners only; no orchestration, persistence, or model calls | Phase 3 |
 | `packages/town-seed` CLI | Test-only; stores an unreachable invite hash | Phase 3 |
 | Repository layer | Schema and transaction primitives only; no typed repositories | Phases 2 and 3 |
 | Production database | Local pinned node only; no cluster, secrets, or managed MCP | Phase 7 |

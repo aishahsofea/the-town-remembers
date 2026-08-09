@@ -25,9 +25,9 @@ describe("COVERAGE_MAP", () => {
     },
   );
 
-  it("references every relevant goal from G2 through G19", () => {
+  it("references every relevant goal from G2 through G22", () => {
     const referencedGoals = new Set(COVERAGE_MAP.map((row) => row.goal));
-    for (let goalNumber = 2; goalNumber <= 19; goalNumber++) {
+    for (let goalNumber = 2; goalNumber <= 22; goalNumber++) {
       expect(referencedGoals.has(`G${goalNumber}`)).toBe(true);
     }
   });
