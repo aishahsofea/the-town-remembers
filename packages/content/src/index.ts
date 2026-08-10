@@ -4,6 +4,7 @@ export * from "./claim-matrix.js";
 export * from "./entities.js";
 export * from "./claims.js";
 export * from "./evidence.js";
+export * from "./presentation.js";
 export * from "./seed.js";
 export * from "./registry.js";
 export * from "./validate.js";

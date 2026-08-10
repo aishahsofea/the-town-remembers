@@ -8,6 +8,7 @@
     "build": "tsc -b tsconfig.json && pnpm --filter @the-town-remembers/web build",
     "build:id": "node scripts/build-id.mjs",
     "cdk:synth": "node scripts/synth.mjs",
+    "check:assets": "node scripts/check-asset-keys.mjs",
     "check:boundaries": "node scripts/check-workspace-boundaries.mjs",
     "check:bundle": "node scripts/check-bundle-safety.mjs",
     "check:source-text": "node scripts/check-source-text.mjs",
@@ -34,7 +35,7 @@
     "test:tooling": "node --test scripts/*.test.mjs",
     "test:watch": "vitest",
     "typecheck": "tsc -b tsconfig.json && tsc -p tsconfig.tests.node.json && tsc -p tsconfig.tests.web.json",
-    "validate": "pnpm format:check && pnpm check:source-text && pnpm check:boundaries && pnpm test:tooling && pnpm typecheck && pnpm lint && TTR_REQUIRE_DB_TESTS=1 pnpm test && pnpm build && pnpm check:bundle && pnpm cdk:synth && pnpm test:e2e"
+    "validate": "pnpm format:check && pnpm check:source-text && pnpm check:boundaries && pnpm check:assets && pnpm test:tooling && pnpm typecheck && pnpm lint && TTR_REQUIRE_DB_TESTS=1 pnpm test && pnpm build && pnpm check:bundle && pnpm cdk:synth && pnpm test:e2e"
   },
   "engines": {
     "node": "24.18.0",
