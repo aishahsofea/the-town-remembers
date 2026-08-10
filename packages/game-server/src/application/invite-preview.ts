@@ -27,9 +27,15 @@ export interface InvitePreviewResult {
   readonly joinMode: JoinMode;
 }
 
-type RawTownStatus = "active" | "awaiting_resolution" | "resolved" | "retired";
+export type TownRecordStatus =
+  "active" | "awaiting_resolution" | "resolved" | "retired";
 
-function joinModeForStatus(status: RawTownStatus): JoinMode {
+export interface TownByInviteToken {
+  readonly id: string;
+  readonly status: TownRecordStatus;
+}
+
+function joinModeForStatus(status: TownRecordStatus): JoinMode {
   if (status === "active") return "play";
   if (status === "retired") return "closed";
   return "read_only";
@@ -40,11 +46,11 @@ function joinModeForStatus(status: RawTownStatus): JoinMode {
  * lifecycle only reaches retirement after resolution, so a retired town's
  * preview reports the last player-meaningful status it held.
  */
-function previewTownStatus(status: RawTownStatus): TownStatus {
+function previewTownStatus(status: TownRecordStatus): TownStatus {
   return status === "retired" ? "resolved" : status;
 }
 
-function notFound(): never {
+export function notFound(): never {
   throw new AppError({
     status: 404,
     code: "RESOURCE_NOT_FOUND",
@@ -53,16 +59,24 @@ function notFound(): never {
   });
 }
 
+/** Hash-only lookup shared by invite preview and join. */
+export async function findTownByInviteToken(
+  pool: Pool,
+  inviteToken: string,
+): Promise<TownByInviteToken | undefined> {
+  const hash = inviteTokenHash(inviteToken);
+  const result = await pool.query<TownByInviteToken>(
+    "SELECT id, status FROM public.towns WHERE invite_token_hash = $1",
+    [hash],
+  );
+  return result.rows[0];
+}
+
 export async function previewInvite(
   pool: Pool,
   inviteToken: string,
 ): Promise<InvitePreviewResult> {
-  const hash = inviteTokenHash(inviteToken);
-  const result = await pool.query<{ id: string; status: RawTownStatus }>(
-    "SELECT id, status FROM public.towns WHERE invite_token_hash = $1",
-    [hash],
-  );
-  const town = result.rows[0];
+  const town = await findTownByInviteToken(pool, inviteToken);
   if (!town) notFound();
 
   return {

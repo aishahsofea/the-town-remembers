@@ -12,6 +12,9 @@
 
 import {
   InvitePreviewResponseSchema,
+  JoinAttemptSecretSchema,
+  JoinRequestSchema,
+  JoinResponseSchema,
   PROBLEM_CODES,
   ROUTE_TEMPLATES,
   TownCreationRequestSchema,
@@ -23,9 +26,11 @@ import type { Pool } from "pg";
 
 import type { LoggableRouteTemplate } from "../observability/events.js";
 import { logEvent } from "../observability/events.js";
-import { previewInvite } from "../application/invite-preview.js";
+import { findTownByInviteToken, previewInvite } from "../application/invite-preview.js";
+import { join } from "../application/join.js";
 import { createTown } from "../application/town-creation.js";
 import { AppError, internalError, toProblemResponse } from "./errors.js";
+import { buildSessionCookie } from "./cookies.js";
 import { noStoreHeaders, privateNoCacheHeaders } from "./headers.js";
 import {
   parseJsonBody,
@@ -114,6 +119,78 @@ async function handleInvitePreview(
   };
 }
 
+function requireJoinAttemptSecret(headers: ReadonlyMap<string, string>): string {
+  const parsed = JoinAttemptSecretSchema.safeParse(headers.get("join-attempt-secret"));
+  if (parsed.success) return parsed.data;
+
+  throw new AppError({
+    status: 400,
+    code: "JOIN_ATTEMPT_SECRET_REQUIRED",
+    title: "Join attempt secret required",
+    detail: "The Join-Attempt-Secret header must be 256 bits of base64url.",
+  });
+}
+
+async function handleInviteJoin(context: RouteHandlerContext): Promise<HttpResponse> {
+  const { headers } = context.request;
+  const inviteToken = context.params["inviteToken"];
+  if (inviteToken === undefined) throw internalError();
+
+  requireExactOrigin(headers, context.config.appOrigin);
+  requireJsonContentType(headers);
+  const idempotencyKey = requireIdempotencyKey(headers);
+  const joinAttemptSecret = requireJoinAttemptSecret(headers);
+  const { displayName } = parseJsonBody(JoinRequestSchema, context.request.body);
+
+  const town = await findTownByInviteToken(context.config.pool, inviteToken);
+  if (!town) {
+    throw new AppError({
+      status: 404,
+      code: PROBLEM_CODES.resourceNotFound,
+      title: "Not found",
+      detail: "No resource is available at this address.",
+    });
+  }
+  if (town.status === "retired") {
+    throw new AppError({
+      status: 410,
+      code: "TOWN_RETIRED",
+      title: "Town retired",
+      detail: "This town is no longer accepting new players.",
+    });
+  }
+
+  const result = await join(
+    {
+      pool: context.config.pool,
+      sessionTokenPepper: context.config.securityConfig.sessionTokenPepper,
+      now: context.config.now,
+    },
+    {
+      townId: town.id,
+      townActive: town.status === "active",
+      townStatus: town.status,
+      idempotencyKey,
+      joinAttemptSecret,
+      displayName,
+    },
+  );
+
+  return {
+    status: 201,
+    headers: { "content-type": JSON_CONTENT_TYPE },
+    body: JSON.stringify(
+      JoinResponseSchema.parse({
+        townId: result.townId,
+        townStatus: result.townStatus,
+        player: result.player,
+        initialVisit: result.initialVisit,
+      }),
+    ),
+    cookies: [buildSessionCookie(town.id, result.sessionToken)],
+  };
+}
+
 const ROUTE_DEFINITIONS: readonly RouteDefinition[] = [
   {
     method: "GET",
@@ -147,7 +224,7 @@ const ROUTE_DEFINITIONS: readonly RouteDefinition[] = [
     method: "POST",
     template: ROUTE_TEMPLATES.inviteJoin,
     cacheKind: "no-store",
-    handle: notYetImplemented,
+    handle: handleInviteJoin,
   },
   {
     method: "GET",

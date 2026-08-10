@@ -87,7 +87,6 @@ describe("matching and the no-405 rule", () => {
   });
 
   const UNBUILT_ROUTES: ReadonlyArray<readonly [method: string, template: string]> = [
-    ["POST", ROUTE_TEMPLATES.inviteJoin],
     ["GET", ROUTE_TEMPLATES.playerView],
     ["POST", ROUTE_TEMPLATES.actions],
     ["GET", ROUTE_TEMPLATES.actionStatus],

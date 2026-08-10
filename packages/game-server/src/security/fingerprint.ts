@@ -29,3 +29,28 @@ function preimageDigest(domain: string, payload: unknown): Buffer {
 export function townCreationRequestHash(apiVersion: string = API_VERSION): Buffer {
   return preimageDigest("town-creation-request:v1", { apiVersion, payload: {} });
 }
+
+export function joinRequestHash(
+  payload: { readonly displayName: string },
+  apiVersion: string = API_VERSION,
+): Buffer {
+  return preimageDigest("join-request:v1", { apiVersion, payload });
+}
+
+export function actionRequestHash(
+  input: {
+    readonly kind: string;
+    readonly targetActorId: string | null;
+    readonly targetEntityId: string | null;
+    readonly payload: unknown;
+  },
+  apiVersion: string = API_VERSION,
+): Buffer {
+  return preimageDigest("action-request:v1", {
+    apiVersion,
+    kind: input.kind,
+    targetActorId: input.targetActorId,
+    targetEntityId: input.targetEntityId,
+    payload: input.payload,
+  });
+}
