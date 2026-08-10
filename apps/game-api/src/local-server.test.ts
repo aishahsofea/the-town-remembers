@@ -2,18 +2,30 @@ import type { AddressInfo } from "node:net";
 
 import { ROUTE_TEMPLATES } from "@the-town-remembers/http-contracts";
 import { loadGameConfig } from "@the-town-remembers/runtime-config/game";
+import { loadSecurityConfig } from "@the-town-remembers/runtime-config/security";
 import {
   SENSITIVE_TEST_MARKERS,
   captureStdout,
   findSensitiveMarkers,
 } from "@the-town-remembers/test-support";
+import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { RouterContext } from "./http/router.js";
 import { startLocalServer } from "./local-server.js";
 
+/** Never queried: every route this file drives fails before reaching the pool. */
+const UNUSED_POOL = {} as unknown as Pool;
+
 const context: RouterContext = {
   config: loadGameConfig({ TTR_ENV: "local", TTR_BUILD_ID: "local-test" }),
+  securityConfig: loadSecurityConfig({
+    TTR_JUDGE_CODE: "test-judge-code-not-real",
+    TTR_INVITE_SIGNING_KEYS: `v1:${"A".repeat(43)}`,
+    TTR_SESSION_TOKEN_PEPPER: "B".repeat(43),
+    TTR_IP_HASH_SECRET: "C".repeat(43),
+  }),
+  pool: UNUSED_POOL,
   now: () => new Date("2026-08-02T00:00:00.000Z"),
   monotonicMs: () => performance.now(),
 };
@@ -78,7 +90,7 @@ describe("local HTTP adapter", () => {
         },
         body: JSON.stringify({ note: SENSITIVE_TEST_MARKERS.requestBody }),
       });
-      expect(response.status).toBe(404);
+      expect(response.status).toBe(403);
     });
 
     expect(findSensitiveMarkers(captured.raw)).toStrictEqual([]);

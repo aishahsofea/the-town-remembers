@@ -6,6 +6,7 @@
  * status codes.
  */
 
+import { IdempotencyKeySchema } from "@the-town-remembers/http-contracts";
 import type { z } from "zod";
 
 import { AppError } from "./errors.js";
@@ -48,6 +49,19 @@ export function requireExactOrigin(
     code: "ORIGIN_REJECTED",
     title: "Origin rejected",
     detail: "The request's Origin header does not match the application origin.",
+  });
+}
+
+/** Every state-changing POST carries a client-generated UUID idempotency key. */
+export function requireIdempotencyKey(headers: ReadonlyMap<string, string>): string {
+  const parsed = IdempotencyKeySchema.safeParse(headers.get("idempotency-key"));
+  if (parsed.success) return parsed.data;
+
+  throw new AppError({
+    status: 400,
+    code: "IDEMPOTENCY_KEY_REQUIRED",
+    title: "Idempotency key required",
+    detail: "The Idempotency-Key header must be a UUID.",
   });
 }
 

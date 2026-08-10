@@ -11,6 +11,8 @@ import type { RouteTemplate } from "@the-town-remembers/http-contracts";
 import { ROUTE_TEMPLATES } from "@the-town-remembers/http-contracts";
 import { routeRequest, type RouterConfig } from "@the-town-remembers/game-server";
 import type { GameConfig } from "@the-town-remembers/runtime-config/game";
+import type { SecurityConfig } from "@the-town-remembers/runtime-config/security";
+import type { Pool } from "pg";
 
 import { logEvent } from "../observability/log.js";
 import { createRequestId } from "./request-id.js";
@@ -18,6 +20,8 @@ import { toLoggableMethod, type HttpRequest, type HttpResponse } from "./types.j
 
 export interface RouterContext {
   readonly config: GameConfig;
+  readonly securityConfig: SecurityConfig;
+  readonly pool: Pool;
   readonly now: () => Date;
   readonly monotonicMs: () => number;
 }
@@ -50,6 +54,8 @@ export async function handleRequest(
     buildId: context.config.buildId,
     appOrigin: context.config.appOrigin,
     now: context.now,
+    pool: context.pool,
+    securityConfig: context.securityConfig,
   };
   const { response: routed, routeTemplate } = await routeRequest(
     request,

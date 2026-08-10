@@ -5,12 +5,14 @@ import {
   ROUTE_TEMPLATES,
 } from "@the-town-remembers/http-contracts";
 import { loadGameConfig } from "@the-town-remembers/runtime-config/game";
+import { loadSecurityConfig } from "@the-town-remembers/runtime-config/security";
 import {
   FORBIDDEN_LOG_PROPERTIES,
   SENSITIVE_TEST_MARKERS,
   captureStdout,
   findSensitiveMarkers,
 } from "@the-town-remembers/test-support";
+import type { Pool } from "pg";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -20,8 +22,18 @@ import {
 } from "./router.js";
 import type { HttpRequest, HttpResponse } from "./types.js";
 
+/** Never queried: every route this file drives fails before reaching the pool. */
+const UNUSED_POOL = {} as unknown as Pool;
+
 const context: RouterContext = {
   config: loadGameConfig({ TTR_ENV: "local", TTR_BUILD_ID: "a1b2c3d" }),
+  securityConfig: loadSecurityConfig({
+    TTR_JUDGE_CODE: "test-judge-code-not-real",
+    TTR_INVITE_SIGNING_KEYS: `v1:${"A".repeat(43)}`,
+    TTR_SESSION_TOKEN_PEPPER: "B".repeat(43),
+    TTR_IP_HASH_SECRET: "C".repeat(43),
+  }),
+  pool: UNUSED_POOL,
   now: () => new Date("2026-08-02T00:00:00.000Z"),
   monotonicMs: () => 0,
 };
@@ -107,7 +119,6 @@ describe("health route", () => {
 describe("unimplemented routes", () => {
   it.each([
     ["GET", ROUTE_TEMPLATES.towns],
-    ["POST", ROUTE_TEMPLATES.towns],
     ["GET", "/api/v1/towns/town_1/player-view"],
     ["GET", "/health"],
     ["GET", "/"],

@@ -94,6 +94,12 @@ importers:
       '@types/aws-lambda':
         specifier: ^8.10.162
         version: 8.10.162
+      '@types/pg':
+        specifier: ^8.15.6
+        version: 8.20.4
+      pg:
+        specifier: ^8.16.3
+        version: 8.22.0
 
   apps/recovery-worker:
     dependencies:
@@ -253,6 +259,9 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      '@the-town-remembers/test-support':
+        specifier: workspace:*
+        version: link:../test-support
       '@types/pg':
         specifier: ^8.15.6
         version: 8.20.4

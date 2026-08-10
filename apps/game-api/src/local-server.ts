@@ -10,8 +10,12 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import process from "node:process";
 
-import { filterAllowlistedHeaders } from "@the-town-remembers/game-server";
+import {
+  createRuntimePool,
+  filterAllowlistedHeaders,
+} from "@the-town-remembers/game-server";
 import { loadGameConfig } from "@the-town-remembers/runtime-config/game";
+import { loadSecurityConfig } from "@the-town-remembers/runtime-config/security";
 
 import { handleRequest, type RouterContext } from "./http/router.js";
 import { logEvent } from "./observability/log.js";
@@ -85,6 +89,8 @@ export async function main(): Promise<void> {
   const apiPort = config.apiPort;
   const context: RouterContext = {
     config,
+    securityConfig: loadSecurityConfig(process.env),
+    pool: createRuntimePool(process.env),
     now: () => new Date(),
     monotonicMs: () => performance.now(),
   };

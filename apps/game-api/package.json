@@ -12,6 +12,8 @@
   },
   "devDependencies": {
     "@the-town-remembers/test-support": "workspace:*",
-    "@types/aws-lambda": "^8.10.162"
+    "@types/aws-lambda": "^8.10.162",
+    "@types/pg": "^8.15.6",
+    "pg": "^8.16.3"
   }
 }

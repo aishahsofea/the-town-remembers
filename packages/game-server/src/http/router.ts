@@ -10,13 +10,30 @@
  * so a prober cannot distinguish "wrong path" from "not built yet".
  */
 
-import type { RouteTemplate } from "@the-town-remembers/http-contracts";
-import { PROBLEM_CODES, ROUTE_TEMPLATES } from "@the-town-remembers/http-contracts";
+import {
+  InvitePreviewResponseSchema,
+  PROBLEM_CODES,
+  ROUTE_TEMPLATES,
+  TownCreationRequestSchema,
+  TownCreationResponseSchema,
+  type RouteTemplate,
+} from "@the-town-remembers/http-contracts";
+import type { SecurityConfig } from "@the-town-remembers/runtime-config/security";
+import type { Pool } from "pg";
 
 import type { LoggableRouteTemplate } from "../observability/events.js";
 import { logEvent } from "../observability/events.js";
+import { previewInvite } from "../application/invite-preview.js";
+import { createTown } from "../application/town-creation.js";
 import { AppError, internalError, toProblemResponse } from "./errors.js";
 import { noStoreHeaders, privateNoCacheHeaders } from "./headers.js";
+import {
+  parseJsonBody,
+  requireExactOrigin,
+  requireIdempotencyKey,
+  requireJsonContentType,
+} from "./negotiate.js";
+import { readHeader } from "./request.js";
 import { buildHealthResponse } from "./routes/health.js";
 import type { HttpRequest, HttpResponse } from "./types.js";
 
@@ -27,6 +44,8 @@ export interface RouterConfig {
   readonly buildId: string;
   readonly appOrigin: string;
   readonly now: () => Date;
+  readonly pool: Pool;
+  readonly securityConfig: SecurityConfig;
 }
 
 export interface RouteHandlerContext {
@@ -55,6 +74,46 @@ function notYetImplemented(): never {
   });
 }
 
+async function handleCreateTown(context: RouteHandlerContext): Promise<HttpResponse> {
+  const { headers } = context.request;
+  requireExactOrigin(headers, context.config.appOrigin);
+  requireJsonContentType(headers);
+  const idempotencyKey = requireIdempotencyKey(headers);
+  parseJsonBody(TownCreationRequestSchema, context.request.body);
+
+  const result = await createTown(
+    {
+      pool: context.config.pool,
+      securityConfig: context.config.securityConfig,
+      appOrigin: context.config.appOrigin,
+      now: context.config.now,
+    },
+    { authorizationHeader: readHeader(headers, "authorization"), idempotencyKey },
+  );
+
+  return {
+    status: 201,
+    headers: { "content-type": JSON_CONTENT_TYPE },
+    body: JSON.stringify(TownCreationResponseSchema.parse(result)),
+    cookies: [],
+  };
+}
+
+async function handleInvitePreview(
+  context: RouteHandlerContext,
+): Promise<HttpResponse> {
+  const inviteToken = context.params["inviteToken"];
+  if (inviteToken === undefined) throw internalError();
+
+  const result = await previewInvite(context.config.pool, inviteToken);
+  return {
+    status: 200,
+    headers: { "content-type": JSON_CONTENT_TYPE },
+    body: JSON.stringify(InvitePreviewResponseSchema.parse(result)),
+    cookies: [],
+  };
+}
+
 const ROUTE_DEFINITIONS: readonly RouteDefinition[] = [
   {
     method: "GET",
@@ -76,13 +135,13 @@ const ROUTE_DEFINITIONS: readonly RouteDefinition[] = [
     method: "POST",
     template: ROUTE_TEMPLATES.towns,
     cacheKind: "no-store",
-    handle: notYetImplemented,
+    handle: handleCreateTown,
   },
   {
     method: "GET",
     template: ROUTE_TEMPLATES.invitePreview,
     cacheKind: "no-store",
-    handle: notYetImplemented,
+    handle: handleInvitePreview,
   },
   {
     method: "POST",

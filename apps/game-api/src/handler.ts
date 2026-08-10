@@ -9,8 +9,12 @@
 import process from "node:process";
 
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from "aws-lambda";
-import { filterAllowlistedHeaders } from "@the-town-remembers/game-server";
+import {
+  createRuntimePool,
+  filterAllowlistedHeaders,
+} from "@the-town-remembers/game-server";
 import { loadGameConfig } from "@the-town-remembers/runtime-config/game";
+import { loadSecurityConfig } from "@the-town-remembers/runtime-config/security";
 
 import { handleRequest, type RouterContext } from "./http/router.js";
 
@@ -19,6 +23,8 @@ let cachedContext: RouterContext | undefined;
 function routerContext(): RouterContext {
   cachedContext ??= {
     config: loadGameConfig(process.env),
+    securityConfig: loadSecurityConfig(process.env),
+    pool: createRuntimePool(process.env),
     now: () => new Date(),
     monotonicMs: () => performance.now(),
   };

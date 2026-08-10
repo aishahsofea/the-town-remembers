@@ -2,15 +2,29 @@ import {
   ROUTE_TEMPLATES,
   ProblemResponseSchema,
 } from "@the-town-remembers/http-contracts";
+import type { SecurityConfig } from "@the-town-remembers/runtime-config/security";
+import type { Pool } from "pg";
 import { describe, expect, it } from "vitest";
 
 import { ROUTED_TEMPLATES, routeRequest, type RouterConfig } from "./router.js";
 import type { HttpRequest } from "./types.js";
 
+/** Never queried: no test in this file exercises a route that reaches the pool. */
+const UNUSED_POOL = {} as unknown as Pool;
+
+const SECURITY_CONFIG: SecurityConfig = {
+  judgeCode: "test-judge-code-not-real",
+  inviteSigningKeys: [{ version: "v1", key: new Uint8Array(32) }],
+  sessionTokenPepper: "B".repeat(43),
+  ipHashSecret: "C".repeat(43),
+};
+
 const CONFIG: RouterConfig = {
   buildId: "a1b2c3d",
   appOrigin: "http://localhost:5173",
   now: () => new Date("2026-08-02T00:00:00.000Z"),
+  pool: UNUSED_POOL,
+  securityConfig: SECURITY_CONFIG,
 };
 
 function fixtureRequest(method: string, path: string): HttpRequest {
@@ -73,8 +87,6 @@ describe("matching and the no-405 rule", () => {
   });
 
   const UNBUILT_ROUTES: ReadonlyArray<readonly [method: string, template: string]> = [
-    ["POST", ROUTE_TEMPLATES.towns],
-    ["GET", ROUTE_TEMPLATES.invitePreview],
     ["POST", ROUTE_TEMPLATES.inviteJoin],
     ["GET", ROUTE_TEMPLATES.playerView],
     ["POST", ROUTE_TEMPLATES.actions],
