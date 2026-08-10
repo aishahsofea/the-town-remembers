@@ -14,6 +14,7 @@ export const CONFIGURATION_CATEGORIES = [
   "ambient-runtime",
   "recovery-runtime",
   "database-runtime",
+  "security-runtime",
   "deployment",
   "test",
   "operator",
