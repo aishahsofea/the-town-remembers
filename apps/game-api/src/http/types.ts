@@ -1,10 +1,11 @@
 /**
  * The internal request and response shapes both adapters translate to.
  *
- * The request type carries only what a Phase 0 route may act on. Headers,
- * query strings, and bodies are deliberately absent: the health route needs
- * none of them, and their absence makes an accidental log or echo impossible.
- * Phase 3 widens this type when authenticated routes arrive.
+ * `headers` carries only `HEADER_ALLOWLIST`'s eight names, lowercased, filtered
+ * by each adapter before construction — an unlisted header has no field to
+ * reach a route or a log line. `HttpResponse#cookies` is a separate array
+ * rather than folded into `headers`, because the header map is single-valued
+ * and a session response can carry more than one `Set-Cookie`.
  */
 
 export const HTTP_METHODS = [
@@ -35,10 +36,16 @@ export interface HttpRequest {
   readonly method: string;
   /** Path only. A caller must strip the query string before constructing this. */
   readonly path: string;
+  /** Lowercased names, already filtered to `HEADER_ALLOWLIST` by the adapter. */
+  readonly headers: ReadonlyMap<string, string>;
+  readonly body: string | undefined;
+  readonly sourceIp: string | undefined;
 }
 
 export interface HttpResponse {
   readonly status: number;
   readonly headers: Readonly<Record<string, string>>;
   readonly body: string;
+  /** Never flattened into `headers`: one entry per `Set-Cookie` line. */
+  readonly cookies: readonly string[];
 }

@@ -75,6 +75,9 @@ importers:
 
   apps/game-api:
     dependencies:
+      '@the-town-remembers/game-server':
+        specifier: workspace:*
+        version: link:../../packages/game-server
       '@the-town-remembers/http-contracts':
         specifier: workspace:*
         version: link:../../packages/http-contracts
@@ -222,6 +225,43 @@ importers:
       '@types/pg':
         specifier: ^8.15.6
         version: 8.20.4
+
+  packages/game-server:
+    dependencies:
+      '@the-town-remembers/content':
+        specifier: workspace:*
+        version: link:../content
+      '@the-town-remembers/database':
+        specifier: workspace:*
+        version: link:../database
+      '@the-town-remembers/http-contracts':
+        specifier: workspace:*
+        version: link:../http-contracts
+      '@the-town-remembers/rules':
+        specifier: workspace:*
+        version: link:../rules
+      '@the-town-remembers/runtime-config':
+        specifier: workspace:*
+        version: link:../runtime-config
+      '@the-town-remembers/serialization':
+        specifier: workspace:*
+        version: link:../serialization
+      '@the-town-remembers/town-seed':
+        specifier: workspace:*
+        version: link:../town-seed
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/pg':
+        specifier: ^8.15.6
+        version: 8.20.4
+      kysely:
+        specifier: ^0.28.9
+        version: 0.28.17
+      pg:
+        specifier: ^8.16.3
+        version: 8.22.0
 
   packages/http-contracts:
     dependencies:

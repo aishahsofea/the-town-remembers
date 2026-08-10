@@ -18,7 +18,7 @@ import {
   handleRequest,
   type RouterContext,
 } from "./router.js";
-import type { HttpResponse } from "./types.js";
+import type { HttpRequest, HttpResponse } from "./types.js";
 
 const context: RouterContext = {
   config: loadGameConfig({ TTR_ENV: "local", TTR_BUILD_ID: "a1b2c3d" }),
@@ -26,10 +26,23 @@ const context: RouterContext = {
   monotonicMs: () => 0,
 };
 
+function fixtureRequest(input: {
+  readonly method: string;
+  readonly path: string;
+}): HttpRequest {
+  return {
+    method: input.method,
+    path: input.path,
+    headers: new Map(),
+    body: undefined,
+    sourceIp: undefined,
+  };
+}
+
 async function request(method: string, path: string): Promise<HttpResponse> {
   let response: HttpResponse | undefined;
   await captureStdout(() => {
-    response = handleRequest({ method, path }, context).response;
+    response = handleRequest(fixtureRequest({ method, path }), context).response;
   });
   return response!;
 }
@@ -141,7 +154,10 @@ describe("request identity", () => {
 describe("safe logging", () => {
   it("emits one JSON event per request with only safe fields", async () => {
     const captured = await captureStdout(() => {
-      handleRequest({ method: "GET", path: ROUTE_TEMPLATES.health }, context);
+      handleRequest(
+        fixtureRequest({ method: "GET", path: ROUTE_TEMPLATES.health }),
+        context,
+      );
     });
 
     expect(captured.unparsedLines).toStrictEqual([]);
@@ -165,10 +181,10 @@ describe("safe logging", () => {
   it("logs the unmatched placeholder instead of the requested path", async () => {
     const captured = await captureStdout(() => {
       handleRequest(
-        {
+        fixtureRequest({
           method: "GET",
           path: `/api/v1/invites/${SENSITIVE_TEST_MARKERS.inviteToken}`,
-        },
+        }),
         context,
       );
     });
@@ -179,7 +195,10 @@ describe("safe logging", () => {
 
   it("carries no property that could hold raw request material", async () => {
     const captured = await captureStdout(() => {
-      handleRequest({ method: "GET", path: ROUTE_TEMPLATES.health }, context);
+      handleRequest(
+        fixtureRequest({ method: "GET", path: ROUTE_TEMPLATES.health }),
+        context,
+      );
     });
 
     for (const property of FORBIDDEN_LOG_PROPERTIES) {
@@ -191,7 +210,10 @@ describe("safe logging", () => {
   it("folds an unrecognized verb into one label", async () => {
     const captured = await captureStdout(() => {
       handleRequest(
-        { method: `PROPFIND-${SENSITIVE_TEST_MARKERS.queryValue}`, path: "/api/v1/x" },
+        fixtureRequest({
+          method: `PROPFIND-${SENSITIVE_TEST_MARKERS.queryValue}`,
+          path: "/api/v1/x",
+        }),
         context,
       );
     });

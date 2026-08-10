@@ -52,9 +52,18 @@ export default defineConfig({
             "packages/database/src/**/*.test.ts",
             "packages/database-admin/src/**/*.test.ts",
             "packages/town-seed/src/**/*.test.ts",
+            "packages/game-server/src/**/*.db.test.ts",
           ],
           testTimeout: 30_000,
           hookTimeout: 120_000,
+        },
+      },
+      {
+        test: {
+          name: "api",
+          environment: "node",
+          include: ["packages/game-server/src/**/*.test.ts"],
+          exclude: ["packages/game-server/src/**/*.db.test.ts"],
         },
       },
       {

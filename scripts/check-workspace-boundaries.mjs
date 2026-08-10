@@ -137,6 +137,7 @@ export const EXPECTED_PACKAGES = Object.freeze([
       MODEL_CONTRACTS,
       SERIALIZATION,
       RUNTIME_CONFIG,
+      GAME_SERVER,
     ],
   },
   {
@@ -232,6 +233,21 @@ export const EXPECTED_PACKAGES = Object.freeze([
     kind: "library",
     exports: STANDARD_EXPORTS,
     allowedDependencies: [CONTENT, DATABASE, DATABASE_ADMIN],
+  },
+  {
+    path: "packages/game-server",
+    name: GAME_SERVER,
+    kind: "library",
+    exports: STANDARD_EXPORTS,
+    allowedDependencies: [
+      CONTENT,
+      DATABASE,
+      HTTP_CONTRACTS,
+      RULES,
+      RUNTIME_CONFIG,
+      SERIALIZATION,
+      TOWN_SEED,
+    ],
   },
   {
     path: "packages/test-support",

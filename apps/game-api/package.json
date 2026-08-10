@@ -5,6 +5,7 @@
   "license": "MIT",
   "type": "module",
   "dependencies": {
+    "@the-town-remembers/game-server": "workspace:*",
     "@the-town-remembers/http-contracts": "workspace:*",
     "@the-town-remembers/runtime-config": "workspace:*",
     "@the-town-remembers/serialization": "workspace:*"

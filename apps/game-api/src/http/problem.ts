@@ -47,5 +47,6 @@ export function problemResponse(
     status: input.status,
     headers: { ...headers, "content-type": PROBLEM_CONTENT_TYPE },
     body: JSON.stringify(buildProblem(input)),
+    cookies: [],
   };
 }

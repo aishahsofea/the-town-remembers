@@ -1,0 +1,28 @@
+{
+  "name": "@the-town-remembers/game-server",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@the-town-remembers/content": "workspace:*",
+    "@the-town-remembers/database": "workspace:*",
+    "@the-town-remembers/http-contracts": "workspace:*",
+    "@the-town-remembers/rules": "workspace:*",
+    "@the-town-remembers/runtime-config": "workspace:*",
+    "@the-town-remembers/serialization": "workspace:*",
+    "@the-town-remembers/town-seed": "workspace:*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.6",
+    "kysely": "^0.28.9",
+    "pg": "^8.16.3"
+  }
+}

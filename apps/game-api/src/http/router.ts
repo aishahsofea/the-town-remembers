@@ -60,6 +60,7 @@ const ROUTES: readonly Route[] = [
       body: JSON.stringify(
         buildHealthResponse({ buildId: context.config.buildId, now: context.now }),
       ),
+      cookies: [],
     }),
   },
 ];

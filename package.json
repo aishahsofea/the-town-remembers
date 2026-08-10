@@ -25,6 +25,7 @@
     "lint": "eslint .",
     "rules:scenario": "node scripts/rules-scenario.mjs",
     "test": "vitest run --coverage",
+    "test:api": "vitest run --project api",
     "test:content": "vitest run --project config packages/content",
     "test:contracts": "vitest run --project contracts",
     "test:db": "vitest run --project database",

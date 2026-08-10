@@ -2,13 +2,15 @@
  * Local `node:http` adapter used by the Vite proxy and the browser journey.
  *
  * It translates to the same internal request and response objects the Lambda
- * handler uses, so the local health journey exercises the same routing and the
- * same `/api/v1/health` path shape the deployed application will serve.
+ * handler uses, so the local journey exercises the same routing, the same
+ * header allowlist, and the same `Set-Cookie` handling the deployed
+ * application will serve.
  */
 
-import { createServer, type Server } from "node:http";
+import { createServer, type IncomingMessage, type Server } from "node:http";
 import process from "node:process";
 
+import { filterAllowlistedHeaders } from "@the-town-remembers/game-server";
 import { loadGameConfig } from "@the-town-remembers/runtime-config/game";
 
 import { handleRequest, type RouterContext } from "./http/router.js";
@@ -26,16 +28,46 @@ function pathOf(rawUrl: string | undefined): string {
   return queryStart === -1 ? url : url.slice(0, queryStart);
 }
 
+function* rawHeaderEntries(
+  request: IncomingMessage,
+): Generator<readonly [string, string | undefined]> {
+  for (const [name, value] of Object.entries(request.headers)) {
+    yield [name, Array.isArray(value) ? value[0] : value];
+  }
+}
+
+function readBody(request: IncomingMessage): Promise<string | undefined> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => {
+      resolve(chunks.length === 0 ? undefined : Buffer.concat(chunks).toString("utf8"));
+    });
+    request.on("error", reject);
+  });
+}
+
 export function createLocalServer(options: LocalServerOptions): Server {
   return createServer((request, response) => {
-    const { response: handled } = handleRequest(
-      { method: request.method ?? "GET", path: pathOf(request.url) },
-      options.context,
-    );
+    void (async () => {
+      const body = await readBody(request);
+      const { response: handled } = handleRequest(
+        {
+          method: request.method ?? "GET",
+          path: pathOf(request.url),
+          headers: filterAllowlistedHeaders(rawHeaderEntries(request)),
+          body,
+          sourceIp: request.socket.remoteAddress ?? undefined,
+        },
+        options.context,
+      );
 
-    response.writeHead(handled.status, handled.headers);
-    response.end(handled.body);
-    request.resume();
+      if (handled.cookies.length > 0) {
+        response.setHeader("set-cookie", [...handled.cookies]);
+      }
+      response.writeHead(handled.status, handled.headers);
+      response.end(handled.body);
+    })();
   });
 }
 
