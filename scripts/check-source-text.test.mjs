@@ -68,6 +68,13 @@ test("ignores build output and dependencies", () => {
   assert.deepEqual(checkSourceText(rootDir), []);
 });
 
+test("ignores other git worktrees checked out under .claude", () => {
+  const rootDir = createFixture({
+    ".claude/worktrees/some-session/src/key.ts": `const key = "a${NUL}b";\n`,
+  });
+  assert.deepEqual(checkSourceText(rootDir), []);
+});
+
 test("ignores file types that are legitimately binary", () => {
   const rootDir = createFixture({
     "assets/logo.png": Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x00]),

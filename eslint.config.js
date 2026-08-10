@@ -22,6 +22,9 @@ export default tseslint.config(
       "**/playwright-report/**",
       "**/test-results/**",
       "**/node_modules/**",
+      // Each entry under here is a separate git worktree (a separate
+      // checkout with its own history), not source this repository owns.
+      ".claude/**",
     ],
   },
   js.configs.recommended,
