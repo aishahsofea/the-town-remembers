@@ -43,7 +43,7 @@ function* rawHeaderEntries(
 export async function handler(
   event: APIGatewayProxyEventV2,
 ): Promise<APIGatewayProxyResultV2> {
-  const { response } = handleRequest(
+  const { response } = await handleRequest(
     {
       method: event.requestContext.http.method,
       path: event.requestContext.http.path,
@@ -54,12 +54,12 @@ export async function handler(
     routerContext(),
   );
 
-  return await Promise.resolve({
+  return {
     statusCode: response.status,
     headers: { ...response.headers },
     cookies: [...response.cookies],
     body: response.body,
-  });
+  };
 }
 
 /** Test seam so a suite can force configuration to be re-read. */

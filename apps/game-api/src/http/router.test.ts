@@ -41,8 +41,9 @@ function fixtureRequest(input: {
 
 async function request(method: string, path: string): Promise<HttpResponse> {
   let response: HttpResponse | undefined;
-  await captureStdout(() => {
-    response = handleRequest(fixtureRequest({ method, path }), context).response;
+  await captureStdout(async () => {
+    response = (await handleRequest(fixtureRequest({ method, path }), context))
+      .response;
   });
   return response!;
 }
@@ -96,8 +97,10 @@ describe("health route", () => {
     expect((await request("GET", `${ROUTE_TEMPLATES.health}/`)).status).toBe(200);
   });
 
-  it("serves exactly one route in this phase", () => {
-    expect(IMPLEMENTED_ROUTE_TEMPLATES).toStrictEqual([ROUTE_TEMPLATES.health]);
+  it("serves all seven route templates", () => {
+    expect([...IMPLEMENTED_ROUTE_TEMPLATES].toSorted()).toStrictEqual(
+      Object.values(ROUTE_TEMPLATES).toSorted(),
+    );
   });
 });
 
@@ -153,8 +156,8 @@ describe("request identity", () => {
 
 describe("safe logging", () => {
   it("emits one JSON event per request with only safe fields", async () => {
-    const captured = await captureStdout(() => {
-      handleRequest(
+    const captured = await captureStdout(async () => {
+      await handleRequest(
         fixtureRequest({ method: "GET", path: ROUTE_TEMPLATES.health }),
         context,
       );
@@ -178,9 +181,9 @@ describe("safe logging", () => {
     expect(event["status"]).toBe(200);
   });
 
-  it("logs the unmatched placeholder instead of the requested path", async () => {
-    const captured = await captureStdout(() => {
-      handleRequest(
+  it("logs the registered route template, never the literal path it matched", async () => {
+    const captured = await captureStdout(async () => {
+      await handleRequest(
         fixtureRequest({
           method: "GET",
           path: `/api/v1/invites/${SENSITIVE_TEST_MARKERS.inviteToken}`,
@@ -189,13 +192,42 @@ describe("safe logging", () => {
       );
     });
 
-    expect(captured.events[0]?.["routeTemplate"]).toBe("unmatched");
+    expect(captured.events[0]?.["routeTemplate"]).toBe(ROUTE_TEMPLATES.invitePreview);
     expect(findSensitiveMarkers(captured.raw)).toStrictEqual([]);
   });
 
+  it("logs the unmatched placeholder for a path with no registered shape", async () => {
+    const captured = await captureStdout(async () => {
+      await handleRequest(
+        fixtureRequest({ method: "GET", path: "/api/v1/x" }),
+        context,
+      );
+    });
+
+    expect(captured.events[0]?.["routeTemplate"]).toBe("unmatched");
+  });
+
+  it.each(Object.entries(ROUTE_TEMPLATES))(
+    "logs a routeTemplate that is a member of ROUTE_TEMPLATES for %s",
+    async (_name, template) => {
+      const concretePath = template.replaceAll(/\{[^}]+\}/g, "id_1");
+      const captured = await captureStdout(async () => {
+        await handleRequest(
+          fixtureRequest({ method: "GET", path: concretePath }),
+          context,
+        );
+      });
+
+      expect(captured.unparsedLines).toStrictEqual([]);
+      expect(Object.values(ROUTE_TEMPLATES)).toContain(
+        captured.events[0]?.["routeTemplate"],
+      );
+    },
+  );
+
   it("carries no property that could hold raw request material", async () => {
-    const captured = await captureStdout(() => {
-      handleRequest(
+    const captured = await captureStdout(async () => {
+      await handleRequest(
         fixtureRequest({ method: "GET", path: ROUTE_TEMPLATES.health }),
         context,
       );
@@ -208,8 +240,8 @@ describe("safe logging", () => {
   });
 
   it("folds an unrecognized verb into one label", async () => {
-    const captured = await captureStdout(() => {
-      handleRequest(
+    const captured = await captureStdout(async () => {
+      await handleRequest(
         fixtureRequest({
           method: `PROPFIND-${SENSITIVE_TEST_MARKERS.queryValue}`,
           path: "/api/v1/x",

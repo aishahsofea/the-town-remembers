@@ -51,7 +51,7 @@ export function createLocalServer(options: LocalServerOptions): Server {
   return createServer((request, response) => {
     void (async () => {
       const body = await readBody(request);
-      const { response: handled } = handleRequest(
+      const { response: handled } = await handleRequest(
         {
           method: request.method ?? "GET",
           path: pathOf(request.url),

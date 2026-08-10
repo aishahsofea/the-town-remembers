@@ -1,12 +1,14 @@
 /**
  * The internal request and response shapes both adapters translate to.
  *
- * `headers` carries only `HEADER_ALLOWLIST`'s eight names, lowercased, filtered
- * by each adapter before construction — an unlisted header has no field to
- * reach a route or a log line. `HttpResponse#cookies` is a separate array
- * rather than folded into `headers`, because the header map is single-valued
- * and a session response can carry more than one `Set-Cookie`.
+ * Re-exported from `@the-town-remembers/game-server`, which owns the
+ * canonical transport contract its router dispatches over — this deployment
+ * unit cannot itself be imported by that library, so this re-export is the
+ * one place the two stay in step rather than two independent declarations
+ * that happen to be structurally equal.
  */
+
+export type { HttpRequest, HttpResponse } from "@the-town-remembers/game-server";
 
 export const HTTP_METHODS = [
   "GET",
@@ -30,22 +32,4 @@ export function toLoggableMethod(method: string): LoggableMethod {
   return (HTTP_METHODS as readonly string[]).includes(upper)
     ? (upper as HttpMethod)
     : UNKNOWN_METHOD;
-}
-
-export interface HttpRequest {
-  readonly method: string;
-  /** Path only. A caller must strip the query string before constructing this. */
-  readonly path: string;
-  /** Lowercased names, already filtered to `HEADER_ALLOWLIST` by the adapter. */
-  readonly headers: ReadonlyMap<string, string>;
-  readonly body: string | undefined;
-  readonly sourceIp: string | undefined;
-}
-
-export interface HttpResponse {
-  readonly status: number;
-  readonly headers: Readonly<Record<string, string>>;
-  readonly body: string;
-  /** Never flattened into `headers`: one entry per `Set-Cookie` line. */
-  readonly cookies: readonly string[];
 }
