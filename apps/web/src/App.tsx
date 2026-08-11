@@ -4,14 +4,7 @@ import { useHealth } from "./health/useHealth.js";
 import { Router } from "./routing/router.js";
 import { JoinBootstrap } from "./screens/JoinBootstrap.js";
 import { Join } from "./screens/Join.js";
-import {
-  BetweenVisitsPlaceholder,
-  BoardPlaceholder,
-  EncounterPlaceholder,
-  LocationPlaceholder,
-  MapPlaceholder,
-  ResolutionPlaceholder,
-} from "./screens/Placeholder.js";
+import { Shell } from "./screens/Shell.js";
 
 /** One authored key, so the manifest lookup path is exercised on every load. */
 const DIAGNOSTIC_ILLUSTRATION_KEY = "bell-mystery-v1/scenes/festival-square";
@@ -51,17 +44,12 @@ export function App() {
           case "join":
             return <Join />;
           case "map":
-            return <MapPlaceholder />;
           case "location":
-            return <LocationPlaceholder />;
           case "encounter":
-            return <EncounterPlaceholder />;
           case "board":
-            return <BoardPlaceholder />;
           case "betweenVisits":
-            return <BetweenVisitsPlaceholder />;
           case "resolution":
-            return <ResolutionPlaceholder />;
+            return <Shell match={match} />;
         }
       }}
     />

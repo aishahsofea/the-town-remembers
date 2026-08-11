@@ -1,26 +1,9 @@
 /**
- * Temporary stand-ins for the routes `P3-14`/`P3-16` build for real. Kept to
- * one file since none of them carry real behavior yet — each will be
- * replaced outright, not extended, when its own task lands.
+ * Temporary stand-ins for the routes not yet built for real. Kept to one
+ * file since none of them carry real behavior yet — each will be replaced
+ * outright, not extended, when its own task lands. `Map`/`Location` moved
+ * out of this file in `P3-14`; the rest remain here.
  */
-
-export function MapPlaceholder() {
-  return (
-    <main>
-      <h1>Town map</h1>
-      <p role="status">Coming in P3-14.</p>
-    </main>
-  );
-}
-
-export function LocationPlaceholder() {
-  return (
-    <main>
-      <h1>Location</h1>
-      <p role="status">Coming in P3-14.</p>
-    </main>
-  );
-}
 
 export function EncounterPlaceholder() {
   return (
