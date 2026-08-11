@@ -34,7 +34,7 @@
     "test:rules": "vitest run --project rules",
     "test:tooling": "node --test scripts/*.test.mjs",
     "test:watch": "vitest",
-    "typecheck": "tsc -b tsconfig.json && tsc -p tsconfig.tests.node.json && tsc -p tsconfig.tests.web.json",
+    "typecheck": "tsc -b tsconfig.json && tsc -p tsconfig.tests.node.json && tsc -p tsconfig.tests.web.json && tsc -p tsconfig.tests.e2e.json",
     "validate": "pnpm format:check && pnpm check:source-text && pnpm check:boundaries && pnpm check:assets && pnpm test:tooling && pnpm typecheck && pnpm lint && TTR_REQUIRE_DB_TESTS=1 pnpm test && pnpm build && pnpm check:bundle && pnpm cdk:synth && pnpm test:e2e"
   },
   "engines": {
