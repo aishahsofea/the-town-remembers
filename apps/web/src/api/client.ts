@@ -15,12 +15,14 @@ import { ProblemResponseSchema } from "@the-town-remembers/http-contracts";
 export class ApiError extends Error {
   readonly status: number;
   readonly problem: ProblemResponse;
+  readonly headers: Headers;
 
-  constructor(status: number, problem: ProblemResponse) {
+  constructor(status: number, problem: ProblemResponse, headers: Headers = new Headers()) {
     super(problem.detail);
     this.name = "ApiError";
     this.status = status;
     this.problem = problem;
+    this.headers = headers;
   }
 }
 
@@ -94,17 +96,21 @@ export async function apiRequest<T = unknown>(
 
   const parsedProblem = ProblemResponseSchema.safeParse(await parseJson(response));
   if (!parsedProblem.success) {
-    throw new ApiError(response.status, {
-      type: "https://the-town-remembers/errors/internal-error",
-      status: 500,
-      code: "INTERNAL_ERROR",
-      title: "Internal error",
-      detail: "An unexpected error occurred.",
-      requestId: "unknown",
-      fieldErrors: [],
-    });
+    throw new ApiError(
+      response.status,
+      {
+        type: "https://the-town-remembers/errors/internal-error",
+        status: 500,
+        code: "INTERNAL_ERROR",
+        title: "Internal error",
+        detail: "An unexpected error occurred.",
+        requestId: "unknown",
+        fieldErrors: [],
+      },
+      response.headers,
+    );
   }
-  throw new ApiError(response.status, parsedProblem.data);
+  throw new ApiError(response.status, parsedProblem.data, response.headers);
 }
 
 /** Fills `{param}` placeholders in a `ROUTE_TEMPLATES` entry. */

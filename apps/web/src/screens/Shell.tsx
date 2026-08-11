@@ -31,7 +31,7 @@ export interface ShellProps {
 export function Shell({ match }: ShellProps) {
   const townId = match.params["townId"]!;
   const { status, view, refresh } = usePlayerView(townId);
-  const action = useActionSubmission(townId, refresh);
+  const action = useActionSubmission(townId, view?.player.id ?? "", refresh);
 
   const redirect = view ? computeGuardRedirect(view, match) : undefined;
 
