@@ -494,6 +494,42 @@ export interface CompleteActionParams {
   readonly now: () => Date;
 }
 
+/**
+ * The conditional completion `UPDATE`, runnable inside a caller-supplied
+ * transaction rather than its own. `application/actions/executor.ts` needs
+ * this: an applied plan's effects, numbered events, and completion all
+ * commit in the *same* transaction as the `towns.revision` bump
+ * (`P3-09` acceptance 1), so this cannot open its own `runSerializable` the
+ * way {@link completeAction} does for the denial/no-change path, which has
+ * nothing else to commit alongside it.
+ */
+export async function runCompleteActionUpdate(
+  transaction: TransactionContext,
+  now: Date,
+  params: CompleteActionParams,
+): Promise<{ readonly matched: boolean }> {
+  const updated = await transaction.query<{ id: string }>(
+    `UPDATE public.player_actions
+        SET status = 'completed', outcome = $3, response_status = $4,
+            response_payload = $5, visit_id = $6, processing_token = NULL,
+            processing_expires_at = NULL, completed_at = $7, updated_at = $7
+      WHERE town_id = $1 AND id = $2 AND status = 'processing'
+        AND processing_token = $8
+      RETURNING id`,
+    [
+      params.townId,
+      params.actionId,
+      params.outcome,
+      params.responseStatus,
+      JSON.stringify(params.responsePayload),
+      params.visitId,
+      now,
+      params.processingToken,
+    ],
+  );
+  return { matched: updated.length > 0 };
+}
+
 /** Scoped to `(town_id, id)` only — used solely to resolve an ambiguous commit. */
 async function readStatusByIdViaPool(
   pool: Pool,
@@ -532,26 +568,7 @@ export async function completeAction(
   // transaction has actually committed or ambiguity has been resolved.
   const result = await runSerializable(pool, { deadlineAt }, async (transaction) => {
     const now = params.now();
-    const updated = await transaction.query<{ id: string }>(
-      `UPDATE public.player_actions
-          SET status = 'completed', outcome = $3, response_status = $4,
-              response_payload = $5, visit_id = $6, processing_token = NULL,
-              processing_expires_at = NULL, completed_at = $7, updated_at = $7
-        WHERE town_id = $1 AND id = $2 AND status = 'processing'
-          AND processing_token = $8
-        RETURNING id`,
-      [
-        params.townId,
-        params.actionId,
-        params.outcome,
-        params.responseStatus,
-        JSON.stringify(params.responsePayload),
-        params.visitId,
-        now,
-        params.processingToken,
-      ],
-    );
-    return { matched: updated.length > 0 };
+    return runCompleteActionUpdate(transaction, now, params);
   });
 
   if (result.outcome === "committed") {
