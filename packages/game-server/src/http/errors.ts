@@ -29,6 +29,8 @@ export interface AppErrorInput {
   readonly fieldErrors?: readonly FieldError[];
   /** Response headers beyond the problem body, e.g. `Retry-After` on a `429`. */
   readonly headers?: Readonly<Record<string, string>>;
+  /** Present only when a `player_actions` record exists for this failure. */
+  readonly actionId?: string;
 }
 
 export class AppError extends Error {
@@ -38,6 +40,7 @@ export class AppError extends Error {
   readonly detail: string;
   readonly fieldErrors: readonly FieldError[];
   readonly headers: Readonly<Record<string, string>>;
+  readonly actionId: string | undefined;
 
   constructor(input: AppErrorInput) {
     super(input.detail);
@@ -48,6 +51,7 @@ export class AppError extends Error {
     this.detail = input.detail;
     this.fieldErrors = input.fieldErrors ?? [];
     this.headers = input.headers ?? {};
+    this.actionId = input.actionId;
   }
 }
 
@@ -72,11 +76,13 @@ export function rateLimited(retryAfterSeconds: number): AppError {
   });
 }
 
+/** `actionId` defaults to the one the error itself carries, if any. */
 export function toProblemResponse(
   error: AppError,
   requestId: string,
   actionId?: string,
 ): ProblemResponse {
+  const resolvedActionId = actionId ?? error.actionId;
   return ProblemResponseSchema.parse({
     type: problemTypeUrl(error.code),
     status: error.status,
@@ -84,7 +90,7 @@ export function toProblemResponse(
     title: error.title,
     detail: error.detail,
     requestId,
-    ...(actionId !== undefined ? { actionId } : {}),
+    ...(resolvedActionId !== undefined ? { actionId: resolvedActionId } : {}),
     fieldErrors: error.fieldErrors,
   });
 }

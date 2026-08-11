@@ -11,15 +11,18 @@
  */
 
 import {
+  CompletedActionResponseSchema,
   InvitePreviewResponseSchema,
   JoinAttemptSecretSchema,
   JoinRequestSchema,
   JoinResponseSchema,
   PROBLEM_CODES,
   PlayerViewSchema,
+  ProcessingActionResponseSchema,
   ROUTE_TEMPLATES,
   TownCreationRequestSchema,
   TownCreationResponseSchema,
+  type ProblemStatus,
   type RouteTemplate,
 } from "@the-town-remembers/http-contracts";
 import type { SecurityConfig } from "@the-town-remembers/runtime-config/security";
@@ -37,6 +40,12 @@ import {
 } from "../application/player-view/etag.js";
 import { createTown } from "../application/town-creation.js";
 import {
+  POLL_AFTER_MS,
+  readActionForPlayer,
+  retryAfterSecondsFrom,
+  type StoredProblemBody,
+} from "../persistence/actions.js";
+import {
   checkRateLimit,
   RATE_LIMIT_BUCKETS,
   rateScopeKey,
@@ -49,7 +58,13 @@ import {
 import { sessionTokenHash } from "../security/session-token.js";
 import { AppError, internalError, rateLimited, toProblemResponse } from "./errors.js";
 import { buildSessionCookie, sessionCookieName } from "./cookies.js";
-import { etagHeader, noStoreHeaders, privateNoCacheHeaders } from "./headers.js";
+import {
+  etagHeader,
+  locationHeader,
+  noStoreHeaders,
+  privateNoCacheHeaders,
+  retryAfter,
+} from "./headers.js";
 import {
   parseJsonBody,
   requireExactOrigin,
@@ -308,6 +323,109 @@ async function handlePlayerView(context: RouteHandlerContext): Promise<HttpRespo
   };
 }
 
+function actionStatusPath(townId: string, actionId: string): string {
+  return ROUTE_TEMPLATES.actionStatus
+    .replace("{townId}", townId)
+    .replace("{actionId}", actionId);
+}
+
+function resourceNotFound(): never {
+  throw new AppError({
+    status: 404,
+    code: PROBLEM_CODES.resourceNotFound,
+    title: "Not found",
+    detail: "No resource is available at this address.",
+  });
+}
+
+/**
+ * `GET /api/v1/towns/{townId}/actions/{actionId}` (`P3-08`). Ownership is the
+ * entire access check: a wrong player and a nonexistent action ID are
+ * `404` identically. Reading never claims, retries, or otherwise starts
+ * work, so this handler only ever branches on the row it finds.
+ */
+async function handleActionStatus(context: RouteHandlerContext): Promise<HttpResponse> {
+  const townId = context.params["townId"];
+  const actionId = context.params["actionId"];
+  if (townId === undefined || actionId === undefined) throw internalError();
+
+  const { headers } = context.request;
+  const cookies = parseCookies(readHeader(headers, "cookie"));
+  const token = cookies.get(sessionCookieName(townId));
+  if (token === undefined) invalidSession();
+
+  const tokenHash = sessionTokenHash(
+    context.config.securityConfig.sessionTokenPepper,
+    token,
+  );
+  const outcome = await authenticate(context.config.pool, townId, tokenHash);
+  if (outcome.outcome === "invalid_session") invalidSession();
+  if (outcome.outcome === "town_retired") townRetired();
+
+  const row = await readActionForPlayer(
+    context.config.pool,
+    townId,
+    outcome.session.playerId,
+    actionId,
+  );
+  if (row === undefined) resourceNotFound();
+
+  if (row.status === "processing") {
+    return {
+      status: 202,
+      headers: {
+        "content-type": JSON_CONTENT_TYPE,
+        ...retryAfter(2),
+        ...locationHeader(actionStatusPath(townId, row.id)),
+      },
+      body: JSON.stringify(
+        ProcessingActionResponseSchema.parse({
+          actionId: row.id,
+          status: "processing",
+          pollAfterMs: POLL_AFTER_MS,
+        }),
+      ),
+      cookies: [],
+    };
+  }
+
+  if (row.status === "completed") {
+    // `ck_player_actions__state_fields` guarantees `response_status` is set
+    // for every `completed` row; there is no fallback branch to test.
+    return {
+      status: row.responseStatus!,
+      headers: { "content-type": JSON_CONTENT_TYPE },
+      body: JSON.stringify(CompletedActionResponseSchema.parse(row.responsePayload)),
+      cookies: [],
+    };
+  }
+
+  // `retryable` or `failed`: rebuild the saved problem body, attaching the
+  // *current* request's identity. `requestId` and `actionId` name the
+  // request asking right now, not the one that first wrote the row, so
+  // `persistence/actions.ts` deliberately stores neither — this is the one
+  // place they are attached, via the uniform `AppError` -> `ProblemResponse`
+  // boundary every other route already shares. The same schema constraint
+  // guarantees `response_status` for both statuses, and `retry_after_at` for
+  // `retryable` specifically, so neither read needs a fallback.
+  const stored = row.responsePayload as StoredProblemBody;
+  throw new AppError({
+    status: row.responseStatus! as ProblemStatus,
+    code: stored.code,
+    title: stored.title,
+    detail: stored.detail,
+    fieldErrors: stored.fieldErrors,
+    actionId: row.id,
+    ...(row.status === "retryable"
+      ? {
+          headers: retryAfter(
+            retryAfterSecondsFrom(row.retryAfterAt, context.config.now())!,
+          ),
+        }
+      : {}),
+  });
+}
+
 const ROUTE_DEFINITIONS: readonly RouteDefinition[] = [
   {
     method: "GET",
@@ -359,7 +477,7 @@ const ROUTE_DEFINITIONS: readonly RouteDefinition[] = [
     method: "GET",
     template: ROUTE_TEMPLATES.actionStatus,
     cacheKind: "no-store",
-    handle: notYetImplemented,
+    handle: handleActionStatus,
   },
 ];
 

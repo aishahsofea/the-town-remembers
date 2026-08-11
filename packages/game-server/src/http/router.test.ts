@@ -88,7 +88,6 @@ describe("matching and the no-405 rule", () => {
 
   const UNBUILT_ROUTES: ReadonlyArray<readonly [method: string, template: string]> = [
     ["POST", ROUTE_TEMPLATES.actions],
-    ["GET", ROUTE_TEMPLATES.actionStatus],
   ];
 
   it.each(UNBUILT_ROUTES)(
@@ -137,7 +136,7 @@ describe("cache headers by route kind", () => {
     expect(response.headers["vary"]).toBe("Cookie");
   });
 
-  it("marks an unbuilt action-status response no-store despite being a GET", async () => {
+  it("marks an action-status response no-store despite being a GET", async () => {
     const path = ROUTE_TEMPLATES.actionStatus
       .replace("{townId}", "town_1")
       .replace("{actionId}", "act_1");
@@ -153,6 +152,23 @@ describe("cache headers by route kind", () => {
 describe("player-view authentication", () => {
   it("rejects a request with no session cookie as a well-formed 401, never touching the pool", async () => {
     const path = ROUTE_TEMPLATES.playerView.replace("{townId}", "town_1");
+    const { response } = await routeRequest(
+      fixtureRequest("GET", path),
+      "req_1",
+      CONFIG,
+    );
+    expect(response.status).toBe(401);
+    expect(ProblemResponseSchema.safeParse(parseBody(response.body)).success).toBe(
+      true,
+    );
+  });
+});
+
+describe("action-status authentication", () => {
+  it("rejects a request with no session cookie as a well-formed 401, never touching the pool", async () => {
+    const path = ROUTE_TEMPLATES.actionStatus
+      .replace("{townId}", "town_1")
+      .replace("{actionId}", "act_1");
     const { response } = await routeRequest(
       fixtureRequest("GET", path),
       "req_1",

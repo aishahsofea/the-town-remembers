@@ -35,6 +35,22 @@ describe("toProblemResponse", () => {
     expect(toProblemResponse(error, "req_1", "act_1").actionId).toBe("act_1");
   });
 
+  it("falls back to the actionId the error itself carries", () => {
+    const error = new AppError({
+      status: 503,
+      code: "ACTION_PROCESSING_EXHAUSTED",
+      title: "Action processing exhausted",
+      detail: "The town could not finish that action. Nothing changed.",
+      actionId: "act_from_error",
+    });
+
+    expect(toProblemResponse(error, "req_1").actionId).toBe("act_from_error");
+    // An explicit call-site actionId still wins over the error's own.
+    expect(toProblemResponse(error, "req_1", "act_override").actionId).toBe(
+      "act_override",
+    );
+  });
+
   it("carries field errors through unchanged", () => {
     const error = new AppError({
       status: 400,
