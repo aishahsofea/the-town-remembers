@@ -12,7 +12,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { DatabaseError, runSerializable } from "@the-town-remembers/database";
 import type { Pool } from "pg";
 
-import { AppError, internalError } from "../http/errors.js";
+import { AppError, internalError, rateLimited } from "../http/errors.js";
 import {
   claimJoinRequest,
   claimReplaySessionSlot,
@@ -21,8 +21,10 @@ import {
   type JoinLedgerRow,
 } from "../persistence/join-ledger.js";
 import { createPlayer } from "../persistence/players.js";
+import { rateScopeKey } from "../persistence/rate-limits.js";
 import { mintSessionForPlayer } from "../persistence/sessions.js";
 import { joinRequestHash } from "../security/fingerprint.js";
+import { hashIp } from "../security/ip-hash.js";
 import { mintSessionToken, sessionTokenHash } from "../security/session-token.js";
 
 const JOIN_DEADLINE_MS = 20_000;
@@ -37,6 +39,7 @@ export function normalizeDisplayName(displayName: string): string {
 export interface JoinDependencies {
   readonly pool: Pool;
   readonly sessionTokenPepper: string;
+  readonly ipHashSecret: string;
   readonly now: () => Date;
 }
 
@@ -47,6 +50,7 @@ export interface JoinInput {
   readonly idempotencyKey: string;
   readonly joinAttemptSecret: string;
   readonly displayName: string;
+  readonly sourceIp: string | undefined;
 }
 
 export interface JoinResult {
@@ -146,18 +150,27 @@ export async function join(
   const requestHash = joinRequestHash({ displayName: input.displayName });
   const joinSecretDigest = joinAttemptSecretHash(input.joinAttemptSecret);
   const deadlineAt = deps.now().getTime() + JOIN_DEADLINE_MS;
+  const ipHash = hashIp(deps.ipHashSecret, input.sourceIp ?? "", deps.now());
+  const rateLimitScopeKey = rateScopeKey(
+    "ip_hash",
+    input.townId,
+    ipHash.toString("base64url"),
+  );
 
   const decision = await claimJoinRequest(deps.pool, {
     townId: input.townId,
     idempotencyKey: input.idempotencyKey,
     requestHash,
     joinSecretHash: joinSecretDigest,
+    rateLimitScopeKey,
     now: deps.now,
     deadlineAt,
   });
 
   if (decision.outcome === "hash_mismatch") idempotencyKeyReused();
   if (decision.outcome === "closed") replayClosed(decision.reason);
+  if (decision.outcome === "rate_limited")
+    throw rateLimited(decision.retryAfterSeconds);
 
   if (decision.outcome === "replay") {
     if (!secretMatches(decision.row.joinSecretHash, joinSecretDigest)) notFound();

@@ -19,6 +19,8 @@ import {
 } from "@the-town-remembers/database";
 import type { Pool } from "pg";
 
+import { admitRateLimit, RATE_LIMIT_BUCKETS } from "./rate-limits.js";
+
 const CLAIM_MS = 30_000;
 const REPLAY_WINDOW_MS = 60 * 60 * 1000;
 const MAX_SESSION_ISSUE_COUNT = 3;
@@ -46,7 +48,8 @@ export type JoinClaimDecision =
   | {
       readonly outcome: "closed";
       readonly reason: "confirmed" | "expired" | "exhausted";
-    };
+    }
+  | { readonly outcome: "rate_limited"; readonly retryAfterSeconds: number };
 
 interface RawRow {
   readonly idempotency_key: string;
@@ -140,6 +143,7 @@ export interface JoinClaimParams {
   readonly idempotencyKey: string;
   readonly requestHash: Buffer;
   readonly joinSecretHash: Buffer;
+  readonly rateLimitScopeKey: Buffer;
   readonly now: () => Date;
   readonly deadlineAt: number;
   readonly sleep?: (milliseconds: number) => Promise<void>;
@@ -154,6 +158,96 @@ async function attemptOnce(
 ): Promise<SingleAttemptOutcome> {
   const result = await runSerializable(pool, { deadlineAt }, async (transaction) => {
     const now = params.now();
+
+    const existing = await readRow(transaction, params.townId, params.idempotencyKey);
+
+    if (existing !== undefined) {
+      if (!existing.request_hash.equals(params.requestHash)) {
+        return { outcome: "hash_mismatch" } as const satisfies SingleAttemptOutcome;
+      }
+      if (existing.replay_closed_at !== null) {
+        return {
+          outcome: "closed",
+          reason: existing.replay_closed_reason!,
+        } as const satisfies SingleAttemptOutcome;
+      }
+      if (
+        existing.replay_expires_at !== null &&
+        existing.replay_expires_at.getTime() <= now.getTime()
+      ) {
+        await closeRow(
+          transaction,
+          params.townId,
+          params.idempotencyKey,
+          "expired",
+          now,
+        );
+        return {
+          outcome: "closed",
+          reason: "expired",
+        } as const satisfies SingleAttemptOutcome;
+      }
+      if (existing.status === "processing") {
+        if (
+          existing.processing_expires_at !== null &&
+          existing.processing_expires_at.getTime() > now.getTime()
+        ) {
+          return { outcome: "live_processing" } as const satisfies SingleAttemptOutcome;
+        }
+        // A crashed first attempt whose claim expired: reclaim it. This is a
+        // retry of an already-counted attempt, not a new operation, so it
+        // never touches the rate limiter.
+        await transaction.query(
+          `UPDATE public.join_requests
+              SET processing_token = $3, processing_expires_at = $4,
+                  attempt_count = attempt_count + 1, updated_at = $5
+            WHERE town_id = $1 AND idempotency_key = $2`,
+          [
+            params.townId,
+            params.idempotencyKey,
+            randomUUID(),
+            new Date(now.getTime() + CLAIM_MS),
+            now,
+          ],
+        );
+        return { outcome: "claimed" } as const satisfies SingleAttemptOutcome;
+      }
+      if (existing.session_issue_count >= MAX_SESSION_ISSUE_COUNT) {
+        await closeRow(
+          transaction,
+          params.townId,
+          params.idempotencyKey,
+          "exhausted",
+          now,
+        );
+        return {
+          outcome: "closed",
+          reason: "exhausted",
+        } as const satisfies SingleAttemptOutcome;
+      }
+      return {
+        outcome: "replay",
+        row: toLedgerRow(existing),
+      } as const satisfies SingleAttemptOutcome;
+    }
+
+    // A genuinely new idempotency key: gate on the join rate bucket before
+    // claiming, inside this same transaction (`D3-F`). `app_runtime` holds no
+    // DELETE grant on this table (`0013_grants.sql`), so a claimed row can
+    // never be un-inserted — the row must simply never be inserted when the
+    // bucket rejects.
+    const admission = await admitRateLimit(
+      transaction,
+      RATE_LIMIT_BUCKETS.join,
+      params.rateLimitScopeKey,
+      now,
+    );
+    if (!admission.admitted) {
+      return {
+        outcome: "rate_limited",
+        retryAfterSeconds: admission.retryAfterSeconds,
+      } as const satisfies SingleAttemptOutcome;
+    }
 
     const inserted = await transaction.query<{ idempotency_key: string }>(
       `INSERT INTO public.join_requests
@@ -174,72 +268,12 @@ async function attemptOnce(
         now,
       ],
     );
-    if (inserted.length > 0) {
-      return { outcome: "claimed" } as const satisfies SingleAttemptOutcome;
+    if (inserted.length === 0) {
+      // Unreachable under serializable isolation: our own read above, in this
+      // same transaction, already established that no row exists.
+      throw new Error("join request claim vanished mid-claim");
     }
-
-    const existing = await readRow(transaction, params.townId, params.idempotencyKey);
-    if (!existing) throw new Error("join request vanished mid-claim");
-
-    if (!existing.request_hash.equals(params.requestHash)) {
-      return { outcome: "hash_mismatch" } as const satisfies SingleAttemptOutcome;
-    }
-    if (existing.replay_closed_at !== null) {
-      return {
-        outcome: "closed",
-        reason: existing.replay_closed_reason!,
-      } as const satisfies SingleAttemptOutcome;
-    }
-    if (
-      existing.replay_expires_at !== null &&
-      existing.replay_expires_at.getTime() <= now.getTime()
-    ) {
-      await closeRow(transaction, params.townId, params.idempotencyKey, "expired", now);
-      return {
-        outcome: "closed",
-        reason: "expired",
-      } as const satisfies SingleAttemptOutcome;
-    }
-    if (existing.status === "processing") {
-      if (
-        existing.processing_expires_at !== null &&
-        existing.processing_expires_at.getTime() > now.getTime()
-      ) {
-        return { outcome: "live_processing" } as const satisfies SingleAttemptOutcome;
-      }
-      // A crashed first attempt whose claim expired: reclaim it.
-      await transaction.query(
-        `UPDATE public.join_requests
-            SET processing_token = $3, processing_expires_at = $4,
-                attempt_count = attempt_count + 1, updated_at = $5
-          WHERE town_id = $1 AND idempotency_key = $2`,
-        [
-          params.townId,
-          params.idempotencyKey,
-          randomUUID(),
-          new Date(now.getTime() + CLAIM_MS),
-          now,
-        ],
-      );
-      return { outcome: "claimed" } as const satisfies SingleAttemptOutcome;
-    }
-    if (existing.session_issue_count >= MAX_SESSION_ISSUE_COUNT) {
-      await closeRow(
-        transaction,
-        params.townId,
-        params.idempotencyKey,
-        "exhausted",
-        now,
-      );
-      return {
-        outcome: "closed",
-        reason: "exhausted",
-      } as const satisfies SingleAttemptOutcome;
-    }
-    return {
-      outcome: "replay",
-      row: toLedgerRow(existing),
-    } as const satisfies SingleAttemptOutcome;
+    return { outcome: "claimed" } as const satisfies SingleAttemptOutcome;
   });
 
   if (result.outcome === "committed") return result.value;

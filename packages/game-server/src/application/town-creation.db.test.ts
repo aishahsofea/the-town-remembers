@@ -27,13 +27,16 @@ function fixtureRequest(input: {
   readonly path: string;
   readonly headers?: Readonly<Record<string, string>>;
   readonly body?: string;
+  readonly sourceIp?: string | undefined;
 }): HttpRequest {
   return {
     method: input.method,
     path: input.path,
     headers: new Map(Object.entries(input.headers ?? {})),
     body: input.body,
-    sourceIp: undefined,
+    // Fresh per call unless overridden, so unrelated test cases never share
+    // the small town_creation rate bucket (burst 5) by accident.
+    sourceIp: input.sourceIp ?? randomUUID(),
   };
 }
 
@@ -43,6 +46,7 @@ function createTownRequest(overrides: {
   readonly origin?: string | undefined;
   readonly contentType?: string;
   readonly body?: string;
+  readonly sourceIp?: string | undefined;
 }): HttpRequest {
   const headers: Record<string, string> = {};
   if (overrides.origin !== undefined) headers["origin"] = overrides.origin;
@@ -56,6 +60,7 @@ function createTownRequest(overrides: {
     path: "/api/v1/towns",
     headers,
     body: overrides.body ?? "{}",
+    sourceIp: overrides.sourceIp,
   });
 }
 

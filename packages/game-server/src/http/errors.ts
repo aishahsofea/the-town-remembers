@@ -14,9 +14,12 @@ import type {
   ProblemStatus,
 } from "@the-town-remembers/http-contracts";
 import {
+  PROBLEM_CODES,
   ProblemResponseSchema,
   problemTypeUrl,
 } from "@the-town-remembers/http-contracts";
+
+import { retryAfter } from "./headers.js";
 
 export interface AppErrorInput {
   readonly status: ProblemStatus;
@@ -24,6 +27,8 @@ export interface AppErrorInput {
   readonly title: string;
   readonly detail: string;
   readonly fieldErrors?: readonly FieldError[];
+  /** Response headers beyond the problem body, e.g. `Retry-After` on a `429`. */
+  readonly headers?: Readonly<Record<string, string>>;
 }
 
 export class AppError extends Error {
@@ -32,6 +37,7 @@ export class AppError extends Error {
   readonly title: string;
   readonly detail: string;
   readonly fieldErrors: readonly FieldError[];
+  readonly headers: Readonly<Record<string, string>>;
 
   constructor(input: AppErrorInput) {
     super(input.detail);
@@ -41,6 +47,7 @@ export class AppError extends Error {
     this.title = input.title;
     this.detail = input.detail;
     this.fieldErrors = input.fieldErrors ?? [];
+    this.headers = input.headers ?? {};
   }
 }
 
@@ -51,6 +58,17 @@ export function internalError(detail = "An unexpected error occurred."): AppErro
     code: "INTERNAL_ERROR",
     title: "Internal error",
     detail,
+  });
+}
+
+/** A `429` never consumes an idempotency key and always carries `Retry-After`. */
+export function rateLimited(retryAfterSeconds: number): AppError {
+  return new AppError({
+    status: 429,
+    code: PROBLEM_CODES.rateLimited,
+    title: "Rate limit exceeded",
+    detail: "Too many requests. Try again later.",
+    headers: retryAfter(retryAfterSeconds),
   });
 }
 

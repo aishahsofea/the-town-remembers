@@ -31,6 +31,7 @@ function joinRequest(
     readonly idempotencyKey?: string;
     readonly secret?: string;
     readonly displayName?: string;
+    readonly sourceIp?: string | undefined;
   } = {},
 ): HttpRequest {
   return {
@@ -43,7 +44,9 @@ function joinRequest(
       ["join-attempt-secret", overrides.secret ?? joinAttemptSecret()],
     ]),
     body: JSON.stringify({ displayName: overrides.displayName ?? "Lin Okafor" }),
-    sourceIp: undefined,
+    // Fresh per call unless overridden, so unrelated test cases never share
+    // the join rate bucket (burst 10) by accident.
+    sourceIp: overrides.sourceIp ?? randomUUID(),
   };
 }
 
@@ -272,6 +275,7 @@ describe.skipIf(!shouldRunDatabaseTests())("join into a non-active town", () => 
       {
         pool: handle.pool,
         sessionTokenPepper: SECURITY_CONFIG.sessionTokenPepper,
+        ipHashSecret: SECURITY_CONFIG.ipHashSecret,
         now: () => new Date(),
       },
       {
@@ -281,6 +285,7 @@ describe.skipIf(!shouldRunDatabaseTests())("join into a non-active town", () => 
         idempotencyKey: randomUUID(),
         joinAttemptSecret: joinAttemptSecret(),
         displayName: "Away Player",
+        sourceIp: randomUUID(),
       },
     );
 

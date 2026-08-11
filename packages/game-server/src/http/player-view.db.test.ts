@@ -41,7 +41,9 @@ function joinRequest(inviteToken: string, displayName: string): HttpRequest {
       ["join-attempt-secret", joinAttemptSecret()],
     ]),
     body: JSON.stringify({ displayName }),
-    sourceIp: undefined,
+    // Fresh per call, so this file's many joins never share the join rate
+    // bucket (burst 10) and exhaust it against each other.
+    sourceIp: randomUUID(),
   };
 }
 

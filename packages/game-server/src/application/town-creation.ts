@@ -13,11 +13,12 @@ import type { Pool } from "pg";
 import { materializeTown } from "@the-town-remembers/town-seed";
 import type { SecurityConfig } from "@the-town-remembers/runtime-config/security";
 
-import { AppError, internalError } from "../http/errors.js";
+import { AppError, internalError, rateLimited } from "../http/errors.js";
 import {
   claimCreationRequest,
   completeCreationRequest,
 } from "../persistence/creation-ledger.js";
+import { NO_TOWN_SCOPE, rateScopeKey } from "../persistence/rate-limits.js";
 import { townCreationRequestHash } from "../security/fingerprint.js";
 import {
   activeSigningKey,
@@ -26,6 +27,7 @@ import {
   inviteUrl,
   signingKeyForVersion,
 } from "../security/invite.js";
+import { hashIp } from "../security/ip-hash.js";
 import { verifyJudgeCode } from "../security/judge-code.js";
 
 /** Generous relative to `materializeTown`'s own budget; this is a rare route. */
@@ -41,6 +43,7 @@ export interface TownCreationDependencies {
 export interface TownCreationRequestInput {
   readonly authorizationHeader: string | undefined;
   readonly idempotencyKey: string;
+  readonly sourceIp: string | undefined;
 }
 
 export interface TownCreationResult {
@@ -67,17 +70,30 @@ export async function createTown(
   const requestHash = townCreationRequestHash();
   const deadlineAt = deps.now().getTime() + CREATE_TOWN_DEADLINE_MS;
   const activeKey = activeSigningKey(deps.securityConfig);
+  const ipHash = hashIp(
+    deps.securityConfig.ipHashSecret,
+    input.sourceIp ?? "",
+    deps.now(),
+  );
+  const rateLimitScopeKey = rateScopeKey(
+    "ip_hash",
+    NO_TOWN_SCOPE,
+    ipHash.toString("base64url"),
+  );
 
   const decision = await claimCreationRequest(deps.pool, {
     idempotencyKey: input.idempotencyKey,
     requestHash,
     contentVersion: CONTENT_VERSION,
     securityKeyVersion: activeKey.version,
+    rateLimitScopeKey,
     now: deps.now,
     deadlineAt,
   });
 
   if (decision.outcome === "hash_mismatch") idempotencyKeyReused();
+  if (decision.outcome === "rate_limited")
+    throw rateLimited(decision.retryAfterSeconds);
 
   if (decision.outcome === "replay") {
     const { row } = decision;

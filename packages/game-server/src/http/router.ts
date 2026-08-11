@@ -37,12 +37,17 @@ import {
 } from "../application/player-view/etag.js";
 import { createTown } from "../application/town-creation.js";
 import {
+  checkRateLimit,
+  RATE_LIMIT_BUCKETS,
+  rateScopeKey,
+} from "../persistence/rate-limits.js";
+import {
   authenticate,
   confirmBootstrap,
   reissueIfDue,
 } from "../persistence/sessions.js";
 import { sessionTokenHash } from "../security/session-token.js";
-import { AppError, internalError, toProblemResponse } from "./errors.js";
+import { AppError, internalError, rateLimited, toProblemResponse } from "./errors.js";
 import { buildSessionCookie, sessionCookieName } from "./cookies.js";
 import { etagHeader, noStoreHeaders, privateNoCacheHeaders } from "./headers.js";
 import {
@@ -57,6 +62,9 @@ import type { HttpRequest, HttpResponse } from "./types.js";
 
 export const JSON_CONTENT_TYPE = "application/json; charset=utf-8";
 export const PROBLEM_CONTENT_TYPE = "application/problem+json; charset=utf-8";
+
+/** Generous for one guarded `UPDATE`; this check never shares a transaction. */
+const RATE_LIMIT_CHECK_DEADLINE_MS = 5_000;
 
 export interface RouterConfig {
   readonly buildId: string;
@@ -106,7 +114,11 @@ async function handleCreateTown(context: RouteHandlerContext): Promise<HttpRespo
       appOrigin: context.config.appOrigin,
       now: context.config.now,
     },
-    { authorizationHeader: readHeader(headers, "authorization"), idempotencyKey },
+    {
+      authorizationHeader: readHeader(headers, "authorization"),
+      idempotencyKey,
+      sourceIp: context.request.sourceIp,
+    },
   );
 
   return {
@@ -177,6 +189,7 @@ async function handleInviteJoin(context: RouteHandlerContext): Promise<HttpRespo
     {
       pool: context.config.pool,
       sessionTokenPepper: context.config.securityConfig.sessionTokenPepper,
+      ipHashSecret: context.config.securityConfig.ipHashSecret,
       now: context.config.now,
     },
     {
@@ -186,6 +199,7 @@ async function handleInviteJoin(context: RouteHandlerContext): Promise<HttpRespo
       idempotencyKey,
       joinAttemptSecret,
       displayName,
+      sourceIp: context.request.sourceIp,
     },
   );
 
@@ -246,6 +260,15 @@ async function handlePlayerView(context: RouteHandlerContext): Promise<HttpRespo
   if (outcome.outcome === "town_retired") townRetired();
 
   const now = context.config.now();
+  const admission = await checkRateLimit(
+    context.config.pool,
+    now.getTime() + RATE_LIMIT_CHECK_DEADLINE_MS,
+    RATE_LIMIT_BUCKETS.playerView,
+    rateScopeKey("player", townId, outcome.session.playerId),
+    now,
+  );
+  if (!admission.admitted) throw rateLimited(admission.retryAfterSeconds);
+
   await confirmBootstrap(
     context.config.pool,
     townId,
@@ -397,7 +420,11 @@ function problemHttpResponse(
 ): HttpResponse {
   return {
     status: error.status,
-    headers: { ...cacheHeaders(cacheKind), "content-type": PROBLEM_CONTENT_TYPE },
+    headers: {
+      ...cacheHeaders(cacheKind),
+      ...error.headers,
+      "content-type": PROBLEM_CONTENT_TYPE,
+    },
     body: JSON.stringify(toProblemResponse(error, requestId)),
     cookies: [],
   };

@@ -11,9 +11,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { join } from "../application/join.js";
 import { joinRequestHash } from "../security/fingerprint.js";
 import { claimJoinRequest } from "./join-ledger.js";
+import { rateScopeKey } from "./rate-limits.js";
 import { authenticate, confirmBootstrap, reissueIfDue } from "./sessions.js";
 
 const SESSION_TOKEN_PEPPER = "test-pepper-not-real";
+const IP_HASH_SECRET = "C".repeat(43);
 
 function sessionTokenHashOf(token: string): Buffer {
   return createHash("sha256")
@@ -51,6 +53,7 @@ describe.skipIf(!shouldRunDatabaseTests())("session authentication and refresh",
       {
         pool: db().pool,
         sessionTokenPepper: SESSION_TOKEN_PEPPER,
+        ipHashSecret: IP_HASH_SECRET,
         now: () => new Date(),
       },
       {
@@ -60,6 +63,7 @@ describe.skipIf(!shouldRunDatabaseTests())("session authentication and refresh",
         idempotencyKey: randomUUID(),
         joinAttemptSecret: randomBytes(32).toString("base64url"),
         displayName,
+        sourceIp: randomUUID(),
       },
     );
   }
@@ -139,6 +143,7 @@ describe.skipIf(!shouldRunDatabaseTests())("session authentication and refresh",
       {
         pool: db().pool,
         sessionTokenPepper: SESSION_TOKEN_PEPPER,
+        ipHashSecret: IP_HASH_SECRET,
         now: () => new Date(),
       },
       {
@@ -148,6 +153,7 @@ describe.skipIf(!shouldRunDatabaseTests())("session authentication and refresh",
         idempotencyKey: randomUUID(),
         joinAttemptSecret: randomBytes(32).toString("base64url"),
         displayName: "Retired Town Player",
+        sourceIp: randomUUID(),
       },
     );
 
@@ -228,6 +234,7 @@ describe.skipIf(!shouldRunDatabaseTests())("session authentication and refresh",
       idempotencyKey: outcome.session.joinRequestId,
       requestHash: joinRequestHash({ displayName: "Bootstrap Confirm" }),
       joinSecretHash: randomBytes(32),
+      rateLimitScopeKey: rateScopeKey("ip_hash", townId, randomUUID()),
       now: () => new Date(),
       deadlineAt: Date.now() + 5_000,
     });

@@ -21,6 +21,8 @@ import {
   type TransactionContext,
 } from "@the-town-remembers/database";
 
+import { admitRateLimit, RATE_LIMIT_BUCKETS } from "./rate-limits.js";
+
 /** Matches the join-request ledger's documented claim duration. */
 const CLAIM_MS = 30_000;
 
@@ -42,7 +44,8 @@ export type CreationClaimDecision =
       readonly securityKeyVersion: string;
     }
   | { readonly outcome: "replay"; readonly row: CreationLedgerRow }
-  | { readonly outcome: "hash_mismatch" };
+  | { readonly outcome: "hash_mismatch" }
+  | { readonly outcome: "rate_limited"; readonly retryAfterSeconds: number };
 
 interface RawRow {
   readonly idempotency_key: string;
@@ -109,12 +112,67 @@ async function attemptOnce(
     readonly requestHash: Buffer;
     readonly contentVersion: string;
     readonly securityKeyVersion: string;
+    readonly rateLimitScopeKey: Buffer;
     readonly now: () => Date;
   },
 ): Promise<SingleAttemptOutcome> {
   const result = await runSerializable(pool, { deadlineAt }, async (transaction) => {
     const now = params.now();
     const claimExpiry = new Date(now.getTime() + CLAIM_MS);
+
+    const existing = await readRow(transaction, params.idempotencyKey);
+
+    if (existing !== undefined) {
+      if (!existing.request_hash.equals(params.requestHash)) {
+        return { outcome: "hash_mismatch" } as const satisfies SingleAttemptOutcome;
+      }
+      if (existing.status !== "processing") {
+        return {
+          outcome: "replay",
+          row: toLedgerRow(existing),
+        } as const satisfies SingleAttemptOutcome;
+      }
+      if (
+        existing.processing_expires_at !== null &&
+        existing.processing_expires_at.getTime() > now.getTime()
+      ) {
+        return { outcome: "live_processing" } as const satisfies SingleAttemptOutcome;
+      }
+
+      // The prior claim expired without completing (a crashed attempt):
+      // reclaim it. This is a retry of an already-counted attempt, not a new
+      // operation, so it never touches the rate limiter.
+      await transaction.query(
+        `UPDATE public.town_creation_requests
+            SET processing_token = $2, processing_expires_at = $3,
+                attempt_count = attempt_count + 1, updated_at = $4
+          WHERE idempotency_key = $1 AND status = 'processing'`,
+        [params.idempotencyKey, randomUUID(), claimExpiry, now],
+      );
+      return {
+        outcome: "claimed",
+        contentVersion: existing.content_version,
+        securityKeyVersion: existing.security_key_version,
+      } as const satisfies SingleAttemptOutcome;
+    }
+
+    // A genuinely new idempotency key: gate on the town-creation rate bucket
+    // before claiming, inside this same transaction (`D3-F`). `app_runtime`
+    // holds no DELETE grant on this table (`0013_grants.sql`), so a claimed
+    // row can never be un-inserted — the row must simply never be inserted
+    // when the bucket rejects.
+    const admission = await admitRateLimit(
+      transaction,
+      RATE_LIMIT_BUCKETS.townCreation,
+      params.rateLimitScopeKey,
+      now,
+    );
+    if (!admission.admitted) {
+      return {
+        outcome: "rate_limited",
+        retryAfterSeconds: admission.retryAfterSeconds,
+      } as const satisfies SingleAttemptOutcome;
+    }
 
     const inserted = await transaction.query<{ idempotency_key: string }>(
       `INSERT INTO public.town_creation_requests
@@ -134,46 +192,15 @@ async function attemptOnce(
         now,
       ],
     );
-    if (inserted.length > 0) {
-      return {
-        outcome: "claimed",
-        contentVersion: params.contentVersion,
-        securityKeyVersion: params.securityKeyVersion,
-      } as const satisfies SingleAttemptOutcome;
-    }
-
-    const existing = await readRow(transaction, params.idempotencyKey);
-    if (!existing) {
+    if (inserted.length === 0) {
+      // Unreachable under serializable isolation: our own read above, in this
+      // same transaction, already established that no row exists.
       throw new DatabaseError("unknown");
     }
-    if (!existing.request_hash.equals(params.requestHash)) {
-      return { outcome: "hash_mismatch" } as const satisfies SingleAttemptOutcome;
-    }
-    if (existing.status !== "processing") {
-      return {
-        outcome: "replay",
-        row: toLedgerRow(existing),
-      } as const satisfies SingleAttemptOutcome;
-    }
-    if (
-      existing.processing_expires_at !== null &&
-      existing.processing_expires_at.getTime() > now.getTime()
-    ) {
-      return { outcome: "live_processing" } as const satisfies SingleAttemptOutcome;
-    }
-
-    // The prior claim expired without completing (a crashed attempt): reclaim it.
-    await transaction.query(
-      `UPDATE public.town_creation_requests
-          SET processing_token = $2, processing_expires_at = $3,
-              attempt_count = attempt_count + 1, updated_at = $4
-        WHERE idempotency_key = $1 AND status = 'processing'`,
-      [params.idempotencyKey, randomUUID(), claimExpiry, now],
-    );
     return {
       outcome: "claimed",
-      contentVersion: existing.content_version,
-      securityKeyVersion: existing.security_key_version,
+      contentVersion: params.contentVersion,
+      securityKeyVersion: params.securityKeyVersion,
     } as const satisfies SingleAttemptOutcome;
   });
 
@@ -196,6 +223,7 @@ export interface ClaimParams {
   readonly requestHash: Buffer;
   readonly contentVersion: string;
   readonly securityKeyVersion: string;
+  readonly rateLimitScopeKey: Buffer;
   readonly now: () => Date;
   readonly deadlineAt: number;
   readonly sleep?: (milliseconds: number) => Promise<void>;

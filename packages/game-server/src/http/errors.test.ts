@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { AppError, internalError, toProblemResponse } from "./errors.js";
+import { AppError, internalError, rateLimited, toProblemResponse } from "./errors.js";
 
 describe("toProblemResponse", () => {
   it("maps every AppError field onto the wire contract", () => {
@@ -58,5 +58,20 @@ describe("internalError", () => {
     expect(error.status).toBe(500);
     expect(error.code).toBe("INTERNAL_ERROR");
     expect(error.detail).not.toMatch(/select|stack|at /i);
+  });
+});
+
+describe("rateLimited", () => {
+  it("produces a 429 carrying exactly the stated Retry-After", () => {
+    const error = rateLimited(2);
+    expect(error.status).toBe(429);
+    expect(error.code).toBe("RATE_LIMITED");
+    expect(error.headers).toStrictEqual({ "retry-after": "2" });
+  });
+
+  it("never surfaces the Retry-After header inside the problem body itself", () => {
+    const error = rateLimited(5);
+    expect(toProblemResponse(error, "req_1")).not.toHaveProperty("retry-after");
+    expect(toProblemResponse(error, "req_1")).not.toHaveProperty("headers");
   });
 });
