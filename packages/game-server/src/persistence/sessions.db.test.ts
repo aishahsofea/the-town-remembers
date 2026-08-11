@@ -82,6 +82,11 @@ describe.skipIf(!shouldRunDatabaseTests())("session authentication and refresh",
     expect(outcome.outcome).toBe("invalid_session");
   }, 30_000);
 
+  it("rejects a token presented against a town that does not exist at all", async () => {
+    const outcome = await authenticate(db().pool, randomUUID(), randomBytes(32));
+    expect(outcome.outcome).toBe("invalid_session");
+  }, 30_000);
+
   it("rejects a token scoped to a different town", async () => {
     const otherTown = await materializeTown(db().pool, {
       contentVersion: "bell-mystery-v1",

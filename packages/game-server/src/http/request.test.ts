@@ -71,6 +71,12 @@ describe("parseCookies", () => {
     expect(cookies.get("session")).toBe("abc=def==");
   });
 
+  it("skips a pair with an empty name", () => {
+    const cookies = parseCookies("=orphan; a=1");
+    expect(cookies.has("")).toBe(false);
+    expect([...cookies.entries()]).toStrictEqual([["a", "1"]]);
+  });
+
   it("parses several ordinary pairs", () => {
     const cookies = parseCookies("a=1; b=2;  c=3");
     expect([...cookies.entries()]).toStrictEqual([

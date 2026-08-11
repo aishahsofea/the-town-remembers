@@ -119,7 +119,6 @@ describe("health route", () => {
 describe("unimplemented routes", () => {
   it.each([
     ["GET", ROUTE_TEMPLATES.towns],
-    ["GET", "/api/v1/towns/town_1/player-view"],
     ["GET", "/health"],
     ["GET", "/"],
     ["POST", ROUTE_TEMPLATES.health],

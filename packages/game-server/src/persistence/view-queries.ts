@@ -1,0 +1,362 @@
+/**
+ * The explicit player-view read set (`P3-06`).
+ *
+ * One function per projection region, each with a mandatory `town_id`
+ * parameter and no `SELECT *`. These are the only reads `application/player-view/build.ts`
+ * performs; every row shape here is deliberately narrow rather than a
+ * reusable "load everything" snapshot, matching `D3-N`'s per-kind narrow-input
+ * convention for the action executor.
+ */
+
+import { hasChapelAccess } from "@the-town-remembers/rules";
+import { LOCKED_LOCATION_MESSAGE } from "@the-town-remembers/content";
+import type { LocationAccessSchema } from "@the-town-remembers/http-contracts";
+import type { Pool } from "pg";
+import type { z } from "zod";
+
+type LocationAccess = z.infer<typeof LocationAccessSchema>;
+
+// --- town header --------------------------------------------------------------------
+
+export type TownLifecycleStatus =
+  "active" | "awaiting_resolution" | "resolved" | "retired";
+
+export interface TownHeaderRow {
+  readonly status: TownLifecycleStatus;
+  readonly contentVersion: string;
+}
+
+export async function readTownHeader(
+  pool: Pool,
+  townId: string,
+): Promise<TownHeaderRow | undefined> {
+  const result = await pool.query<{
+    status: TownLifecycleStatus;
+    content_version: string;
+  }>("SELECT status, content_version FROM public.towns WHERE id = $1", [townId]);
+  const row = result.rows[0];
+  if (!row) return undefined;
+  return { status: row.status, contentVersion: row.content_version };
+}
+
+// --- player and current visit --------------------------------------------------------
+
+export interface PlayerAndVisitRow {
+  readonly displayName: string;
+  readonly visitId: string | null;
+  readonly locationEntityId: string | null;
+}
+
+/** The player's one active visit, if any — `null` fields mean `away`. */
+export async function readPlayerAndVisit(
+  pool: Pool,
+  townId: string,
+  playerId: string,
+): Promise<PlayerAndVisitRow | undefined> {
+  const result = await pool.query<{
+    display_name: string;
+    visit_id: string | null;
+    location_entity_id: string | null;
+  }>(
+    `SELECT a.display_name,
+            pv.id AS visit_id,
+            pv.current_location_entity_id AS location_entity_id
+       FROM public.actors a
+       LEFT JOIN public.player_visits pv
+         ON pv.town_id = a.town_id AND pv.player_id = a.id AND pv.status = 'active'
+      WHERE a.town_id = $1 AND a.id = $2 AND a.actor_type = 'player'`,
+    [townId, playerId],
+  );
+  const row = result.rows[0];
+  if (!row) return undefined;
+  return {
+    displayName: row.display_name,
+    visitId: row.visit_id,
+    locationEntityId: row.location_entity_id,
+  };
+}
+
+// --- map access -----------------------------------------------------------------------
+
+export interface LocationAccessRow {
+  readonly id: string;
+  readonly entityKey: string;
+  readonly displayName: string;
+  readonly access: LocationAccess;
+}
+
+/**
+ * Every location's access for this player. Only the Old Chapel is ever
+ * locked in `bell-mystery-v1`; its unlock rule (`rules#hasChapelAccess`) is
+ * evaluated here rather than generalized, matching how `persistence/players.ts`
+ * already names `festival_square` as a literal rather than inventing
+ * content-agnostic machinery for one location.
+ */
+export async function readMapAccess(
+  pool: Pool,
+  townId: string,
+  playerId: string,
+): Promise<readonly LocationAccessRow[]> {
+  const [locations, capability, chapelKey] = await Promise.all([
+    pool.query<{ id: string; entity_key: string; display_name: string }>(
+      `SELECT id, entity_key, display_name FROM public.story_entities
+        WHERE town_id = $1 AND entity_type = 'location'`,
+      [townId],
+    ),
+    pool.query(
+      `SELECT 1 FROM public.player_capabilities
+        WHERE town_id = $1 AND player_id = $2 AND capability_key = 'enter_old_chapel'
+          AND status = 'granted'`,
+      [townId, playerId],
+    ),
+    pool.query(
+      `SELECT 1 FROM public.items i
+         JOIN public.story_entities se ON se.town_id = i.town_id AND se.id = i.id
+        WHERE i.town_id = $1 AND se.entity_key = 'old_chapel_key' AND i.held_by_actor_id = $2`,
+      [townId, playerId],
+    ),
+  ]);
+
+  const hasCapability = (capability.rowCount ?? 0) > 0;
+  const holdsChapelKey = (chapelKey.rowCount ?? 0) > 0;
+  const chapelOpen = hasChapelAccess(holdsChapelKey, hasCapability);
+
+  return locations.rows.map((row) => ({
+    id: row.id,
+    entityKey: row.entity_key,
+    displayName: row.display_name,
+    access:
+      row.entity_key !== "old_chapel" || chapelOpen
+        ? { state: "open" as const }
+        : { state: "locked" as const, message: LOCKED_LOCATION_MESSAGE },
+  }));
+}
+
+// --- inspectables at the current location -----------------------------------------------
+
+export interface InspectableRow {
+  readonly id: string;
+  readonly inspectableKey: string;
+  readonly displayName: string;
+  readonly alreadyInspected: boolean;
+}
+
+export async function readInspectables(
+  pool: Pool,
+  townId: string,
+  playerId: string,
+  locationEntityId: string,
+): Promise<readonly InspectableRow[]> {
+  const result = await pool.query<{
+    id: string;
+    inspectable_key: string;
+    display_name: string;
+    already_inspected: boolean;
+  }>(
+    `SELECT i.id, i.inspectable_key, i.display_name,
+            EXISTS (
+              SELECT 1 FROM public.clues cl
+                JOIN public.clue_discoveries cd
+                  ON cd.town_id = cl.town_id AND cd.clue_id = cl.id
+               WHERE cl.town_id = i.town_id AND cl.inspectable_id = i.id
+                 AND cd.player_id = $3
+            ) AS already_inspected
+       FROM public.inspectables i
+      WHERE i.town_id = $1 AND i.location_entity_id = $2 AND i.enabled = true`,
+    [townId, locationEntityId, playerId],
+  );
+  return result.rows.map((row) => ({
+    id: row.id,
+    inspectableKey: row.inspectable_key,
+    displayName: row.display_name,
+    alreadyInspected: row.already_inspected,
+  }));
+}
+
+// --- NPCs at the current location --------------------------------------------------------
+
+export interface CoLocatedNpcRow {
+  readonly npcId: string;
+  readonly characterKey: string;
+  readonly displayName: string;
+  readonly trustScore: number;
+  readonly suspicionScore: number;
+}
+
+export async function readCoLocatedNpcs(
+  pool: Pool,
+  townId: string,
+  playerId: string,
+  locationEntityId: string,
+): Promise<readonly CoLocatedNpcRow[]> {
+  const result = await pool.query<{
+    npc_id: string;
+    character_key: string;
+    display_name: string;
+    trust_score: number;
+    suspicion_score: number;
+  }>(
+    `SELECT n.id AS npc_id, ch.entity_key AS character_key, a.display_name,
+            r.trust_score, r.suspicion_score
+       FROM public.npcs n
+       JOIN public.actors a ON a.town_id = n.town_id AND a.id = n.id
+       JOIN public.story_entities ch
+         ON ch.town_id = n.town_id AND ch.id = n.character_entity_id
+       JOIN public.npc_player_relationships r
+         ON r.town_id = n.town_id AND r.npc_id = n.id AND r.player_id = $3
+      WHERE n.town_id = $1 AND n.location_entity_id = $2`,
+    [townId, locationEntityId, playerId],
+  );
+  return result.rows.map((row) => ({
+    npcId: row.npc_id,
+    characterKey: row.character_key,
+    displayName: row.display_name,
+    trustScore: row.trust_score,
+    suspicionScore: row.suspicion_score,
+  }));
+}
+
+// --- inventory --------------------------------------------------------------------------
+
+export interface InventoryItemRow {
+  readonly itemId: string;
+  readonly entityKey: string;
+  readonly displayName: string;
+}
+
+export async function readInventory(
+  pool: Pool,
+  townId: string,
+  playerId: string,
+): Promise<readonly InventoryItemRow[]> {
+  const result = await pool.query<{
+    item_id: string;
+    entity_key: string;
+    display_name: string;
+  }>(
+    `SELECT i.id AS item_id, se.entity_key, se.display_name
+       FROM public.items i
+       JOIN public.story_entities se ON se.town_id = i.town_id AND se.id = i.id
+      WHERE i.town_id = $1 AND i.held_by_actor_id = $2`,
+    [townId, playerId],
+  );
+  return result.rows.map((row) => ({
+    itemId: row.item_id,
+    entityKey: row.entity_key,
+    displayName: row.display_name,
+  }));
+}
+
+// --- confrontation gate status -----------------------------------------------------------
+
+export interface ConfrontationGateStatusRow {
+  readonly bellRevealed: boolean;
+  readonly requiredDiscoveredCount: number;
+  readonly requiredTotalCount: number;
+}
+
+/**
+ * Real DB truth for `rules#isConfrontationGateOpen`. `bellRevealed` reads
+ * `items.revealed_event_id`, never a player's `clue_discoveries` row — the
+ * bell's reveal is town-wide state, not per-player attribution. Required
+ * counts read `clues.required_for_resolution` directly rather than matching
+ * clue keys against an authored list, so a schema row is always the source of
+ * truth for what "required" means.
+ */
+export async function readConfrontationGateStatus(
+  pool: Pool,
+  townId: string,
+): Promise<ConfrontationGateStatusRow> {
+  const result = await pool.query<{
+    bell_revealed: boolean;
+    required_discovered_count: string;
+    required_total_count: string;
+  }>(
+    `SELECT
+       EXISTS (
+         SELECT 1 FROM public.items i
+           JOIN public.story_entities se ON se.town_id = i.town_id AND se.id = i.id
+          WHERE i.town_id = $1 AND se.entity_key = 'festival_bell'
+            AND i.revealed_event_id IS NOT NULL
+       ) AS bell_revealed,
+       (SELECT count(DISTINCT cd.clue_id) FROM public.clue_discoveries cd
+          JOIN public.clues cl ON cl.town_id = cd.town_id AND cl.id = cd.clue_id
+         WHERE cd.town_id = $1 AND cl.required_for_resolution = true) AS required_discovered_count,
+       (SELECT count(*) FROM public.clues
+         WHERE town_id = $1 AND required_for_resolution = true) AS required_total_count`,
+    [townId],
+  );
+  const row = result.rows[0]!;
+  return {
+    bellRevealed: row.bell_revealed,
+    requiredDiscoveredCount: Number(row.required_discovered_count),
+    requiredTotalCount: Number(row.required_total_count),
+  };
+}
+
+// --- accusation candidate entities ---------------------------------------------------------
+
+export interface StoryEntityRow {
+  readonly id: string;
+  readonly entityKey: string;
+}
+
+/**
+ * Characters and motives by their real story-entity ID, for the open
+ * accusation gate's `suspects`/`motives` options. `locations` reuses
+ * {@link readMapAccess}'s rows rather than a third query — no Phase 3 action
+ * can open the gate yet (`accuse` is Phase 6), but the projection must still
+ * carry real IDs rather than authored keys the moment it does.
+ */
+export async function readAccusationCandidateEntities(
+  pool: Pool,
+  townId: string,
+  entityType: "character" | "motive",
+): Promise<readonly StoryEntityRow[]> {
+  const result = await pool.query<{ id: string; entity_key: string }>(
+    `SELECT id, entity_key FROM public.story_entities
+      WHERE town_id = $1 AND entity_type = $2`,
+    [townId, entityType],
+  );
+  return result.rows.map((row) => ({ id: row.id, entityKey: row.entity_key }));
+}
+
+// --- discovered clues, town-wide --------------------------------------------------------
+
+export interface ClueDiscoveryRow {
+  readonly clueId: string;
+  readonly clueKey: string;
+  readonly playerId: string;
+  readonly playerDisplayName: string;
+  readonly discoverySequence: number;
+}
+
+/** Every clue any player has discovered, one row per contributing discovery. */
+export async function readDiscoveredClues(
+  pool: Pool,
+  townId: string,
+): Promise<readonly ClueDiscoveryRow[]> {
+  const result = await pool.query<{
+    clue_id: string;
+    clue_key: string;
+    player_id: string;
+    player_display_name: string;
+    discovery_sequence: number;
+  }>(
+    `SELECT cl.id AS clue_id, cl.clue_key, cd.player_id, a.display_name AS player_display_name,
+            we.sequence_no AS discovery_sequence
+       FROM public.clue_discoveries cd
+       JOIN public.clues cl ON cl.town_id = cd.town_id AND cl.id = cd.clue_id
+       JOIN public.actors a ON a.town_id = cd.town_id AND a.id = cd.player_id
+       JOIN public.world_events we ON we.town_id = cd.town_id AND we.id = cd.event_id
+      WHERE cd.town_id = $1`,
+    [townId],
+  );
+  return result.rows.map((row) => ({
+    clueId: row.clue_id,
+    clueKey: row.clue_key,
+    playerId: row.player_id,
+    playerDisplayName: row.player_display_name,
+    discoverySequence: row.discovery_sequence,
+  }));
+}

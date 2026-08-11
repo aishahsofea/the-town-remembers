@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { LOCATIONS, NPCS } from "./entities.js";
+import { ITEMS, LOCATIONS, NPCS } from "./entities.js";
 import {
+  ITEM_DESCRIPTIONS,
   LOCATION_SCENE_KEYS,
   MYSTERY_TITLE,
   NPC_PORTRAIT_KEYS,
@@ -79,5 +80,24 @@ describe("NPC_ROLE_LABELS", () => {
   it("is short player-safe copy, not Decision 009's long design-note form", () => {
     expect(NPC_ROLE_LABELS["corin_hale"]).toBe("Town guard");
     expect(NPC_ROLE_LABELS["corin_hale"]).not.toContain("moved");
+  });
+});
+
+describe("ITEM_DESCRIPTIONS", () => {
+  it("keys exactly the portable items", () => {
+    expect(Object.keys(ITEM_DESCRIPTIONS).toSorted()).toStrictEqual(
+      ITEMS.filter((item) => item.portable)
+        .map((item) => item.entityKey)
+        .toSorted(),
+    );
+  });
+
+  it("never states the solution or Lark's existence", () => {
+    for (const description of Object.values(ITEM_DESCRIPTIONS)) {
+      const lowered = description.toLowerCase();
+      expect(lowered).not.toContain("lark");
+      expect(lowered).not.toContain("corin");
+      expect(lowered).not.toContain("chapel");
+    }
   });
 });

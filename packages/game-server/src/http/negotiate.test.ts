@@ -6,6 +6,7 @@ import {
   MAX_JSON_BODY_BYTES,
   parseJsonBody,
   requireExactOrigin,
+  requireIdempotencyKey,
   requireJsonContentType,
 } from "./negotiate.js";
 
@@ -99,6 +100,13 @@ describe("parseJsonBody", () => {
     ]);
   });
 
+  it("treats an undefined raw body the same as an empty one", () => {
+    const undefinedBody = expectAppError(() => parseJsonBody(PayloadSchema, undefined));
+    const emptyBody = expectAppError(() => parseJsonBody(PayloadSchema, ""));
+    expect(undefinedBody.status).toBe(400);
+    expect(undefinedBody).toStrictEqual(emptyBody);
+  });
+
   it("rejects a null body", () => {
     const error = expectAppError(() => parseJsonBody(PayloadSchema, "null"));
     expect(error.status).toBe(400);
@@ -127,6 +135,24 @@ describe("parseJsonBody", () => {
       const error = expectAppError(() => parseJsonBody(PayloadSchema, body));
       expect(error.detail).not.toContain(leaked);
       expect(JSON.stringify(error.fieldErrors)).not.toContain(leaked);
+    }
+  });
+});
+
+describe("requireIdempotencyKey", () => {
+  it("accepts a well-formed UUID", () => {
+    const key = "3f6a2b9e-8c1d-4a5f-9e0b-2d7c6a1f4b3e";
+    expect(requireIdempotencyKey(new Map([["idempotency-key", key]]))).toBe(key);
+  });
+
+  it("rejects a missing or non-UUID header", () => {
+    for (const headers of [
+      new Map<string, string>(),
+      new Map([["idempotency-key", "not-a-uuid"]]),
+    ]) {
+      const error = expectAppError(() => requireIdempotencyKey(headers));
+      expect(error.status).toBe(400);
+      expect(error.code).toBe("IDEMPOTENCY_KEY_REQUIRED");
     }
   });
 });

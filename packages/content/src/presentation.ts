@@ -60,3 +60,17 @@ export const NPC_ROLE_LABELS: Readonly<Record<string, string>> = Object.freeze({
   corin_hale: "Town guard",
   nessa_reed: "Herbalist",
 });
+
+/**
+ * Player-safe inventory descriptions, keyed by `AuthoredItem#entityKey` from
+ * `entities.ts#ITEMS`. Decision 011's `InventoryItemView.description` needs
+ * authored prose that `AuthoredItem` itself never carried — these are new
+ * authored copy, not a restatement of a design note.
+ */
+export const ITEM_DESCRIPTIONS: Readonly<Record<string, string>> = Object.freeze({
+  old_chapel_key: "A heavy iron key, worn smooth at the bow.",
+  nessas_field_lens:
+    "A herbalist's folding lens, its brass hinge still faintly warm from a pocket.",
+  guard_dispatch_seal:
+    "A guard dispatch seal in red wax, its cord snapped rather than untied.",
+});

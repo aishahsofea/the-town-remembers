@@ -87,7 +87,6 @@ describe("matching and the no-405 rule", () => {
   });
 
   const UNBUILT_ROUTES: ReadonlyArray<readonly [method: string, template: string]> = [
-    ["GET", ROUTE_TEMPLATES.playerView],
     ["POST", ROUTE_TEMPLATES.actions],
     ["GET", ROUTE_TEMPLATES.actionStatus],
   ];
@@ -126,13 +125,14 @@ describe("cache headers by route kind", () => {
     expect(response.headers["cache-control"]).toBe("no-store");
   });
 
-  it("marks an unbuilt player-view response private, no-cache with Vary: Cookie", async () => {
+  it("marks a player-view response private, no-cache with Vary: Cookie even on a 401", async () => {
     const path = ROUTE_TEMPLATES.playerView.replace("{townId}", "town_1");
     const { response } = await routeRequest(
       fixtureRequest("GET", path),
       "req_1",
       CONFIG,
     );
+    expect(response.status).toBe(401);
     expect(response.headers["cache-control"]).toBe("private, no-cache");
     expect(response.headers["vary"]).toBe("Cookie");
   });
@@ -147,6 +147,21 @@ describe("cache headers by route kind", () => {
       CONFIG,
     );
     expect(response.headers["cache-control"]).toBe("no-store");
+  });
+});
+
+describe("player-view authentication", () => {
+  it("rejects a request with no session cookie as a well-formed 401, never touching the pool", async () => {
+    const path = ROUTE_TEMPLATES.playerView.replace("{townId}", "town_1");
+    const { response } = await routeRequest(
+      fixtureRequest("GET", path),
+      "req_1",
+      CONFIG,
+    );
+    expect(response.status).toBe(401);
+    expect(ProblemResponseSchema.safeParse(parseBody(response.body)).success).toBe(
+      true,
+    );
   });
 });
 

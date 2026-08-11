@@ -16,6 +16,7 @@ import {
   JoinRequestSchema,
   JoinResponseSchema,
   PROBLEM_CODES,
+  PlayerViewSchema,
   ROUTE_TEMPLATES,
   TownCreationRequestSchema,
   TownCreationResponseSchema,
@@ -28,17 +29,29 @@ import type { LoggableRouteTemplate } from "../observability/events.js";
 import { logEvent } from "../observability/events.js";
 import { findTownByInviteToken, previewInvite } from "../application/invite-preview.js";
 import { join } from "../application/join.js";
+import { buildPlayerView } from "../application/player-view/build.js";
+import {
+  computePlayerViewVersion,
+  finalizePlayerView,
+  ifNoneMatchSatisfies,
+} from "../application/player-view/etag.js";
 import { createTown } from "../application/town-creation.js";
+import {
+  authenticate,
+  confirmBootstrap,
+  reissueIfDue,
+} from "../persistence/sessions.js";
+import { sessionTokenHash } from "../security/session-token.js";
 import { AppError, internalError, toProblemResponse } from "./errors.js";
-import { buildSessionCookie } from "./cookies.js";
-import { noStoreHeaders, privateNoCacheHeaders } from "./headers.js";
+import { buildSessionCookie, sessionCookieName } from "./cookies.js";
+import { etagHeader, noStoreHeaders, privateNoCacheHeaders } from "./headers.js";
 import {
   parseJsonBody,
   requireExactOrigin,
   requireIdempotencyKey,
   requireJsonContentType,
 } from "./negotiate.js";
-import { readHeader } from "./request.js";
+import { parseCookies, readHeader } from "./request.js";
 import { buildHealthResponse } from "./routes/health.js";
 import type { HttpRequest, HttpResponse } from "./types.js";
 
@@ -191,6 +204,87 @@ async function handleInviteJoin(context: RouteHandlerContext): Promise<HttpRespo
   };
 }
 
+function invalidSession(): never {
+  throw new AppError({
+    status: 401,
+    code: "INVALID_SESSION",
+    title: "Invalid session",
+    detail: "The request carries no valid town session.",
+  });
+}
+
+function townRetired(): never {
+  throw new AppError({
+    status: 410,
+    code: "TOWN_RETIRED",
+    title: "Town retired",
+    detail: "This town is no longer accepting play.",
+  });
+}
+
+/**
+ * `GET /api/v1/towns/{townId}/player-view` (`P3-06`). Bootstrap confirmation
+ * runs before the `If-None-Match` short-circuit (`D3-S`): a poll that lands
+ * exactly on a matching ETag must still close the join replay window, the
+ * same way a `200` would.
+ */
+async function handlePlayerView(context: RouteHandlerContext): Promise<HttpResponse> {
+  const townId = context.params["townId"];
+  if (townId === undefined) throw internalError();
+
+  const { headers } = context.request;
+  const cookies = parseCookies(readHeader(headers, "cookie"));
+  const token = cookies.get(sessionCookieName(townId));
+  if (token === undefined) invalidSession();
+
+  const tokenHash = sessionTokenHash(
+    context.config.securityConfig.sessionTokenPepper,
+    token,
+  );
+  const outcome = await authenticate(context.config.pool, townId, tokenHash);
+  if (outcome.outcome === "invalid_session") invalidSession();
+  if (outcome.outcome === "town_retired") townRetired();
+
+  const now = context.config.now();
+  await confirmBootstrap(
+    context.config.pool,
+    townId,
+    outcome.session.joinRequestId,
+    now,
+  );
+  const reissued = await reissueIfDue(
+    context.config.pool,
+    townId,
+    outcome.session.sessionId,
+    now,
+  );
+  const cookiesOut = reissued ? [buildSessionCookie(townId, token)] : [];
+
+  const draft = await buildPlayerView(context.config.pool, {
+    townId,
+    playerId: outcome.session.playerId,
+  });
+  const viewVersion = computePlayerViewVersion(draft);
+  const ifNoneMatch = readHeader(headers, "if-none-match");
+
+  if (ifNoneMatchSatisfies(ifNoneMatch, viewVersion)) {
+    return {
+      status: 304,
+      headers: etagHeader(viewVersion),
+      body: "",
+      cookies: cookiesOut,
+    };
+  }
+
+  const view = finalizePlayerView(draft, viewVersion);
+  return {
+    status: 200,
+    headers: { "content-type": JSON_CONTENT_TYPE, ...etagHeader(viewVersion) },
+    body: JSON.stringify(PlayerViewSchema.parse(view)),
+    cookies: cookiesOut,
+  };
+}
+
 const ROUTE_DEFINITIONS: readonly RouteDefinition[] = [
   {
     method: "GET",
@@ -230,7 +324,7 @@ const ROUTE_DEFINITIONS: readonly RouteDefinition[] = [
     method: "GET",
     template: ROUTE_TEMPLATES.playerView,
     cacheKind: "private-no-cache",
-    handle: notYetImplemented,
+    handle: handlePlayerView,
   },
   {
     method: "POST",
