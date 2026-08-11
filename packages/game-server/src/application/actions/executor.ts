@@ -75,6 +75,12 @@ export interface LoadInputsContext {
   readonly targetActorId: string | null;
   readonly targetEntityId: string | null;
   readonly requestPayload: Readonly<Record<string, unknown>>;
+  /** This claimed action's own id — `leave`'s planner needs it up front for
+   * `player_visits.ended_by_action_id`, unlike the other three kinds. */
+  readonly actionId: string;
+  /** A fresh reading per attempt, for a planner that timestamps its own effect
+   * (`leave`'s `ended_at`). */
+  readonly now: Date;
 }
 
 /**
@@ -256,6 +262,8 @@ async function runClaimed<K extends ActionKind, TInputs>(
       targetActorId: params.targetActorId,
       targetEntityId: params.targetEntityId,
       requestPayload: params.requestPayload,
+      actionId,
+      now: params.now(),
     });
     const decision = params.handler.plan(inputs);
     if (decision.outcome === "allowed") {

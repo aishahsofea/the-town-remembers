@@ -112,23 +112,29 @@ async function bootstrapStartVisit(
     ],
   );
 
-  const bumped = await transaction.query<{ last_event_sequence: number }>(
+  const bumped = await transaction.query<{
+    last_event_sequence: number;
+    revision: number;
+  }>(
     `UPDATE public.towns
         SET last_event_sequence = last_event_sequence + 1, revision = revision + 1,
             updated_at = $2
       WHERE id = $1
-      RETURNING last_event_sequence`,
+      RETURNING last_event_sequence, revision`,
     [townId, now],
   );
   const sequenceNo = bumped[0]?.last_event_sequence;
-  if (sequenceNo === undefined) throw new Error("town vanished mid-bootstrap");
+  const revision = bumped[0]?.revision;
+  if (sequenceNo === undefined || revision === undefined) {
+    throw new Error("town vanished mid-bootstrap");
+  }
 
   await transaction.query(
     `INSERT INTO public.player_visits
        (town_id, id, player_id, current_location_entity_id, current_location_entity_type,
         status, start_revision, started_by_action_id, started_at)
      VALUES ($1, $2, $3, $4, 'location', 'active', $5, $6, $7)`,
-    [townId, visitId, playerId, locationId, sequenceNo, actionId, now],
+    [townId, visitId, playerId, locationId, revision, actionId, now],
   );
 
   await transaction.query(

@@ -35,6 +35,7 @@ import { logEvent } from "../observability/events.js";
 import { requireEnabledActionKind } from "../application/actions/enabled.js";
 import { executeAction, type ExecuteActionOutcome } from "../application/actions/executor.js";
 import { inspectActionHandler } from "../application/actions/inputs/inspect.js";
+import { leaveActionHandler } from "../application/actions/inputs/leave.js";
 import { startVisitActionHandler } from "../application/actions/inputs/start-visit.js";
 import {
   resolveTravelTarget,
@@ -613,6 +614,21 @@ async function handleSubmitAction(context: RouteHandlerContext): Promise<HttpRes
       targetEntityId: null,
       requestPayload: { inspectableId: request.inspectableId },
       handler: inspectActionHandler,
+      now: context.config.now,
+    });
+    response = respondToExecuteOutcome(townId, outcome);
+  } else if (request.kind === "leave") {
+    const outcome = await executeAction({
+      pool,
+      deadline,
+      townId,
+      playerId,
+      idempotencyKey,
+      actionKind: "leave",
+      targetActorId: null,
+      targetEntityId: null,
+      requestPayload: {},
+      handler: leaveActionHandler,
       now: context.config.now,
     });
     response = respondToExecuteOutcome(townId, outcome);
