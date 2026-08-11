@@ -11,6 +11,7 @@
  */
 
 import {
+  ActionRequestSchema,
   CompletedActionResponseSchema,
   InvitePreviewResponseSchema,
   JoinAttemptSecretSchema,
@@ -22,6 +23,7 @@ import {
   ROUTE_TEMPLATES,
   TownCreationRequestSchema,
   TownCreationResponseSchema,
+  type ActionKind,
   type ProblemStatus,
   type RouteTemplate,
 } from "@the-town-remembers/http-contracts";
@@ -30,8 +32,16 @@ import type { Pool } from "pg";
 
 import type { LoggableRouteTemplate } from "../observability/events.js";
 import { logEvent } from "../observability/events.js";
+import { requireEnabledActionKind } from "../application/actions/enabled.js";
+import { executeAction, type ExecuteActionOutcome } from "../application/actions/executor.js";
+import { startVisitActionHandler } from "../application/actions/inputs/start-visit.js";
+import {
+  resolveTravelTarget,
+  travelActionHandler,
+} from "../application/actions/inputs/travel.js";
 import { findTownByInviteToken, previewInvite } from "../application/invite-preview.js";
 import { join } from "../application/join.js";
+import { startOperationDeadline } from "../application/deadline.js";
 import { buildPlayerView } from "../application/player-view/build.js";
 import {
   computePlayerViewVersion,
@@ -426,6 +436,173 @@ async function handleActionStatus(context: RouteHandlerContext): Promise<HttpRes
   });
 }
 
+/**
+ * Translates one `executeAction` outcome into the wire response docs/006
+ * "Idempotency and conflicts" and "Processing and HTTP time budget" define.
+ * Never sets `cookies` — the caller (`handleSubmitAction`) owns that, since a
+ * session reissue is orthogonal to which of these five outcomes occurred.
+ */
+function respondToExecuteOutcome<K extends ActionKind>(
+  townId: string,
+  outcome: ExecuteActionOutcome<K>,
+): Omit<HttpResponse, "cookies"> {
+  switch (outcome.kind) {
+    case "executed":
+      return {
+        status: outcome.responseStatus,
+        headers: { "content-type": JSON_CONTENT_TYPE },
+        body: JSON.stringify(CompletedActionResponseSchema.parse(outcome.response)),
+      };
+    case "processing":
+      return {
+        status: 202,
+        headers: {
+          "content-type": JSON_CONTENT_TYPE,
+          ...retryAfter(2),
+          ...locationHeader(actionStatusPath(townId, outcome.actionId)),
+        },
+        body: JSON.stringify(
+          ProcessingActionResponseSchema.parse({
+            actionId: outcome.actionId,
+            status: "processing",
+            pollAfterMs: outcome.pollAfterMs,
+          }),
+        ),
+      };
+    case "replay": {
+      if (outcome.status === "completed") {
+        return {
+          status: outcome.responseStatus,
+          headers: { "content-type": JSON_CONTENT_TYPE },
+          body: JSON.stringify(
+            CompletedActionResponseSchema.parse(outcome.responsePayload),
+          ),
+        };
+      }
+      // `retryable` or `failed`: the stored problem body carries no
+      // `requestId`/`actionId` (`persistence/actions.ts`'s own note on why),
+      // so this is the one place they're attached, exactly as
+      // `handleActionStatus` already does for the polling path.
+      const stored = outcome.responsePayload as StoredProblemBody;
+      throw new AppError({
+        status: outcome.responseStatus as ProblemStatus,
+        code: stored.code,
+        title: stored.title,
+        detail: stored.detail,
+        fieldErrors: stored.fieldErrors,
+        actionId: outcome.actionId,
+        ...(outcome.status === "retryable" && outcome.retryAfterSeconds !== null
+          ? { headers: retryAfter(outcome.retryAfterSeconds) }
+          : {}),
+      });
+    }
+    case "key_reused":
+      throw new AppError({
+        status: 409,
+        code: "IDEMPOTENCY_KEY_REUSED",
+        title: "Idempotency key reused",
+        detail: "This idempotency key was already used for a different request.",
+      });
+    case "blocked":
+      throw new AppError({
+        status: 409,
+        code: "ACTION_IN_PROGRESS",
+        title: "Action in progress",
+        detail: "Another action is still being processed for this player.",
+        headers: {
+          ...retryAfter(2),
+          ...locationHeader(actionStatusPath(townId, outcome.blockingActionId)),
+        },
+      });
+  }
+}
+
+/**
+ * `POST /api/v1/towns/{townId}/actions` (`P3-10`). Only `start_visit` and
+ * `travel` are wired here yet — `inspect` and `leave` are `D3-P`-enabled but
+ * still `notYetImplemented` until `P3-11`/`P3-12` add their own handlers, the
+ * same staged-rollout the whole route went through under `P3-09`.
+ */
+async function handleSubmitAction(context: RouteHandlerContext): Promise<HttpResponse> {
+  const townId = context.params["townId"];
+  if (townId === undefined) throw internalError();
+
+  const { headers } = context.request;
+  requireExactOrigin(headers, context.config.appOrigin);
+  requireJsonContentType(headers);
+  const idempotencyKey = requireIdempotencyKey(headers);
+
+  const cookies = parseCookies(readHeader(headers, "cookie"));
+  const token = cookies.get(sessionCookieName(townId));
+  if (token === undefined) invalidSession();
+
+  const tokenHash = sessionTokenHash(
+    context.config.securityConfig.sessionTokenPepper,
+    token,
+  );
+  const authOutcome = await authenticate(context.config.pool, townId, tokenHash);
+  if (authOutcome.outcome === "invalid_session") invalidSession();
+  if (authOutcome.outcome === "town_retired") townRetired();
+
+  const now = context.config.now();
+  const reissued = await reissueIfDue(
+    context.config.pool,
+    townId,
+    authOutcome.session.sessionId,
+    now,
+  );
+  const cookiesOut = reissued ? [buildSessionCookie(townId, token)] : [];
+
+  const request = parseJsonBody(ActionRequestSchema, context.request.body);
+  requireEnabledActionKind(request.kind);
+
+  const pool = context.config.pool;
+  const playerId = authOutcome.session.playerId;
+  const deadline = startOperationDeadline(now);
+
+  let response: Omit<HttpResponse, "cookies">;
+  if (request.kind === "start_visit") {
+    const outcome = await executeAction({
+      pool,
+      deadline,
+      townId,
+      playerId,
+      idempotencyKey,
+      actionKind: "start_visit",
+      targetActorId: null,
+      targetEntityId: null,
+      requestPayload: {},
+      handler: startVisitActionHandler,
+      now: context.config.now,
+    });
+    response = respondToExecuteOutcome(townId, outcome);
+  } else if (request.kind === "travel") {
+    const targetEntityId = await resolveTravelTarget(
+      pool,
+      townId,
+      request.destinationLocationId,
+    );
+    const outcome = await executeAction({
+      pool,
+      deadline,
+      townId,
+      playerId,
+      idempotencyKey,
+      actionKind: "travel",
+      targetActorId: null,
+      targetEntityId,
+      requestPayload: { destinationLocationId: request.destinationLocationId },
+      handler: travelActionHandler,
+      now: context.config.now,
+    });
+    response = respondToExecuteOutcome(townId, outcome);
+  } else {
+    notYetImplemented();
+  }
+
+  return { ...response, cookies: cookiesOut };
+}
+
 const ROUTE_DEFINITIONS: readonly RouteDefinition[] = [
   {
     method: "GET",
@@ -471,7 +648,7 @@ const ROUTE_DEFINITIONS: readonly RouteDefinition[] = [
     method: "POST",
     template: ROUTE_TEMPLATES.actions,
     cacheKind: "no-store",
-    handle: notYetImplemented,
+    handle: handleSubmitAction,
   },
   {
     method: "GET",

@@ -86,32 +86,11 @@ describe("matching and the no-405 rule", () => {
     );
   });
 
-  const UNBUILT_ROUTES: ReadonlyArray<readonly [method: string, template: string]> = [
-    ["POST", ROUTE_TEMPLATES.actions],
-  ];
-
-  it.each(UNBUILT_ROUTES)(
-    "answers an unbuilt route (%s %s) the same as an unmatched path",
-    async (method, template) => {
-      const concretePath = template.replaceAll(/\{[^}]+\}/g, "id_1");
-
-      const built = await routeRequest(
-        fixtureRequest(method, concretePath),
-        "req_1",
-        CONFIG,
-      );
-      const unmatched = await routeRequest(
-        fixtureRequest("GET", "/api/v1/does-not-exist"),
-        "req_1",
-        CONFIG,
-      );
-
-      expect(built.response.status).toBe(404);
-      expect(parseBody(built.response.body)).toStrictEqual(
-        parseBody(unmatched.response.body),
-      );
-    },
-  );
+  // Every route template now has a real handler (`P3-10`'s `POST /actions`
+  // was the last one), so there is no longer an "unbuilt route" case to
+  // assert against — `handleSubmitAction` rejects a header-less request with
+  // its own real `403` (missing Origin) rather than the generic `404` an
+  // unmatched path returns.
 });
 
 describe("cache headers by route kind", () => {
