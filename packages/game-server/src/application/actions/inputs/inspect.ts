@@ -107,11 +107,16 @@ export async function loadInspectInputs(
   const hasActiveVisit = locationEntityId !== null;
 
   const inspectable = hasActiveVisit
-    ? await readInspectableAtLocation(pool, context.townId, inspectableId, locationEntityId)
+    ? await readInspectableAtLocation(
+        pool,
+        context.townId,
+        inspectableId,
+        locationEntityId,
+      )
     : undefined;
 
-  const [existingContributors, boardEntryAlreadyExists, revealedItem] = await Promise.all(
-    [
+  const [existingContributors, boardEntryAlreadyExists, revealedItem] =
+    await Promise.all([
       inspectable?.clueId
         ? readClueDiscoveries(pool, context.townId, inspectable.clueId)
         : Promise.resolve([]),
@@ -121,8 +126,7 @@ export async function loadInspectInputs(
       inspectable?.linkedItemEntityId
         ? readItemForReveal(pool, context.townId, inspectable.linkedItemEntityId)
         : Promise.resolve(undefined),
-    ],
-  );
+    ]);
 
   return {
     playerId: context.playerId,

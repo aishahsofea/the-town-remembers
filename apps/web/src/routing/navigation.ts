@@ -6,7 +6,10 @@
 
 export const NAVIGATION_EVENT = "ttr:navigation";
 
-export function navigate(path: string, options: { readonly replace?: boolean } = {}): void {
+export function navigate(
+  path: string,
+  options: { readonly replace?: boolean } = {},
+): void {
   if (options.replace) history.replaceState(null, "", path);
   else history.pushState(null, "", path);
   window.dispatchEvent(new Event(NAVIGATION_EVENT));

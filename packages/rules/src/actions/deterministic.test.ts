@@ -272,7 +272,8 @@ describe("planInspect", () => {
       revealedItemRevision: 3,
     });
     const itemChange = result.effects.find(
-      (effect) => effect.kind === "conditional_state_change" && effect.table === "items",
+      (effect) =>
+        effect.kind === "conditional_state_change" && effect.table === "items",
     );
     expect(itemChange).toMatchObject({
       key: { id: "item-1" },
@@ -298,7 +299,8 @@ describe("planInspect", () => {
       revealedItemRevision: 1,
     });
     const itemChange = result.effects.find(
-      (effect) => effect.kind === "conditional_state_change" && effect.table === "items",
+      (effect) =>
+        effect.kind === "conditional_state_change" && effect.table === "items",
     );
     expect(itemChange).toMatchObject({
       key: { id: "festival_bell" },
@@ -318,7 +320,8 @@ describe("planInspect", () => {
     });
     expect(
       result.effects.some(
-        (effect) => effect.kind === "conditional_state_change" && effect.table === "items",
+        (effect) =>
+          effect.kind === "conditional_state_change" && effect.table === "items",
       ),
     ).toBe(false);
   });
@@ -347,7 +350,8 @@ describe("planInspect", () => {
       ),
     ).toBe(false);
     const itemChange = result.effects.find(
-      (effect) => effect.kind === "conditional_state_change" && effect.table === "items",
+      (effect) =>
+        effect.kind === "conditional_state_change" && effect.table === "items",
     );
     expect(itemChange).toMatchObject({
       key: { id: "nessas_field_lens" },

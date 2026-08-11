@@ -29,7 +29,10 @@ function InspectResult({ result }: { readonly result: ActionResultByKind["inspec
   return (
     <div>
       {discovery === "new_to_player" ? (
-        <p>The town already knew this evidence; your examination was added to its history.</p>
+        <p>
+          The town already knew this evidence; your examination was added to its
+          history.
+        </p>
       ) : null}
       {discovery === "already_discovered_by_player" ? (
         <p>You have already recorded what matters here.</p>
@@ -54,7 +57,9 @@ function InspectResult({ result }: { readonly result: ActionResultByKind["inspec
           <p>It stays here for now.</p>
         </article>
       ) : null}
-      {discovery === "none" && !revealedItem ? <p>Nothing more to record here.</p> : null}
+      {discovery === "none" && !revealedItem ? (
+        <p>Nothing more to record here.</p>
+      ) : null}
     </div>
   );
 }
@@ -80,7 +85,9 @@ export function ResultCard({ result }: ResultCardProps) {
     const travel = result.result as ActionResultByKind["travel"];
     return (
       <div className="result-card">
-        <p>{travel.disposition === "arrived" ? "You arrive." : "You are already there."}</p>
+        <p>
+          {travel.disposition === "arrived" ? "You arrive." : "You are already there."}
+        </p>
       </div>
     );
   }

@@ -1,7 +1,11 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { deleteJournalEntry, readJournalEntry, writeJournalEntry } from "../journal/db.js";
+import {
+  deleteJournalEntry,
+  readJournalEntry,
+  writeJournalEntry,
+} from "../journal/db.js";
 import { useActionSubmission } from "./actionSubmission.js";
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -37,7 +41,9 @@ describe("useActionSubmission", () => {
     });
 
     const onSettled = vi.fn(() => order.push("onSettled"));
-    const { result } = renderHook(() => useActionSubmission("town-1", "player-1", onSettled));
+    const { result } = renderHook(() =>
+      useActionSubmission("town-1", "player-1", onSettled),
+    );
 
     await act(async () => {
       await result.current.submit({ kind: "travel", destinationLocationId: "loc-1" });

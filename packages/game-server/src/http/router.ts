@@ -33,7 +33,10 @@ import type { Pool } from "pg";
 import type { LoggableRouteTemplate } from "../observability/events.js";
 import { logEvent } from "../observability/events.js";
 import { requireEnabledActionKind } from "../application/actions/enabled.js";
-import { executeAction, type ExecuteActionOutcome } from "../application/actions/executor.js";
+import {
+  executeAction,
+  type ExecuteActionOutcome,
+} from "../application/actions/executor.js";
 import { inspectActionHandler } from "../application/actions/inputs/inspect.js";
 import { leaveActionHandler } from "../application/actions/inputs/leave.js";
 import { startVisitActionHandler } from "../application/actions/inputs/start-visit.js";

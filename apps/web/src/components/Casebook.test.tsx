@@ -19,7 +19,13 @@ describe("Casebook empty states", () => {
   it("renders real inventory items instead of the empty-state copy", () => {
     render(
       <Casebook
-        inventory={[{ itemId: "item-1", displayName: "Storm lantern", description: "Cracked glass." }]}
+        inventory={[
+          {
+            itemId: "item-1",
+            displayName: "Storm lantern",
+            description: "Cracked glass.",
+          },
+        ]}
         activePromises={[]}
       />,
     );

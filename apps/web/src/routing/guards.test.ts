@@ -20,7 +20,11 @@ function baseView(overrides: Partial<PlayerView> = {}): PlayerView {
       visit: { status: "active", visitId: "v1", locationId: "loc-square" },
     },
     map: [],
-    currentLocation: { id: "loc-square", displayName: "Festival Square", inspectables: [] },
+    currentLocation: {
+      id: "loc-square",
+      displayName: "Festival Square",
+      inspectables: [],
+    },
     encounters: [],
     inventory: [],
     discoveredClues: [],
@@ -28,7 +32,10 @@ function baseView(overrides: Partial<PlayerView> = {}): PlayerView {
     caseBoard: [],
     caseBoardContradictions: [],
     caseAttempts: [],
-    resolution: { state: "investigating", accusationGate: { state: "locked", message: "Locked." } },
+    resolution: {
+      state: "investigating",
+      accusationGate: { state: "locked", message: "Locked." },
+    },
     ambientTransition: null,
     ...overrides,
   };
@@ -37,20 +44,29 @@ function baseView(overrides: Partial<PlayerView> = {}): PlayerView {
 describe("computeGuardRedirect", () => {
   it("does not redirect an active player on the map", () => {
     const view = baseView();
-    expect(computeGuardRedirect(view, { name: "map", params: { townId: "town-1" } })).toBeUndefined();
+    expect(
+      computeGuardRedirect(view, { name: "map", params: { townId: "town-1" } }),
+    ).toBeUndefined();
   });
 
   it("redirects an away player off the map to between-visits", () => {
-    const view = baseView({ player: { id: "p1", displayName: "Aishah Sofea", visit: { status: "away" } } });
-    expect(computeGuardRedirect(view, { name: "map", params: { townId: "town-1" } })).toBe(
-      "/town/town-1/between-visits",
-    );
+    const view = baseView({
+      player: { id: "p1", displayName: "Aishah Sofea", visit: { status: "away" } },
+    });
+    expect(
+      computeGuardRedirect(view, { name: "map", params: { townId: "town-1" } }),
+    ).toBe("/town/town-1/between-visits");
   });
 
   it("does not redirect an away player already on between-visits or the board", () => {
-    const view = baseView({ player: { id: "p1", displayName: "Aishah Sofea", visit: { status: "away" } } });
+    const view = baseView({
+      player: { id: "p1", displayName: "Aishah Sofea", visit: { status: "away" } },
+    });
     expect(
-      computeGuardRedirect(view, { name: "betweenVisits", params: { townId: "town-1" } }),
+      computeGuardRedirect(view, {
+        name: "betweenVisits",
+        params: { townId: "town-1" },
+      }),
     ).toBeUndefined();
     expect(
       computeGuardRedirect(view, { name: "board", params: { townId: "town-1" } }),
@@ -116,9 +132,9 @@ describe("computeGuardRedirect", () => {
         status: "resolved",
       },
     });
-    expect(computeGuardRedirect(view, { name: "map", params: { townId: "town-1" } })).toBe(
-      "/town/town-1/resolution",
-    );
+    expect(
+      computeGuardRedirect(view, { name: "map", params: { townId: "town-1" } }),
+    ).toBe("/town/town-1/resolution");
     expect(
       computeGuardRedirect(view, { name: "resolution", params: { townId: "town-1" } }),
     ).toBeUndefined();

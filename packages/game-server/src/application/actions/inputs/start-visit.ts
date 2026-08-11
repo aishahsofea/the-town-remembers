@@ -59,7 +59,8 @@ async function readFestivalSquareLocationId(
     [townId],
   );
   const row = result.rows[0];
-  if (!row) throw internalError("Festival Square is missing from this town's story entities.");
+  if (!row)
+    throw internalError("Festival Square is missing from this town's story entities.");
   return row.id;
 }
 

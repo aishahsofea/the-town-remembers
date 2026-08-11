@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { apiRequest, ApiError, buildPath, NetworkError } from "./client.js";
 
-function stubFetch(implementation: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>): void {
+function stubFetch(
+  implementation: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
+): void {
   vi.stubGlobal("fetch", vi.fn(implementation));
 }
 
@@ -22,10 +24,12 @@ afterEach(() => {
 
 describe("buildPath", () => {
   it("fills every named param", () => {
-    expect(buildPath("/api/v1/towns/{townId}/actions/{actionId}", {
-      townId: "t1",
-      actionId: "a1",
-    })).toBe("/api/v1/towns/t1/actions/a1");
+    expect(
+      buildPath("/api/v1/towns/{townId}/actions/{actionId}", {
+        townId: "t1",
+        actionId: "a1",
+      }),
+    ).toBe("/api/v1/towns/t1/actions/a1");
   });
 
   it("percent-encodes each param value", () => {
@@ -83,7 +87,9 @@ describe("apiRequest", () => {
 
   it("falls back to an opaque internal-error ApiError when a non-2xx body fails to parse as a problem", async () => {
     stubFetch(() => Promise.resolve(new Response("not json", { status: 500 })));
-    const error: unknown = await apiRequest("/api/v1/health").catch((caught: unknown) => caught);
+    const error: unknown = await apiRequest("/api/v1/health").catch(
+      (caught: unknown) => caught,
+    );
     expect(error).toBeInstanceOf(ApiError);
     expect((error as ApiError).problem.code).toBe("INTERNAL_ERROR");
   });

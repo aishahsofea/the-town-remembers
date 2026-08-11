@@ -24,10 +24,12 @@ describe("JoinBootstrap", () => {
     const originalReplaceState = window.history.replaceState.bind(window.history);
     const replaceStateSpy = vi
       .spyOn(window.history, "replaceState")
-      .mockImplementation((data: unknown, unused: string, url?: string | URL | null) => {
-        order.push("replaceState");
-        originalReplaceState(data, unused, url);
-      });
+      .mockImplementation(
+        (data: unknown, unused: string, url?: string | URL | null) => {
+          order.push("replaceState");
+          originalReplaceState(data, unused, url);
+        },
+      );
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() => {
       order.push("fetch");
       return Promise.resolve(new Response("{}", { status: 200 }));
@@ -43,7 +45,9 @@ describe("JoinBootstrap", () => {
 
   it("captures the token into page memory before replacing the URL", () => {
     window.history.pushState(null, "", "/join/another-token");
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 200 }));
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("{}", { status: 200 }),
+    );
 
     render(<JoinBootstrap inviteToken="another-token" />);
 
@@ -53,9 +57,13 @@ describe("JoinBootstrap", () => {
 
   it("is idempotent when the URL is already /join (no-op replaceState)", () => {
     window.history.pushState(null, "", "/join");
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 200 }));
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("{}", { status: 200 }),
+    );
 
-    expect(() => render(<JoinBootstrap inviteToken="idempotent-token" />)).not.toThrow();
+    expect(() =>
+      render(<JoinBootstrap inviteToken="idempotent-token" />),
+    ).not.toThrow();
     expect(window.location.pathname).toBe("/join");
     vi.restoreAllMocks();
   });

@@ -181,7 +181,8 @@ export function planInspect(inputs: InspectInputs): DecisionResult<EffectPlanEnt
     clueAlreadyDiscoveredInTown: inputs.clueAlreadyDiscoveredInTown,
     clueAlreadyDiscoveredByThisPlayer: inputs.clueAlreadyDiscoveredByThisPlayer,
   });
-  const discoversNewClue = shouldRecordClueDiscovery(discovery) && inputs.clueId !== null;
+  const discoversNewClue =
+    shouldRecordClueDiscovery(discovery) && inputs.clueId !== null;
   const revealsNewItem = inputs.revealsItemId !== null && !inputs.itemAlreadyRevealed;
 
   if (!discoversNewClue && !revealsNewItem) {

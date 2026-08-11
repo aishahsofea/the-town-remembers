@@ -35,6 +35,10 @@ export function computeGuardRedirect(
     return undefined;
   }
 
+  if (match.name === "betweenVisits") {
+    return buildWebPath("map", { townId });
+  }
+
   // Active or frozen: a real current location always exists.
   const currentLocationId = view.currentLocation?.id;
 
@@ -47,7 +51,9 @@ export function computeGuardRedirect(
 
   if (match.name === "encounter") {
     const npcId = match.params["npcId"];
-    const stillCoLocated = view.encounters.some((encounter) => encounter.npc.id === npcId);
+    const stillCoLocated = view.encounters.some(
+      (encounter) => encounter.npc.id === npcId,
+    );
     if (!stillCoLocated) {
       return currentLocationId !== undefined
         ? buildWebPath("location", { townId, locationId: currentLocationId })

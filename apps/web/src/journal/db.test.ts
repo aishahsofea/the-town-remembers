@@ -1,4 +1,7 @@
-import { findSensitiveMarkers, SENSITIVE_TEST_MARKERS } from "@the-town-remembers/test-support";
+import {
+  findSensitiveMarkers,
+  SENSITIVE_TEST_MARKERS,
+} from "@the-town-remembers/test-support";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { deleteJournalEntry, readJournalEntry, writeJournalEntry } from "./db.js";

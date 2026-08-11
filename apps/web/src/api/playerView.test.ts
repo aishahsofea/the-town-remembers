@@ -30,7 +30,10 @@ function playerViewBody(overrides: Record<string, unknown> = {}): unknown {
     caseBoard: [],
     caseBoardContradictions: [],
     caseAttempts: [],
-    resolution: { state: "investigating", accusationGate: { state: "locked", message: "Locked." } },
+    resolution: {
+      state: "investigating",
+      accusationGate: { state: "locked", message: "Locked." },
+    },
     ambientTransition: null,
     ...overrides,
   };

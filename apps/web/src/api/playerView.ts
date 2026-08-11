@@ -35,9 +35,12 @@ export function usePlayerView(townId: string): UsePlayerViewResult {
 
   const poll = useCallback(async () => {
     try {
-      const response = await apiRequest(buildPath(ROUTE_TEMPLATES.playerView, { townId }), {
-        headers: etagRef.current ? { "if-none-match": etagRef.current } : {},
-      });
+      const response = await apiRequest(
+        buildPath(ROUTE_TEMPLATES.playerView, { townId }),
+        {
+          headers: etagRef.current ? { "if-none-match": etagRef.current } : {},
+        },
+      );
       if (!mountedRef.current) return;
 
       if (response.status === 304) {
@@ -62,7 +65,8 @@ export function usePlayerView(townId: string): UsePlayerViewResult {
 
   const scheduleNext = useCallback(() => {
     if (timerRef.current !== undefined) clearTimeout(timerRef.current);
-    const delay = document.visibilityState === "visible" ? VISIBLE_POLL_MS : HIDDEN_POLL_MS;
+    const delay =
+      document.visibilityState === "visible" ? VISIBLE_POLL_MS : HIDDEN_POLL_MS;
     timerRef.current = setTimeout(() => {
       void poll().then(scheduleNext);
     }, delay);

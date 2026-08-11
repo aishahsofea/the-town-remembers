@@ -4,7 +4,10 @@
  * decorative blank card.
  */
 
-import type { ActivePromiseView, InventoryItemView } from "@the-town-remembers/http-contracts";
+import type {
+  ActivePromiseView,
+  InventoryItemView,
+} from "@the-town-remembers/http-contracts";
 
 export interface CasebookProps {
   readonly inventory: readonly InventoryItemView[];

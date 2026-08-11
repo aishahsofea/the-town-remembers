@@ -5,7 +5,10 @@
 
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 
-import { CompletedActionResponseSchema, PlayerViewSchema } from "@the-town-remembers/http-contracts";
+import {
+  CompletedActionResponseSchema,
+  PlayerViewSchema,
+} from "@the-town-remembers/http-contracts";
 import type { SecurityConfig } from "@the-town-remembers/runtime-config/security";
 import {
   createDisposableDatabase,
@@ -129,7 +132,9 @@ describe.skipIf(!shouldRunDatabaseTests())("POST /actions — inspect", () => {
         WHERE town_id = $1 AND entity_type = 'location'`,
       [townId],
     );
-    const locationByKey = new Map(locations.rows.map((row) => [row.entity_key, row.id]));
+    const locationByKey = new Map(
+      locations.rows.map((row) => [row.entity_key, row.id]),
+    );
     oldChapelId = locationByKey.get("old_chapel")!;
     reedsGardenId = locationByKey.get("reeds_garden")!;
     lanternInnId = locationByKey.get("lantern_inn")!;
@@ -226,7 +231,10 @@ describe.skipIf(!shouldRunDatabaseTests())("POST /actions — inspect", () => {
     const body = CompletedActionResponseSchema.parse(parseBody(response.body));
     expect(body.outcome).toBe("applied");
     const result = body as {
-      result: { discovery: string; clue?: { clueId: string; firstContributor: { id: string } } };
+      result: {
+        discovery: string;
+        clue?: { clueId: string; firstContributor: { id: string } };
+      };
     };
     expect(result.result.discovery).toBe("new_to_town");
     expect(result.result.clue?.firstContributor.id).toBe(player.playerId);
@@ -336,7 +344,9 @@ describe.skipIf(!shouldRunDatabaseTests())("POST /actions — inspect", () => {
       config,
     );
     const parsedView = PlayerViewSchema.parse(parseBody(view.response.body));
-    expect(parsedView.inventory.map((item) => item.itemId)).toContain(nessasFieldLensId);
+    expect(parsedView.inventory.map((item) => item.itemId)).toContain(
+      nessasFieldLensId,
+    );
   }, 30_000);
 
   it("acceptance 3: two players concurrently inspecting the same undiscovered inspectable produce one board entry, two discoveries, and correctly ordered contributors", async () => {
@@ -350,8 +360,12 @@ describe.skipIf(!shouldRunDatabaseTests())("POST /actions — inspect", () => {
       inspect(second, chapelLaneHedgeId),
     ]);
 
-    const bodyA = CompletedActionResponseSchema.parse(parseBody(outcomeA.response.body));
-    const bodyB = CompletedActionResponseSchema.parse(parseBody(outcomeB.response.body));
+    const bodyA = CompletedActionResponseSchema.parse(
+      parseBody(outcomeA.response.body),
+    );
+    const bodyB = CompletedActionResponseSchema.parse(
+      parseBody(outcomeB.response.body),
+    );
     expect(bodyA.outcome).toBe("applied");
     expect(bodyB.outcome).toBe("applied");
 
@@ -374,14 +388,18 @@ describe.skipIf(!shouldRunDatabaseTests())("POST /actions — inspect", () => {
       "SELECT held_by_actor_id FROM public.items WHERE town_id = $1 AND id = $2",
       [townId, guardDispatchSealId],
     );
-    expect([first.playerId, second.playerId]).toContain(sealRow.rows[0]!.held_by_actor_id);
+    expect([first.playerId, second.playerId]).toContain(
+      sealRow.rows[0]!.held_by_actor_id,
+    );
 
     const laterBody = CompletedActionResponseSchema.parse(
       parseBody((await inspect(first, chapelLaneHedgeId, randomUUID())).response.body),
     );
     const contributors = (
       laterBody as {
-        result: { clue?: { contributors: { id: string }[]; firstContributor: { id: string } } };
+        result: {
+          clue?: { contributors: { id: string }[]; firstContributor: { id: string } };
+        };
       }
     ).result.clue!;
     expect(contributors.contributors).toHaveLength(2);
@@ -420,7 +438,9 @@ describe.skipIf(!shouldRunDatabaseTests())("POST /actions — inspect", () => {
       config,
     );
     const parsedView = PlayerViewSchema.parse(parseBody(view.response.body));
-    expect(parsedView.inventory.map((item) => item.itemId)).not.toContain(festivalBellId);
+    expect(parsedView.inventory.map((item) => item.itemId)).not.toContain(
+      festivalBellId,
+    );
   }, 30_000);
 
   it("acceptance 6: inspecting from a different location is denied INSPECTABLE_NOT_FOUND, same as an unknown id", async () => {

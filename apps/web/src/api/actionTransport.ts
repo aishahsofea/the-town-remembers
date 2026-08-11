@@ -19,7 +19,11 @@ import { apiRequest, ApiError, buildPath, NetworkError } from "./client.js";
 
 export type ActionAttemptOutcome =
   | { readonly kind: "completed"; readonly result: CompletedActionResponse }
-  | { readonly kind: "processing"; readonly actionId: string; readonly pollAfterMs: number }
+  | {
+      readonly kind: "processing";
+      readonly actionId: string;
+      readonly pollAfterMs: number;
+    }
   | { readonly kind: "conflict" }
   | { readonly kind: "actionInProgress"; readonly blockingActionId: string | undefined }
   | { readonly kind: "rateLimited"; readonly retryAfterSeconds: number }
@@ -44,7 +48,10 @@ function classifyError(error: unknown): ActionAttemptOutcome {
     }
     if (status === 429) {
       const retryAfter = error.headers.get("retry-after");
-      return { kind: "rateLimited", retryAfterSeconds: retryAfter ? Number(retryAfter) : 1 };
+      return {
+        kind: "rateLimited",
+        retryAfterSeconds: retryAfter ? Number(retryAfter) : 1,
+      };
     }
     if (REQUIRES_NEW_ACTION_CODES.has(code) || status === 401 || status === 410) {
       return { kind: "requiresNewAction", reason: code };
@@ -75,7 +82,10 @@ export async function postAction(
         pollAfterMs: processing.pollAfterMs,
       };
     }
-    return { kind: "completed", result: CompletedActionResponseSchema.parse(response.body) };
+    return {
+      kind: "completed",
+      result: CompletedActionResponseSchema.parse(response.body),
+    };
   } catch (error) {
     return classifyError(error);
   }
@@ -99,7 +109,10 @@ export async function pollAction(
         pollAfterMs: processing.pollAfterMs,
       };
     }
-    return { kind: "completed", result: CompletedActionResponseSchema.parse(response.body) };
+    return {
+      kind: "completed",
+      result: CompletedActionResponseSchema.parse(response.body),
+    };
   } catch (error) {
     return classifyError(error);
   }

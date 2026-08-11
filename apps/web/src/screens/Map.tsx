@@ -48,7 +48,12 @@ export function Map({ view, pending, onTravel }: MapProps) {
                   <button
                     type="button"
                     onClick={() =>
-                      navigate(buildWebPath("location", { townId: view.town.id, locationId: location.id }))
+                      navigate(
+                        buildWebPath("location", {
+                          townId: view.town.id,
+                          locationId: location.id,
+                        }),
+                      )
                     }
                   >
                     Open

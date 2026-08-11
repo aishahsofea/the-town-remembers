@@ -6,19 +6,21 @@
  * is exactly one poll loop and exactly one guard evaluation per render.
  */
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { useActionSubmission } from "../api/actionSubmission.js";
 import { usePlayerView } from "../api/playerView.js";
 import { Casebook } from "../components/Casebook.js";
 import { Header } from "../components/Header.js";
+import { LeaveSheet } from "../components/LeaveSheet.js";
 import { navigate } from "../routing/navigation.js";
+import { buildWebPath } from "../routing/routes.js";
 import { computeGuardRedirect } from "../routing/guards.js";
 import type { RouteMatch } from "../routing/routes.js";
+import { Away } from "./Away.js";
 import { Location } from "./Location.js";
 import { Map } from "./Map.js";
 import {
-  BetweenVisitsPlaceholder,
   BoardPlaceholder,
   EncounterPlaceholder,
   ResolutionPlaceholder,
@@ -32,6 +34,7 @@ export function Shell({ match }: ShellProps) {
   const townId = match.params["townId"]!;
   const { status, view, refresh } = usePlayerView(townId);
   const action = useActionSubmission(townId, view?.player.id ?? "", refresh);
+  const [showLeaveSheet, setShowLeaveSheet] = useState(false);
 
   const redirect = view ? computeGuardRedirect(view, match) : undefined;
 
@@ -72,11 +75,8 @@ export function Shell({ match }: ShellProps) {
       <Header
         view={view}
         pending={action.pending}
-        // The Leave confirmation sheet and its real submit land in P3-16;
-        // this header exists and renders correctly before then, but does
-        // not yet let a player actually leave.
-        onLeave={() => {}}
-        leaveDisabled
+        onLeave={() => setShowLeaveSheet(true)}
+        leaveDisabled={action.pending}
       />
       <div className="shell__body">
         {match.name === "map" ? (
@@ -94,12 +94,28 @@ export function Shell({ match }: ShellProps) {
         ) : match.name === "board" ? (
           <BoardPlaceholder />
         ) : match.name === "betweenVisits" ? (
-          <BetweenVisitsPlaceholder />
+          <Away
+            activePromises={view.activePromises}
+            pending={action.pending}
+            onReturnToFestivalSquare={() => void action.submit({ kind: "start_visit" })}
+            onReviewCaseBoard={() => navigate(buildWebPath("board", { townId }))}
+          />
         ) : match.name === "resolution" ? (
           <ResolutionPlaceholder />
         ) : null}
         <Casebook inventory={view.inventory} activePromises={view.activePromises} />
       </div>
+      {showLeaveSheet ? (
+        <LeaveSheet
+          activePromises={view.activePromises}
+          pending={action.pending}
+          onStay={() => setShowLeaveSheet(false)}
+          onLeave={() => {
+            setShowLeaveSheet(false);
+            void action.submit({ kind: "leave" });
+          }}
+        />
+      ) : null}
     </div>
   );
 }

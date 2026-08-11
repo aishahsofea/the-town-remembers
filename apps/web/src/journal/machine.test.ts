@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { INITIAL_RECOVERY_STATE, reduceRecovery, type RecoveryState } from "./machine.js";
+import {
+  INITIAL_RECOVERY_STATE,
+  reduceRecovery,
+  type RecoveryState,
+} from "./machine.js";
 
 const COMPLETED_RESULT = {
   actionId: "action-1",
@@ -35,7 +39,11 @@ describe("recovery state machine — Decision 011's table, row by row", () => {
       { type: "processing", actionId: "action-1", pollAfterMs: 2_000 },
       100,
     ).state;
-    const { state, shouldResend } = reduceRecovery(processing, { type: "offline" }, 500);
+    const { state, shouldResend } = reduceRecovery(
+      processing,
+      { type: "offline" },
+      500,
+    );
     expect(state.phase).toBe("offline");
     expect(state.actionId).toBe("action-1");
     expect(shouldResend).toBe(false);
@@ -54,7 +62,11 @@ describe("recovery state machine — Decision 011's table, row by row", () => {
   });
 
   it("row 3c: coming back online before any 202 (still submitting) resumes submitting", () => {
-    const offline = reduceRecovery(INITIAL_RECOVERY_STATE, { type: "offline" }, 100).state;
+    const offline = reduceRecovery(
+      INITIAL_RECOVERY_STATE,
+      { type: "offline" },
+      100,
+    ).state;
     const { state } = reduceRecovery(offline, { type: "online" }, 200);
     expect(state.phase).toBe("submitting");
     expect(state.actionId).toBeUndefined();
@@ -137,7 +149,11 @@ describe("recovery state machine — Decision 011's table, row by row", () => {
       { type: "processing", actionId: "action-1", pollAfterMs: 2_000 },
       100,
     ).state;
-    const { state } = reduceRecovery(processing, { type: "completed", result: COMPLETED_RESULT }, 2_100);
+    const { state } = reduceRecovery(
+      processing,
+      { type: "completed", result: COMPLETED_RESULT },
+      2_100,
+    );
     expect(state.phase).toBe("completed");
     expect(state.result).toStrictEqual(COMPLETED_RESULT);
 

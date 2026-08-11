@@ -17,7 +17,11 @@ export class ApiError extends Error {
   readonly problem: ProblemResponse;
   readonly headers: Headers;
 
-  constructor(status: number, problem: ProblemResponse, headers: Headers = new Headers()) {
+  constructor(
+    status: number,
+    problem: ProblemResponse,
+    headers: Headers = new Headers(),
+  ) {
     super(problem.detail);
     this.name = "ApiError";
     this.status = status;

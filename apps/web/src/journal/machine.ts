@@ -51,7 +51,11 @@ export const INITIAL_RECOVERY_STATE: RecoveryState = {
 };
 
 export type RecoveryEvent =
-  | { readonly type: "processing"; readonly actionId: string; readonly pollAfterMs: number }
+  | {
+      readonly type: "processing";
+      readonly actionId: string;
+      readonly pollAfterMs: number;
+    }
   | { readonly type: "offline" }
   | { readonly type: "online" }
   | { readonly type: "completed"; readonly result: CompletedActionResponse }
@@ -98,7 +102,10 @@ export function reduceRecovery(
 
     case "online":
       return {
-        state: { ...state, phase: state.actionId === undefined ? "submitting" : "processing" },
+        state: {
+          ...state,
+          phase: state.actionId === undefined ? "submitting" : "processing",
+        },
         shouldResend: false,
       };
 
@@ -130,7 +137,11 @@ export function reduceRecovery(
 
     case "requiresNewAction":
       return {
-        state: { ...state, phase: "requires_new_action", requiresNewActionReason: event.reason },
+        state: {
+          ...state,
+          phase: "requires_new_action",
+          requiresNewActionReason: event.reason,
+        },
         shouldResend: false,
       };
 

@@ -35,7 +35,8 @@ function openDatabase(): Promise<IDBDatabase> {
       }
     };
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error("Failed to open the journal."));
+    request.onerror = () =>
+      reject(request.error ?? new Error("Failed to open the journal."));
   });
 }
 
@@ -50,13 +51,16 @@ function runTransaction<T>(
         const store = transaction.objectStore(STORE_NAME);
         const request = run(store);
         request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error ?? new Error("Journal operation failed."));
+        request.onerror = () =>
+          reject(request.error ?? new Error("Journal operation failed."));
         transaction.oncomplete = () => db.close();
       }),
   );
 }
 
-export async function writeJournalEntry(entry: PendingActionJournalEntry): Promise<void> {
+export async function writeJournalEntry(
+  entry: PendingActionJournalEntry,
+): Promise<void> {
   await runTransaction("readwrite", (store) => store.put(entry));
 }
 
@@ -66,11 +70,17 @@ export async function readJournalEntry(
 ): Promise<PendingActionJournalEntry | undefined> {
   const result = await runTransaction<PendingActionJournalEntry | undefined>(
     "readonly",
-    (store) => store.get([townId, playerId]) as IDBRequest<PendingActionJournalEntry | undefined>,
+    (store) =>
+      store.get([townId, playerId]) as IDBRequest<
+        PendingActionJournalEntry | undefined
+      >,
   );
   return result;
 }
 
-export async function deleteJournalEntry(townId: string, playerId: string): Promise<void> {
+export async function deleteJournalEntry(
+  townId: string,
+  playerId: string,
+): Promise<void> {
   await runTransaction("readwrite", (store) => store.delete([townId, playerId]));
 }

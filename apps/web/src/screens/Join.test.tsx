@@ -47,7 +47,10 @@ function playerViewBody(displayName: string): unknown {
     caseBoard: [],
     caseBoardContradictions: [],
     caseAttempts: [],
-    resolution: { state: "investigating", accusationGate: { state: "locked", message: "Locked." } },
+    resolution: {
+      state: "investigating",
+      accusationGate: { state: "locked", message: "Locked." },
+    },
     ambientTransition: null,
   };
 }
@@ -106,9 +109,9 @@ describe("Join — existing session", () => {
     render(<Join />);
 
     expect(await screen.findByText("Return as Aishah Sofea")).toBeTruthy();
-    expect(calls.some((call) => call.includes("/join") && !call.includes("player-view"))).toBe(
-      false,
-    );
+    expect(
+      calls.some((call) => call.includes("/join") && !call.includes("player-view")),
+    ).toBe(false);
   });
 });
 
@@ -183,7 +186,9 @@ describe("Join — first-time join", () => {
     await screen.findByLabelText("Your name");
 
     const stored = sessionStorage.getItem("ttr.join-session");
-    const secret = stored ? (JSON.parse(stored) as { joinAttemptSecret: string }).joinAttemptSecret : undefined;
+    const secret = stored
+      ? (JSON.parse(stored) as { joinAttemptSecret: string }).joinAttemptSecret
+      : undefined;
     // The session is only created at submit time; nothing is stored yet.
     expect(secret).toBeUndefined();
     expect(document.documentElement.outerHTML).not.toContain("join-attempt-secret");

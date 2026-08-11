@@ -11,7 +11,10 @@
 
 import { useEffect, useReducer, useRef } from "react";
 
-import type { InvitePreviewResponse, JoinMode } from "@the-town-remembers/http-contracts";
+import type {
+  InvitePreviewResponse,
+  JoinMode,
+} from "@the-town-remembers/http-contracts";
 import { DisplayNameSchema } from "@the-town-remembers/http-contracts";
 
 import { ApiError, NetworkError } from "../api/client.js";
@@ -67,13 +70,21 @@ function reduce(state: JoinState, action: JoinAction): JoinState {
       return { phase: "checking_session", preview: action.preview };
     case "session_found":
       return "preview" in state
-        ? { phase: "returning", preview: state.preview, displayName: action.displayName }
+        ? {
+            phase: "returning",
+            preview: state.preview,
+            displayName: action.displayName,
+          }
         : state;
     case "session_absent":
       return "preview" in state ? { phase: "form", preview: state.preview } : state;
     case "submit_started":
       return "preview" in state
-        ? { phase: "submitting", preview: state.preview, displayName: action.displayName }
+        ? {
+            phase: "submitting",
+            preview: state.preview,
+            displayName: action.displayName,
+          }
         : state;
     case "submit_conflict":
       return "preview" in state && "displayName" in state
@@ -100,7 +111,9 @@ const TOWN_STATUS_LABEL: Record<InvitePreviewResponse["townStatus"], string> = {
 };
 
 function statusLabel(preview: InvitePreviewResponse): string {
-  return preview.joinMode === "closed" ? "Closed" : TOWN_STATUS_LABEL[preview.townStatus];
+  return preview.joinMode === "closed"
+    ? "Closed"
+    : TOWN_STATUS_LABEL[preview.townStatus];
 }
 
 function submitLabel(joinMode: JoinMode): string {
@@ -145,7 +158,8 @@ export function Join() {
     probeExistingSession(state.preview.townId)
       .then((view) => {
         if (!active) return;
-        if (view) dispatch({ type: "session_found", displayName: view.player.displayName });
+        if (view)
+          dispatch({ type: "session_found", displayName: view.player.displayName });
         else dispatch({ type: "session_absent" });
       })
       .catch(() => {
@@ -202,7 +216,9 @@ export function Join() {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     const rawDisplayName = formData.get("displayName");
-    const displayName = (typeof rawDisplayName === "string" ? rawDisplayName : "").trim();
+    const displayName = (
+      typeof rawDisplayName === "string" ? rawDisplayName : ""
+    ).trim();
     if (validateDisplayName(displayName) !== undefined) return;
     if (inviteToken === undefined) return;
 

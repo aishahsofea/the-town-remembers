@@ -245,9 +245,9 @@ describe.skipIf(!shouldRunDatabaseTests())("POST /actions — leave", () => {
     const { response } = await act(player, { kind: "start_visit" });
     const body = CompletedActionResponseSchema.parse(parseBody(response.body));
     expect(body.outcome).toBe("applied");
-    expect(
-      (body as { result: { disposition: string } }).result.disposition,
-    ).toBe("started");
+    expect((body as { result: { disposition: string } }).result.disposition).toBe(
+      "started",
+    );
   }, 30_000);
 
   it("acceptance 2: zero outbox rows exist after a full journey (table-wide)", async () => {
@@ -266,7 +266,9 @@ describe.skipIf(!shouldRunDatabaseTests())("POST /actions — leave", () => {
     const player = await joinedPlayer("Double Departer");
     const idempotencyKey = randomUUID();
     const first = await leave(player, idempotencyKey);
-    const firstBody = CompletedActionResponseSchema.parse(parseBody(first.response.body));
+    const firstBody = CompletedActionResponseSchema.parse(
+      parseBody(first.response.body),
+    );
     expect(firstBody.outcome).toBe("applied");
 
     const repeat = await leave(player);
@@ -379,10 +381,9 @@ describe.skipIf(!shouldRunDatabaseTests())("POST /actions — leave", () => {
 
     const after = await db().pool.query<{
       ambient_scheduled_through_sequence: number;
-    }>(
-      "SELECT ambient_scheduled_through_sequence FROM public.towns WHERE id = $1",
-      [townId],
-    );
+    }>("SELECT ambient_scheduled_through_sequence FROM public.towns WHERE id = $1", [
+      townId,
+    ]);
     expect(after.rows[0]!.ambient_scheduled_through_sequence).toBe(
       before.rows[0]!.ambient_scheduled_through_sequence,
     );

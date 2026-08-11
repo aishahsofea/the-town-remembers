@@ -14,7 +14,9 @@ export type JournalChannelMessage =
 
 export interface JournalChannel {
   readonly post: (message: JournalChannelMessage) => void;
-  readonly subscribe: (listener: (message: JournalChannelMessage) => void) => () => void;
+  readonly subscribe: (
+    listener: (message: JournalChannelMessage) => void,
+  ) => () => void;
   readonly close: () => void;
 }
 
@@ -26,7 +28,8 @@ export function openJournalChannel(): JournalChannel | undefined {
   return {
     post: (message) => channel.postMessage(message),
     subscribe: (listener) => {
-      const handler = (event: MessageEvent<JournalChannelMessage>) => listener(event.data);
+      const handler = (event: MessageEvent<JournalChannelMessage>) =>
+        listener(event.data);
       channel.addEventListener("message", handler);
       return () => channel.removeEventListener("message", handler);
     },

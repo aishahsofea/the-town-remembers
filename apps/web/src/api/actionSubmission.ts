@@ -14,10 +14,21 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { ActionRequest, CompletedActionResponse } from "@the-town-remembers/http-contracts";
+import type {
+  ActionRequest,
+  CompletedActionResponse,
+} from "@the-town-remembers/http-contracts";
 
-import { pollAction, postAction, type ActionAttemptOutcome } from "./actionTransport.js";
-import { deleteJournalEntry, readJournalEntry, writeJournalEntry } from "../journal/db.js";
+import {
+  pollAction,
+  postAction,
+  type ActionAttemptOutcome,
+} from "./actionTransport.js";
+import {
+  deleteJournalEntry,
+  readJournalEntry,
+  writeJournalEntry,
+} from "../journal/db.js";
 import { openJournalChannel } from "../journal/channel.js";
 import {
   INITIAL_RECOVERY_STATE,
@@ -45,9 +56,11 @@ const REASON_MESSAGES: Partial<Record<string, string>> = {
     "This browser lost track of the action. Refresh the town before trying again.",
   MODEL_UNAVAILABLE_RETRY_ACTION:
     "The town could not interpret that claim. Try again when ready.",
-  ACTION_PROCESSING_EXHAUSTED: "The town could not finish that action. Nothing changed.",
+  ACTION_PROCESSING_EXHAUSTED:
+    "The town could not finish that action. Nothing changed.",
   ACTION_IN_PROGRESS: "Another action from this browser is still being saved.",
-  UNAUTHORIZED: "This browser no longer has its town pass. Reopen the invite link to join again.",
+  UNAUTHORIZED:
+    "This browser no longer has its town pass. Reopen the invite link to join again.",
 };
 
 export function useActionSubmission(
@@ -60,9 +73,9 @@ export function useActionSubmission(
   const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
 
   const startedAtRef = useRef(0);
-  const requestRef = useRef<{ idempotencyKey: string; request: ActionRequest } | undefined>(
-    undefined,
-  );
+  const requestRef = useRef<
+    { idempotencyKey: string; request: ActionRequest } | undefined
+  >(undefined);
   const channelRef = useRef(openJournalChannel());
 
   const elapsed = useCallback(() => Date.now() - startedAtRef.current, []);
@@ -92,7 +105,11 @@ export function useActionSubmission(
         case "processing": {
           const { state } = reduceRecovery(
             recovery ?? INITIAL_RECOVERY_STATE,
-            { type: "processing", actionId: outcome.actionId, pollAfterMs: outcome.pollAfterMs },
+            {
+              type: "processing",
+              actionId: outcome.actionId,
+              pollAfterMs: outcome.pollAfterMs,
+            },
             elapsed(),
           );
           setRecovery(state);
@@ -138,14 +155,17 @@ export function useActionSubmission(
         }
         case "actionInProgress":
         case "requiresNewAction": {
-          const reason = outcome.kind === "actionInProgress" ? "ACTION_IN_PROGRESS" : outcome.reason;
+          const reason =
+            outcome.kind === "actionInProgress" ? "ACTION_IN_PROGRESS" : outcome.reason;
           const { state } = reduceRecovery(
             recovery ?? INITIAL_RECOVERY_STATE,
             { type: "requiresNewAction", reason },
             elapsed(),
           );
           setRecovery(state);
-          setErrorMessage(REASON_MESSAGES[reason] ?? "Something went wrong. Try again.");
+          setErrorMessage(
+            REASON_MESSAGES[reason] ?? "Something went wrong. Try again.",
+          );
           void deleteJournalEntry(townId, playerId);
           channelRef.current?.post({ type: "cleared", townId, playerId });
           return;
@@ -178,13 +198,18 @@ export function useActionSubmission(
     void readJournalEntry(townId, playerId).then((entry) => {
       if (!active || !entry) return;
       startedAtRef.current = new Date(entry.createdAt).getTime();
-      requestRef.current = { idempotencyKey: entry.idempotencyKey, request: entry.requestBody };
+      requestRef.current = {
+        idempotencyKey: entry.idempotencyKey,
+        request: entry.requestBody,
+      };
       setRecovery(INITIAL_RECOVERY_STATE);
       if (entry.actionId) {
-        void pollAction(townId, entry.actionId).then((outcome) => handleOutcomeRef.current(outcome));
-      } else {
-        void postAction(townId, entry.idempotencyKey, entry.requestBody).then((outcome) =>
+        void pollAction(townId, entry.actionId).then((outcome) =>
           handleOutcomeRef.current(outcome),
+        );
+      } else {
+        void postAction(townId, entry.idempotencyKey, entry.requestBody).then(
+          (outcome) => handleOutcomeRef.current(outcome),
         );
       }
     });
@@ -207,7 +232,11 @@ export function useActionSubmission(
     if (terminal.includes(recovery.phase)) return;
 
     const interval = setInterval(() => {
-      const { state, shouldResend } = reduceRecovery(recovery, { type: "tick" }, elapsed());
+      const { state, shouldResend } = reduceRecovery(
+        recovery,
+        { type: "tick" },
+        elapsed(),
+      );
       setRecovery(state);
       const current = requestRef.current;
       if (shouldResend && current) {
@@ -222,7 +251,9 @@ export function useActionSubmission(
   // Offline/online.
   useEffect(() => {
     function onOffline() {
-      setRecovery((prev) => (prev ? reduceRecovery(prev, { type: "offline" }, elapsed()).state : prev));
+      setRecovery((prev) =>
+        prev ? reduceRecovery(prev, { type: "offline" }, elapsed()).state : prev,
+      );
     }
     function onOnline() {
       setRecovery((prev) => {

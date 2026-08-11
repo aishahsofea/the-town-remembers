@@ -121,10 +121,10 @@ async function readTownStatusAndRevision(
   pool: Pool,
   townId: string,
 ): Promise<{ readonly active: boolean; readonly revision: number }> {
-  const result = await pool.query<{ readonly status: string; readonly revision: number }>(
-    "SELECT status, revision FROM public.towns WHERE id = $1",
-    [townId],
-  );
+  const result = await pool.query<{
+    readonly status: string;
+    readonly revision: number;
+  }>("SELECT status, revision FROM public.towns WHERE id = $1", [townId]);
   const row = result.rows[0]!;
   return { active: row.status === "active", revision: row.revision };
 }
@@ -133,7 +133,9 @@ async function readActiveVisit(
   pool: Pool,
   townId: string,
   playerId: string,
-): Promise<{ readonly id: string; readonly currentLocationEntityId: string } | undefined> {
+): Promise<
+  { readonly id: string; readonly currentLocationEntityId: string } | undefined
+> {
   const result = await pool.query<{
     readonly id: string;
     readonly current_location_entity_id: string;
@@ -143,14 +145,18 @@ async function readActiveVisit(
     [townId, playerId],
   );
   const row = result.rows[0];
-  return row ? { id: row.id, currentLocationEntityId: row.current_location_entity_id } : undefined;
+  return row
+    ? { id: row.id, currentLocationEntityId: row.current_location_entity_id }
+    : undefined;
 }
 
 export async function loadTravelInputs(
   pool: Pool,
   context: LoadInputsContext,
 ): Promise<TravelLoadedInputs> {
-  const destinationLocationId = context.requestPayload["destinationLocationId"] as string;
+  const destinationLocationId = context.requestPayload[
+    "destinationLocationId"
+  ] as string;
 
   const [town, visit, destination] = await Promise.all([
     readTownStatusAndRevision(pool, context.townId),

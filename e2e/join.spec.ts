@@ -76,7 +76,10 @@ test.describe("invite bootstrap", () => {
     page.on("console", (message) => consoleTexts.push(message.text()));
     page.on("request", (request) => {
       const url = new URL(request.url());
-      if (url.pathname.startsWith("/api/v1/invites/") && !url.pathname.endsWith("/join")) {
+      if (
+        url.pathname.startsWith("/api/v1/invites/") &&
+        !url.pathname.endsWith("/join")
+      ) {
         previewRequests.push(url.pathname);
       }
     });
@@ -96,7 +99,9 @@ test.describe("invite bootstrap", () => {
 
     const html = await page.content();
     const localStorageDump = await page.evaluate(() => JSON.stringify(localStorage));
-    const sessionStorageDump = await page.evaluate(() => JSON.stringify(sessionStorage));
+    const sessionStorageDump = await page.evaluate(() =>
+      JSON.stringify(sessionStorage),
+    );
     const cookies = await page.context().cookies();
 
     for (const haystack of [
@@ -174,12 +179,18 @@ test.describe("join screen", () => {
 
     await page.goto(`/join/${TOKEN}`);
 
-    await expect(page.getByRole("button", { name: "Return as Aishah Sofea" })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Return as Aishah Sofea" }),
+    ).toBeVisible();
     expect(joinPosts).toHaveLength(0);
   });
 
   test("a closed town shows no name field", async ({ page }) => {
-    await mockPreview(page, { ...PREVIEW_BODY, joinMode: "closed", townStatus: "resolved" });
+    await mockPreview(page, {
+      ...PREVIEW_BODY,
+      joinMode: "closed",
+      townStatus: "resolved",
+    });
 
     await page.goto(`/join/${TOKEN}`);
 
@@ -209,7 +220,9 @@ test.describe("join screen", () => {
     await nameField.fill("Aishah Sofea");
     await page.getByRole("button", { name: "Enter the town" }).click();
 
-    await expect(page.getByText("That name is already in use in this town.")).toBeVisible();
+    await expect(
+      page.getByText("That name is already in use in this town."),
+    ).toBeVisible();
     await expect(nameField).toHaveValue("Aishah Sofea");
     expect(joinPostCount).toBe(1);
 
@@ -221,7 +234,9 @@ test.describe("join screen", () => {
     expect(selection).toBe("Aishah Sofea");
   });
 
-  test("the join attempt secret is never present in the rendered DOM", async ({ page }) => {
+  test("the join attempt secret is never present in the rendered DOM", async ({
+    page,
+  }) => {
     await mockPreview(page, PREVIEW_BODY);
     await mockNoExistingSession(page);
 
