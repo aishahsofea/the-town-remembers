@@ -90,6 +90,14 @@ function inspectNewToTown(): readonly ScenarioStepRecord[] {
     clueAlreadyDiscoveredInTown: false,
     clueAlreadyDiscoveredByThisPlayer: false,
     playerId: PLAYER_ID,
+    townId: TOWN_ID,
+    townRevision: 0,
+    locationEntityId: FESTIVAL_SQUARE_LOCATION_ID,
+    revealsItemId: null,
+    itemAlreadyRevealed: false,
+    revealedItemPortable: false,
+    revealedItemRevision: 0,
+    boardEntryAlreadyExists: false,
   });
   const repeat = planInspect({
     inspectableId: "empty_bell_frame",
@@ -99,6 +107,14 @@ function inspectNewToTown(): readonly ScenarioStepRecord[] {
     clueAlreadyDiscoveredInTown: true,
     clueAlreadyDiscoveredByThisPlayer: true,
     playerId: PLAYER_ID,
+    townId: TOWN_ID,
+    townRevision: 1,
+    locationEntityId: FESTIVAL_SQUARE_LOCATION_ID,
+    revealsItemId: null,
+    itemAlreadyRevealed: false,
+    revealedItemPortable: false,
+    revealedItemRevision: 0,
+    boardEntryAlreadyExists: true,
   });
   return [
     { actionKind: "inspect", result: first },

@@ -84,11 +84,9 @@ describe("NPC_ROLE_LABELS", () => {
 });
 
 describe("ITEM_DESCRIPTIONS", () => {
-  it("keys exactly the portable items", () => {
+  it("keys every authored item — portable ones for inventory, and festival_bell for inspect's revealedItem", () => {
     expect(Object.keys(ITEM_DESCRIPTIONS).toSorted()).toStrictEqual(
-      ITEMS.filter((item) => item.portable)
-        .map((item) => item.entityKey)
-        .toSorted(),
+      ITEMS.map((item) => item.entityKey).toSorted(),
     );
   });
 

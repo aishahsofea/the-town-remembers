@@ -62,10 +62,13 @@ export const NPC_ROLE_LABELS: Readonly<Record<string, string>> = Object.freeze({
 });
 
 /**
- * Player-safe inventory descriptions, keyed by `AuthoredItem#entityKey` from
- * `entities.ts#ITEMS`. Decision 011's `InventoryItemView.description` needs
- * authored prose that `AuthoredItem` itself never carried — these are new
- * authored copy, not a restatement of a design note.
+ * Player-safe item descriptions, keyed by `AuthoredItem#entityKey` from
+ * `entities.ts#ITEMS`. Decision 011's `InventoryItemView.description` and
+ * `RevealedItemView.description` both need authored prose that `AuthoredItem`
+ * itself never carried — these are new authored copy, not a restatement of a
+ * design note. `festival_bell` (`P3-11`) is the one non-portable entry: it
+ * never enters `inventory`, but `inspect`'s own `revealedItem` still needs a
+ * description for it.
  */
 export const ITEM_DESCRIPTIONS: Readonly<Record<string, string>> = Object.freeze({
   old_chapel_key: "A heavy iron key, worn smooth at the bow.",
@@ -73,4 +76,6 @@ export const ITEM_DESCRIPTIONS: Readonly<Record<string, string>> = Object.freeze
     "A herbalist's folding lens, its brass hinge still faintly warm from a pocket.",
   guard_dispatch_seal:
     "A guard dispatch seal in red wax, its cord snapped rather than untied.",
+  festival_bell:
+    "A cracked bronze bell, its clapper pin missing, wrapped in guard oilcloth.",
 });

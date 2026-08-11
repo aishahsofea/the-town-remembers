@@ -92,6 +92,24 @@ const EVENT_FOREIGN_KEY_COLUMN: Readonly<Partial<Record<string, string>>> = {
 };
 
 /**
+ * The `conditional_state_change` analogue of {@link EVENT_FOREIGN_KEY_COLUMN}:
+ * `items.revealed_event_id` is set from this plan's own just-created event,
+ * exactly like an insert's event-linked column, but a guarded `UPDATE` has no
+ * shared backfill step of its own (`applyConditionalStateChange` only ever
+ * applies whatever `change` the planner already supplied). `planInspect`
+ * cannot know the event's id at plan time — it does not exist until
+ * {@link commitEffectPlan}'s own `event_origin` step runs — so this table is
+ * the one place that backfill happens for a state change rather than an
+ * insert (`P3-11`; content/evidence.ts's own comment: "Revealing the bell
+ * sets `revealed_event_id`").
+ */
+const CONDITIONAL_CHANGE_EVENT_FOREIGN_KEY_COLUMN: Readonly<
+  Partial<Record<string, string>>
+> = {
+  items: "revealed_event_id",
+};
+
+/**
  * Tables with no `created_at` column of their own — `player_visits` records
  * `started_at` instead. Every other insert-effect table in this schema
  * carries `created_at`, so this stays the one named exception rather than a
@@ -257,12 +275,31 @@ async function applyInsert(
 async function applyConditionalStateChange(
   transaction: TransactionContext,
   townId: string,
+  mostRecentEventId: string | undefined,
   effect: ConditionalStateChangeEffect,
 ): Promise<void> {
   assertSafeIdentifier(effect.table);
   const change = effect.change as Readonly<Record<string, unknown>>;
+
+  // Auto-backfilled separately from `change` (rather than merged into it) so
+  // its SET clause can be `COALESCE(column, $n)` — `items.revealed_event_id`
+  // is immutable once set (docs/005), and a later, unrelated `items` state
+  // change (`resolve`'s bell relocation, Phase 6) must never overwrite an
+  // already-revealed item's event id with its own.
+  const eventColumn = CONDITIONAL_CHANGE_EVENT_FOREIGN_KEY_COLUMN[effect.table];
+  const needsEventBackfill = eventColumn !== undefined && !(eventColumn in change);
+  if (needsEventBackfill && mostRecentEventId === undefined) {
+    throw new Error(
+      `"${effect.table}" needs the plan's event id, but no event_origin effect ran before it.`,
+    );
+  }
+
   const key = effect.key;
-  for (const column of [...Object.keys(change), ...Object.keys(key)]) {
+  for (const column of [
+    ...Object.keys(change),
+    ...Object.keys(key),
+    ...(needsEventBackfill ? [eventColumn] : []),
+  ]) {
     assertSafeIdentifier(column);
   }
 
@@ -271,6 +308,10 @@ async function applyConditionalStateChange(
     parameters.push(value);
     return `${column} = $${parameters.length}`;
   });
+  if (needsEventBackfill) {
+    parameters.push(mostRecentEventId);
+    setClauses.push(`${eventColumn} = COALESCE(${eventColumn}, $${parameters.length})`);
+  }
   if (effect.expectedRevision !== undefined) {
     setClauses.push("revision = revision + 1");
   }
@@ -344,7 +385,12 @@ export async function commitEffectPlan(
     }
     if (isConditionalStateChangeEffect(effect)) {
       if (effect.table === "towns") continue; // already applied by bumpTown above.
-      await applyConditionalStateChange(params.transaction, params.townId, effect);
+      await applyConditionalStateChange(
+        params.transaction,
+        params.townId,
+        mostRecentEventId,
+        effect,
+      );
     }
   }
 

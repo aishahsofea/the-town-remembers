@@ -34,6 +34,7 @@ import type { LoggableRouteTemplate } from "../observability/events.js";
 import { logEvent } from "../observability/events.js";
 import { requireEnabledActionKind } from "../application/actions/enabled.js";
 import { executeAction, type ExecuteActionOutcome } from "../application/actions/executor.js";
+import { inspectActionHandler } from "../application/actions/inputs/inspect.js";
 import { startVisitActionHandler } from "../application/actions/inputs/start-visit.js";
 import {
   resolveTravelTarget,
@@ -593,6 +594,25 @@ async function handleSubmitAction(context: RouteHandlerContext): Promise<HttpRes
       targetEntityId,
       requestPayload: { destinationLocationId: request.destinationLocationId },
       handler: travelActionHandler,
+      now: context.config.now,
+    });
+    response = respondToExecuteOutcome(townId, outcome);
+  } else if (request.kind === "inspect") {
+    const outcome = await executeAction({
+      pool,
+      deadline,
+      townId,
+      playerId,
+      idempotencyKey,
+      actionKind: "inspect",
+      targetActorId: null,
+      // `inspectables.id` is not a `story_entities` id, so it cannot satisfy
+      // `fk_player_actions__target_entity` — the requested id travels
+      // through `requestPayload` only, the same way an unknown `travel`
+      // destination does.
+      targetEntityId: null,
+      requestPayload: { inspectableId: request.inspectableId },
+      handler: inspectActionHandler,
       now: context.config.now,
     });
     response = respondToExecuteOutcome(townId, outcome);

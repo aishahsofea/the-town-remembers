@@ -127,57 +127,248 @@ describe("planTravel", () => {
 });
 
 describe("planInspect", () => {
-  it("denies an unknown inspectable", () => {
+  const baseInspectInputs = {
+    inspectableId: "x",
+    playerId: "p1",
+    townId: "town-1",
+    townRevision: 5,
+    locationEntityId: "old_chapel",
+    revealsItemId: null,
+    itemAlreadyRevealed: false,
+    revealedItemPortable: false,
+    revealedItemRevision: 0,
+    boardEntryAlreadyExists: false,
+  };
+
+  it("denies an unknown inspectable and emits nothing (P3-11 acceptance 8)", () => {
     const result = planInspect({
-      inspectableId: "x",
+      ...baseInspectInputs,
       hasInspectable: false,
       hasClue: false,
       clueId: null,
       clueAlreadyDiscoveredInTown: false,
       clueAlreadyDiscoveredByThisPlayer: false,
-      playerId: "p1",
     });
+    expect(result.outcome).toBe("denied");
     expect(result.reasonCode).toBe("INSPECTABLE_NOT_FOUND");
+    expect(result.effects).toHaveLength(0);
   });
 
   it("is no_change for a repeat inspection", () => {
     const result = planInspect({
-      inspectableId: "x",
+      ...baseInspectInputs,
       hasInspectable: true,
       hasClue: true,
       clueId: "clue-1",
       clueAlreadyDiscoveredInTown: true,
       clueAlreadyDiscoveredByThisPlayer: true,
-      playerId: "p1",
     });
     expect(result.outcome).toBe("no_change");
-  });
-
-  it("applies and records a new-to-town discovery", () => {
-    const result = planInspect({
-      inspectableId: "x",
-      hasInspectable: true,
-      hasClue: true,
-      clueId: "clue-1",
-      clueAlreadyDiscoveredInTown: false,
-      clueAlreadyDiscoveredByThisPlayer: false,
-      playerId: "p1",
-    });
-    expect(result.outcome).toBe("applied");
-    expect(result.effects).toHaveLength(2);
+    expect(result.effects).toHaveLength(0);
   });
 
   it("applies with no clue-discovery effect for an inspectable with no clue", () => {
     const result = planInspect({
-      inspectableId: "x",
+      ...baseInspectInputs,
       hasInspectable: true,
       hasClue: false,
       clueId: null,
       clueAlreadyDiscoveredInTown: false,
       clueAlreadyDiscoveredByThisPlayer: false,
-      playerId: "p1",
     });
     expect(result.outcome).toBe("no_change");
+  });
+
+  it("a new-to-town discovery guards the town revision, records the discovery, and creates the shared board entry", () => {
+    const result = planInspect({
+      ...baseInspectInputs,
+      hasInspectable: true,
+      hasClue: true,
+      clueId: "clue-1",
+      clueAlreadyDiscoveredInTown: false,
+      clueAlreadyDiscoveredByThisPlayer: false,
+    });
+    expect(result.outcome).toBe("applied");
+    expect(result.effects).toHaveLength(4);
+
+    const townGuard = result.effects.find(
+      (effect) =>
+        effect.kind === "conditional_state_change" && effect.table === "towns",
+    );
+    expect(townGuard).toMatchObject({ key: { id: "town-1" }, expectedRevision: 5 });
+
+    const discoveryInsert = result.effects.find(
+      (effect) => effect.kind === "insert" && effect.table === "clue_discoveries",
+    );
+    expect(discoveryInsert).toMatchObject({
+      row: { clue_id: "clue-1", player_id: "p1" },
+    });
+
+    const boardInsert = result.effects.find(
+      (effect) => effect.kind === "insert" && effect.table === "case_board_entries",
+    );
+    expect(boardInsert).toMatchObject({
+      row: {
+        entry_kind: "verified_evidence",
+        verification_status: "verified_physical",
+        clue_id: "clue-1",
+        contributed_by_player_id: "p1",
+      },
+    });
+  });
+
+  it("a new-to-player discovery records the discovery but never a second board entry", () => {
+    const result = planInspect({
+      ...baseInspectInputs,
+      hasInspectable: true,
+      hasClue: true,
+      clueId: "clue-1",
+      clueAlreadyDiscoveredInTown: true,
+      clueAlreadyDiscoveredByThisPlayer: false,
+    });
+    expect(result.outcome).toBe("applied");
+
+    const discoveryInsert = result.effects.find(
+      (effect) => effect.kind === "insert" && effect.table === "clue_discoveries",
+    );
+    expect(discoveryInsert).toMatchObject({
+      row: { clue_id: "clue-1", player_id: "p1" },
+    });
+    expect(
+      result.effects.some(
+        (effect) => effect.kind === "insert" && effect.table === "case_board_entries",
+      ),
+    ).toBe(false);
+  });
+
+  it("does not insert a second board entry when boardEntryAlreadyExists (the concurrency guard)", () => {
+    const result = planInspect({
+      ...baseInspectInputs,
+      hasInspectable: true,
+      hasClue: true,
+      clueId: "clue-1",
+      clueAlreadyDiscoveredInTown: false,
+      clueAlreadyDiscoveredByThisPlayer: false,
+      boardEntryAlreadyExists: true,
+    });
+    expect(result.outcome).toBe("applied");
+    expect(
+      result.effects.some(
+        (effect) => effect.kind === "insert" && effect.table === "case_board_entries",
+      ),
+    ).toBe(false);
+  });
+
+  it("a portable reveal transfers custody to the player in the same items conditional_state_change", () => {
+    const result = planInspect({
+      ...baseInspectInputs,
+      hasInspectable: true,
+      hasClue: true,
+      clueId: "clue-1",
+      clueAlreadyDiscoveredInTown: false,
+      clueAlreadyDiscoveredByThisPlayer: false,
+      revealsItemId: "item-1",
+      revealedItemPortable: true,
+      revealedItemRevision: 3,
+    });
+    const itemChange = result.effects.find(
+      (effect) => effect.kind === "conditional_state_change" && effect.table === "items",
+    );
+    expect(itemChange).toMatchObject({
+      key: { id: "item-1" },
+      expectedRevision: 3,
+      change: {
+        held_by_actor_id: "p1",
+        location_entity_id: null,
+        location_entity_type: null,
+      },
+    });
+  });
+
+  it("a non-portable reveal changes no custody column, only marking the item revealed", () => {
+    const result = planInspect({
+      ...baseInspectInputs,
+      hasInspectable: true,
+      hasClue: true,
+      clueId: "clue-1",
+      clueAlreadyDiscoveredInTown: false,
+      clueAlreadyDiscoveredByThisPlayer: false,
+      revealsItemId: "festival_bell",
+      revealedItemPortable: false,
+      revealedItemRevision: 1,
+    });
+    const itemChange = result.effects.find(
+      (effect) => effect.kind === "conditional_state_change" && effect.table === "items",
+    );
+    expect(itemChange).toMatchObject({
+      key: { id: "festival_bell" },
+      expectedRevision: 1,
+      change: {},
+    });
+  });
+
+  it("emits no items effect for an inspectable that reveals nothing", () => {
+    const result = planInspect({
+      ...baseInspectInputs,
+      hasInspectable: true,
+      hasClue: true,
+      clueId: "clue-1",
+      clueAlreadyDiscoveredInTown: false,
+      clueAlreadyDiscoveredByThisPlayer: false,
+    });
+    expect(
+      result.effects.some(
+        (effect) => effect.kind === "conditional_state_change" && effect.table === "items",
+      ),
+    ).toBe(false);
+  });
+
+  it("applies an item reveal for an inspectable with no clue at all (square_bench_glint/nessas_field_lens)", () => {
+    const result = planInspect({
+      ...baseInspectInputs,
+      hasInspectable: true,
+      hasClue: false,
+      clueId: null,
+      clueAlreadyDiscoveredInTown: false,
+      clueAlreadyDiscoveredByThisPlayer: false,
+      revealsItemId: "nessas_field_lens",
+      revealedItemPortable: true,
+      revealedItemRevision: 0,
+    });
+    expect(result.outcome).toBe("applied");
+    expect(
+      result.effects.some(
+        (effect) => effect.kind === "insert" && effect.table === "clue_discoveries",
+      ),
+    ).toBe(false);
+    expect(
+      result.effects.some(
+        (effect) => effect.kind === "insert" && effect.table === "case_board_entries",
+      ),
+    ).toBe(false);
+    const itemChange = result.effects.find(
+      (effect) => effect.kind === "conditional_state_change" && effect.table === "items",
+    );
+    expect(itemChange).toMatchObject({
+      key: { id: "nessas_field_lens" },
+      change: { held_by_actor_id: "p1" },
+    });
+  });
+
+  it("is no_change for a no-clue inspectable whose item is already revealed", () => {
+    const result = planInspect({
+      ...baseInspectInputs,
+      hasInspectable: true,
+      hasClue: false,
+      clueId: null,
+      clueAlreadyDiscoveredInTown: false,
+      clueAlreadyDiscoveredByThisPlayer: false,
+      revealsItemId: "nessas_field_lens",
+      itemAlreadyRevealed: true,
+      revealedItemPortable: true,
+    });
+    expect(result.outcome).toBe("no_change");
+    expect(result.effects).toHaveLength(0);
   });
 });
 
