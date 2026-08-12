@@ -9,6 +9,7 @@ export * from "./http/router.js";
 export * from "./http/routes/health.js";
 export * from "./http/cookies.js";
 export * from "./observability/events.js";
+export * from "./observability/metrics.js";
 export * from "./security/judge-code.js";
 export * from "./security/invite.js";
 export * from "./security/fingerprint.js";

@@ -68,6 +68,7 @@ describe.skipIf(!shouldRunDatabaseTests())("player_actions claim state machine",
       targetEntityId: null,
       now: () => new Date(),
       deadlineAt: Date.now() + 5_000,
+      requestId: "req_test",
       ...overrides,
     };
   }

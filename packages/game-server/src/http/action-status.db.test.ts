@@ -164,6 +164,7 @@ describe.skipIf(!shouldRunDatabaseTests())("action status route", () => {
       targetEntityId: null,
       now: () => new Date(),
       deadlineAt: Date.now() + 5_000,
+      requestId: "req_test",
     });
     expect(claimed.outcome).toBe("claimed");
     if (claimed.outcome !== "claimed") throw new Error("unreachable");
@@ -202,6 +203,7 @@ describe.skipIf(!shouldRunDatabaseTests())("action status route", () => {
       targetEntityId: null,
       now: () => new Date(),
       deadlineAt: Date.now() + 5_000,
+      requestId: "req_test",
     });
     expect(claimed.outcome).toBe("claimed");
     if (claimed.outcome !== "claimed") throw new Error("unreachable");
@@ -241,6 +243,7 @@ describe.skipIf(!shouldRunDatabaseTests())("action status route", () => {
       targetEntityId: null,
       now: () => new Date(),
       deadlineAt: Date.now() + 5_000,
+      requestId: "req_test",
     });
     expect(claimed.outcome).toBe("claimed");
     if (claimed.outcome !== "claimed") throw new Error("unreachable");
@@ -290,6 +293,7 @@ describe.skipIf(!shouldRunDatabaseTests())("action status route", () => {
       targetEntityId: null,
       now: () => new Date(),
       deadlineAt: Date.now() + 5_000,
+      requestId: "req_test",
     });
     expect(claimed.outcome).toBe("claimed");
     if (claimed.outcome !== "claimed") throw new Error("unreachable");
@@ -338,6 +342,7 @@ describe.skipIf(!shouldRunDatabaseTests())("action status route", () => {
         targetEntityId: null,
         now: () => at,
         deadlineAt: Date.now() + 5_000,
+        requestId: "req_test",
       });
       expect(claimed.outcome).toBe("claimed");
       if (claimed.outcome === "claimed") lastActionId = claimed.actionId;
@@ -362,6 +367,7 @@ describe.skipIf(!shouldRunDatabaseTests())("action status route", () => {
       targetEntityId: null,
       now: () => at,
       deadlineAt: Date.now() + 5_000,
+      requestId: "req_test",
     });
 
     const { response } = await routeRequest(
@@ -394,6 +400,7 @@ describe.skipIf(!shouldRunDatabaseTests())("action status route", () => {
       targetEntityId: null,
       now: () => new Date(),
       deadlineAt: Date.now() + 5_000,
+      requestId: "req_test",
     });
     expect(claimed.outcome).toBe("claimed");
     if (claimed.outcome !== "claimed") throw new Error("unreachable");

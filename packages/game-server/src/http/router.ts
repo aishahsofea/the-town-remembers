@@ -32,6 +32,7 @@ import type { Pool } from "pg";
 
 import type { LoggableRouteTemplate } from "../observability/events.js";
 import { logEvent } from "../observability/events.js";
+import { recordRateLimitDecision } from "../observability/metrics.js";
 import { requireEnabledActionKind } from "../application/actions/enabled.js";
 import {
   executeAction,
@@ -108,6 +109,7 @@ export interface RouteHandlerContext {
   readonly request: HttpRequest;
   readonly params: Readonly<Record<string, string>>;
   readonly config: RouterConfig;
+  readonly requestId: string;
 }
 
 type CacheKind = "no-store" | "private-no-cache";
@@ -297,6 +299,17 @@ async function handlePlayerView(context: RouteHandlerContext): Promise<HttpRespo
     rateScopeKey("player", townId, outcome.session.playerId),
     now,
   );
+  recordRateLimitDecision({
+    bucketKind: RATE_LIMIT_BUCKETS.playerView.bucketKind,
+    admitted: admission.admitted,
+  });
+  logEvent({
+    event: "rate_limit_decision",
+    requestId: context.requestId,
+    bucketKind: RATE_LIMIT_BUCKETS.playerView.bucketKind,
+    admitted: admission.admitted,
+    ...(admission.admitted ? {} : { retryAfterSeconds: admission.retryAfterSeconds }),
+  });
   if (!admission.admitted) throw rateLimited(admission.retryAfterSeconds);
 
   await confirmBootstrap(
@@ -579,6 +592,7 @@ async function handleSubmitAction(context: RouteHandlerContext): Promise<HttpRes
       requestPayload: {},
       handler: startVisitActionHandler,
       now: context.config.now,
+      requestId: context.requestId,
     });
     response = respondToExecuteOutcome(townId, outcome);
   } else if (request.kind === "travel") {
@@ -599,6 +613,7 @@ async function handleSubmitAction(context: RouteHandlerContext): Promise<HttpRes
       requestPayload: { destinationLocationId: request.destinationLocationId },
       handler: travelActionHandler,
       now: context.config.now,
+      requestId: context.requestId,
     });
     response = respondToExecuteOutcome(townId, outcome);
   } else if (request.kind === "inspect") {
@@ -618,6 +633,7 @@ async function handleSubmitAction(context: RouteHandlerContext): Promise<HttpRes
       requestPayload: { inspectableId: request.inspectableId },
       handler: inspectActionHandler,
       now: context.config.now,
+      requestId: context.requestId,
     });
     response = respondToExecuteOutcome(townId, outcome);
   } else if (request.kind === "leave") {
@@ -633,6 +649,7 @@ async function handleSubmitAction(context: RouteHandlerContext): Promise<HttpRes
       requestPayload: {},
       handler: leaveActionHandler,
       now: context.config.now,
+      requestId: context.requestId,
     });
     response = respondToExecuteOutcome(townId, outcome);
   } else {
@@ -811,6 +828,7 @@ export async function routeRequest(
       request,
       params: templateMatch!.params,
       config,
+      requestId,
     });
     return {
       response: {

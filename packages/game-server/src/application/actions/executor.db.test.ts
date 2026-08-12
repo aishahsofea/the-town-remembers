@@ -209,6 +209,7 @@ describe.skipIf(!shouldRunDatabaseTests())("executeAction", () => {
       requestPayload: {},
       handler,
       now: () => new Date(),
+      requestId: "req_test",
       ...overrides,
     };
   }
@@ -381,6 +382,7 @@ describe.skipIf(!shouldRunDatabaseTests())("executeAction", () => {
           requestPayload: { destinationLocationId: destination },
           handler: travelHandler,
           now: () => new Date(),
+          requestId: "req_test",
         });
         if (outcome.kind !== "executed" || outcome.response.outcome !== "applied") {
           throw new Error(`unexpected outcome: ${JSON.stringify(outcome)}`);

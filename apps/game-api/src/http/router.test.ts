@@ -165,7 +165,7 @@ describe("request identity", () => {
 });
 
 describe("safe logging", () => {
-  it("emits one JSON event per request with only safe fields", async () => {
+  it("emits one JSON log event and one metric event per request, both with only safe fields", async () => {
     const captured = await captureStdout(async () => {
       await handleRequest(
         fixtureRequest({ method: "GET", path: ROUTE_TEMPLATES.health }),
@@ -174,10 +174,12 @@ describe("safe logging", () => {
     });
 
     expect(captured.unparsedLines).toStrictEqual([]);
-    expect(captured.events).toHaveLength(1);
+    expect(captured.events).toHaveLength(2);
 
-    const event = captured.events[0]!;
-    expect(Object.keys(event).toSorted()).toStrictEqual([
+    const logEvent = captured.events.find(
+      (event) => event["event"] === "http_request",
+    )!;
+    expect(Object.keys(logEvent).toSorted()).toStrictEqual([
       "build",
       "durationMs",
       "environment",
@@ -187,8 +189,21 @@ describe("safe logging", () => {
       "routeTemplate",
       "status",
     ]);
-    expect(event["routeTemplate"]).toBe(ROUTE_TEMPLATES.health);
-    expect(event["status"]).toBe(200);
+    expect(logEvent["routeTemplate"]).toBe(ROUTE_TEMPLATES.health);
+    expect(logEvent["status"]).toBe(200);
+
+    const metricEvent = captured.events.find(
+      (event) => event["event"] === "metric_http_latency",
+    )!;
+    expect(Object.keys(metricEvent).toSorted()).toStrictEqual([
+      "event",
+      "latencyMs",
+      "method",
+      "routeTemplate",
+      "status",
+    ]);
+    expect(metricEvent["routeTemplate"]).toBe(ROUTE_TEMPLATES.health);
+    expect(metricEvent["status"]).toBe(200);
   });
 
   it("logs the registered route template, never the literal path it matched", async () => {

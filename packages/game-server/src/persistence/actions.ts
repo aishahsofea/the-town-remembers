@@ -23,12 +23,16 @@ import { randomUUID } from "node:crypto";
 
 import {
   DatabaseError,
+  asUuid,
   resolveAmbiguousCommit,
   runSerializable,
   type TransactionContext,
 } from "@the-town-remembers/database";
+import type { ActionKind } from "@the-town-remembers/http-contracts";
 import type { Pool } from "pg";
 
+import { logEvent, type ActionLifecycleErrorCode } from "../observability/events.js";
+import { recordActionProcessingExhausted } from "../observability/metrics.js";
 import {
   decideAction,
   type ActionRecordStatus,
@@ -203,12 +207,13 @@ export interface ClaimActionParams {
   readonly playerId: string;
   readonly idempotencyKey: string;
   readonly requestHash: Buffer;
-  readonly actionKind: string;
+  readonly actionKind: ActionKind;
   readonly requestPayload: Readonly<Record<string, unknown>>;
   readonly targetActorId: string | null;
   readonly targetEntityId: string | null;
   readonly now: () => Date;
   readonly deadlineAt: number;
+  readonly requestId: string;
   readonly sleep?: (milliseconds: number) => Promise<void>;
 }
 
@@ -327,11 +332,26 @@ async function exhaustProcessing(
   return toExistingRow(row);
 }
 
+/**
+ * Set inside `runSerializable`'s callback, read only after a commit actually
+ * lands — the callback re-runs whole on a CockroachDB-level retry, so a log
+ * call inside it would double-report a rolled-back attempt. This is a plain
+ * JS variable, not a database write, so re-assigning it on a retried attempt
+ * has no atomicity concern: only the successful attempt's value survives.
+ */
+type ClaimLogDetail = {
+  readonly status: "takeover" | "processing_exhausted";
+  readonly actionId: string;
+  readonly terminalErrorCode?: ActionLifecycleErrorCode;
+};
+
 async function attemptOnce(
   pool: Pool,
   deadlineAt: number,
   params: Omit<ClaimActionParams, "deadlineAt" | "sleep">,
 ): Promise<SingleAttemptOutcome> {
+  let claimLogDetail: ClaimLogDetail | undefined;
+
   const result = await runSerializable(pool, { deadlineAt }, async (transaction) => {
     const now = params.now();
 
@@ -408,6 +428,7 @@ async function attemptOnce(
           processingToken,
           now,
         );
+        claimLogDetail = { status: "takeover", actionId: existing!.id };
         return {
           outcome: "claimed",
           actionId: existing!.id,
@@ -421,6 +442,11 @@ async function attemptOnce(
           existing!.id,
           now,
         );
+        claimLogDetail = {
+          status: "processing_exhausted",
+          actionId: existing!.id,
+          terminalErrorCode: "ACTION_PROCESSING_EXHAUSTED",
+        };
         return replayFromExisting(exhausted, now);
       }
       case "supersedeThenCreate": {
@@ -437,7 +463,24 @@ async function attemptOnce(
     }
   });
 
-  if (result.outcome === "committed") return result.value;
+  if (result.outcome === "committed") {
+    if (claimLogDetail) {
+      logEvent({
+        event: "action_lifecycle",
+        requestId: params.requestId,
+        actionKind: params.actionKind,
+        actionId: asUuid(claimLogDetail.actionId),
+        status: claimLogDetail.status,
+        ...(claimLogDetail.terminalErrorCode
+          ? { terminalErrorCode: claimLogDetail.terminalErrorCode }
+          : {}),
+      });
+      if (claimLogDetail.status === "processing_exhausted") {
+        recordActionProcessingExhausted(params.actionKind);
+      }
+    }
+    return result.value;
+  }
 
   // The commit's fate is unknown; read the durable ledger rather than guess
   // (`D3-O`). Only a terminal row is a safe direct answer here — anything
@@ -448,6 +491,19 @@ async function attemptOnce(
   const resolved = await resolveAmbiguousCommit(async () =>
     readExistingViaPool(pool, params.townId, params.playerId, params.idempotencyKey),
   );
+  logEvent({
+    event: "action_lifecycle",
+    requestId: params.requestId,
+    actionKind: params.actionKind,
+    // The row this claim would have written is scoped by
+    // `(town_id, player_id, idempotency_key)`, not yet a known action id when
+    // the commit's own fate is ambiguous — `idempotencyKey` stands in as the
+    // best available `Uuid`-shaped identity for this one log line.
+    actionId: asUuid(params.idempotencyKey),
+    status: "ambiguous_resolved",
+    ambiguousCommitResolution:
+      resolved.outcome === "applied" ? "applied" : "not_applied",
+  });
   if (resolved.outcome === "not_applied") return { outcome: "live_processing" };
   const row = toExistingRow(resolved.value);
   if (!row.requestHash.equals(params.requestHash)) return { outcome: "key_reused" };

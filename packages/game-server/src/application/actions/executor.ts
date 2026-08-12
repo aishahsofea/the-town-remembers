@@ -30,7 +30,7 @@
  * conflict by kind, only by "town revision change".
  */
 
-import { DatabaseError, runSerializable } from "@the-town-remembers/database";
+import { DatabaseError, asUuid, runSerializable } from "@the-town-remembers/database";
 import type {
   ActionKind,
   ActionResultByKind,
@@ -53,6 +53,8 @@ import {
   preCommitDeadline,
   type OperationDeadline,
 } from "../deadline.js";
+import { logEvent } from "../../observability/events.js";
+import { recordActionProcessing } from "../../observability/metrics.js";
 import {
   claimAction,
   completeAction,
@@ -127,6 +129,7 @@ export interface ExecuteActionParams<K extends ActionKind, TInputs> {
   readonly handler: ActionHandler<K, TInputs>;
   readonly now: () => Date;
   readonly sleep?: (milliseconds: number) => Promise<void>;
+  readonly requestId: string;
 }
 
 export type ExecuteActionOutcome<K extends ActionKind> =
@@ -155,12 +158,22 @@ export type ExecuteActionOutcome<K extends ActionKind> =
 /** `200`: every completed action — applied, no-change, or denied — is a successful synchronous response (docs/006: "Rule denials are completed `200` responses"). */
 const COMPLETED_RESPONSE_STATUS = 200;
 
-type CommitAttemptOutcome =
+/** What the transaction body itself can conclude — it does not know its own retry count from the inside. */
+type CommitBodyOutcome =
   { readonly kind: "ok"; readonly matched: boolean } | { readonly kind: "conflict" };
+
+type CommitAttemptOutcome =
+  | {
+      readonly kind: "ok";
+      readonly matched: boolean;
+      readonly transactionRetries: number;
+    }
+  | { readonly kind: "conflict" };
 
 async function attemptCommit<K extends ActionKind, TInputs>(
   params: ExecuteActionParams<K, TInputs>,
   actionId: string,
+  attempt: number,
   processingToken: string,
   response: CompletedResponseFor<K>,
   effects: readonly EffectPlanEntry[],
@@ -188,7 +201,7 @@ async function attemptCommit<K extends ActionKind, TInputs>(
         });
       } catch (error) {
         if (error instanceof RevisionConflictError) {
-          return { kind: "conflict" } as const satisfies CommitAttemptOutcome;
+          return { kind: "conflict" } as const satisfies CommitBodyOutcome;
         }
         throw error;
       }
@@ -206,7 +219,7 @@ async function attemptCommit<K extends ActionKind, TInputs>(
       return {
         kind: "ok",
         matched: completion.matched,
-      } as const satisfies CommitAttemptOutcome;
+      } as const satisfies CommitBodyOutcome;
     },
   ).catch((error: unknown) => {
     // `runSerializable` itself throws this once it exhausts its own three
@@ -220,13 +233,42 @@ async function attemptCommit<K extends ActionKind, TInputs>(
     throw error;
   });
 
-  if (result.outcome === "committed") return result.value;
+  if (result.outcome === "committed") {
+    if (result.retries > 0) {
+      logEvent({
+        event: "action_lifecycle",
+        requestId: params.requestId,
+        actionKind: params.actionKind,
+        actionId: asUuid(actionId),
+        status: "conflict_retry",
+        attempt,
+        transactionRetries: result.retries,
+      });
+    }
+    return result.value.kind === "ok"
+      ? {
+          kind: "ok",
+          matched: result.value.matched,
+          transactionRetries: result.retries,
+        }
+      : result.value;
+  }
 
   // Ambiguous commit (`D3-O`): consult the durable ledger rather than guess.
   const status = await readCompletedStatus(params.pool, params.townId, actionId);
-  return status === "completed"
-    ? { kind: "ok", matched: true }
-    : { kind: "ok", matched: false };
+  const resolution = status === "completed" ? "applied" : "not_applied";
+  logEvent({
+    event: "action_lifecycle",
+    requestId: params.requestId,
+    actionKind: params.actionKind,
+    actionId: asUuid(actionId),
+    status: "ambiguous_resolved",
+    attempt,
+    ambiguousCommitResolution: resolution,
+  });
+  return resolution === "applied"
+    ? { kind: "ok", matched: true, transactionRetries: 0 }
+    : { kind: "ok", matched: false, transactionRetries: 0 };
 }
 
 async function readCompletedStatus(
@@ -254,6 +296,7 @@ async function runClaimed<K extends ActionKind, TInputs>(
   actionId: string,
   processingToken: string,
 ): Promise<ExecuteActionOutcome<K>> {
+  const startedAtMs = params.now().getTime();
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
     const inputs = await params.handler.loadInputs(params.pool, {
       townId: params.townId,
@@ -301,6 +344,12 @@ async function runClaimed<K extends ActionKind, TInputs>(
         visitId: null,
         now: params.now,
       });
+      recordActionProcessing({
+        actionKind: params.actionKind,
+        ageMs: Math.max(0, params.now().getTime() - startedAtMs),
+        retries: 0,
+        conflicts: attempt,
+      });
       return {
         kind: "executed",
         actionId,
@@ -314,6 +363,7 @@ async function runClaimed<K extends ActionKind, TInputs>(
     const outcome = await attemptCommit(
       params,
       actionId,
+      attempt,
       processingToken,
       response,
       decision.effects,
@@ -323,7 +373,23 @@ async function runClaimed<K extends ActionKind, TInputs>(
     );
 
     if (outcome.kind === "ok") {
-      if (!outcome.matched) throw new StaleExecutionClaimError();
+      if (!outcome.matched) {
+        logEvent({
+          event: "action_lifecycle",
+          requestId: params.requestId,
+          actionKind: params.actionKind,
+          actionId: asUuid(actionId),
+          status: "stale_worker_rejected",
+          attempt,
+        });
+        throw new StaleExecutionClaimError();
+      }
+      recordActionProcessing({
+        actionKind: params.actionKind,
+        ageMs: Math.max(0, params.now().getTime() - startedAtMs),
+        retries: outcome.transactionRetries,
+        conflicts: attempt,
+      });
       return {
         kind: "executed",
         actionId,
@@ -334,6 +400,14 @@ async function runClaimed<K extends ActionKind, TInputs>(
     // "conflict": relevant state moved under us. Loop again — the next
     // iteration reloads inputs and replans from scratch, never reusing this
     // attempt's stale snapshot.
+    logEvent({
+      event: "action_lifecycle",
+      requestId: params.requestId,
+      actionKind: params.actionKind,
+      actionId: asUuid(actionId),
+      status: "conflict_retry",
+      attempt,
+    });
   }
 
   const retryAfterAt = new Date(params.now().getTime() + 1_000);
@@ -343,6 +417,15 @@ async function runClaimed<K extends ActionKind, TInputs>(
     processingToken,
     retryAfterAt,
     now: params.now,
+  });
+  logEvent({
+    event: "action_lifecycle",
+    requestId: params.requestId,
+    actionKind: params.actionKind,
+    actionId: asUuid(actionId),
+    status: "conflict_exhausted",
+    attempt: MAX_ATTEMPTS,
+    terminalErrorCode: "ACTION_CONFLICT",
   });
   return {
     kind: "replay",
@@ -381,6 +464,7 @@ export async function executeAction<K extends ActionKind, TInputs>(
     targetEntityId: params.targetEntityId,
     now: params.now,
     deadlineAt: preCommitDeadline(params.deadline),
+    requestId: params.requestId,
     ...(params.sleep ? { sleep: params.sleep } : {}),
   };
   const claim = await claimAction(params.pool, claimParams);

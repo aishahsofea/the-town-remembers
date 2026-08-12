@@ -54,6 +54,7 @@ describe.skipIf(!shouldRunDatabaseTests())("commitEffectPlan", () => {
       targetEntityId: null,
       now: () => new Date(),
       deadlineAt: Date.now() + 5_000,
+      requestId: "req_test",
     });
     if (claim.outcome !== "claimed") throw new Error("unreachable");
     // Frees the ledger's one-processing-slot-per-player immediately: this

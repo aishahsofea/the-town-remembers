@@ -9,7 +9,11 @@
 
 import type { RouteTemplate } from "@the-town-remembers/http-contracts";
 import { ROUTE_TEMPLATES } from "@the-town-remembers/http-contracts";
-import { routeRequest, type RouterConfig } from "@the-town-remembers/game-server";
+import {
+  recordHttpLatency,
+  routeRequest,
+  type RouterConfig,
+} from "@the-town-remembers/game-server";
 import type { GameConfig } from "@the-town-remembers/runtime-config/game";
 import type { SecurityConfig } from "@the-town-remembers/runtime-config/security";
 import type { Pool } from "pg";
@@ -68,16 +72,31 @@ export async function handleRequest(
     headers: { ...baseHeaders(requestId), ...routed.headers },
   };
 
+  const loggableMethod = toLoggableMethod(request.method);
+  const durationMs = Math.max(0, Math.round(context.monotonicMs() - startedAtMs));
+
   logEvent({
     event: "http_request",
     requestId,
     routeTemplate,
-    method: toLoggableMethod(request.method),
+    method: loggableMethod,
     status: response.status,
-    durationMs: Math.max(0, Math.round(context.monotonicMs() - startedAtMs)),
+    durationMs,
     build: context.config.buildId,
     environment: context.config.environment,
   });
+
+  // Only the two methods this slice's routes actually serve become a metric
+  // point — an unmatched verb already gets its own `404` from game-server's
+  // router, and is not worth a dashboard dimension of its own.
+  if (loggableMethod === "GET" || loggableMethod === "POST") {
+    recordHttpLatency({
+      routeTemplate,
+      method: loggableMethod,
+      status: response.status,
+      latencyMs: durationMs,
+    });
+  }
 
   return { response, requestId };
 }
