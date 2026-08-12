@@ -23,6 +23,9 @@ importers:
       '@the-town-remembers/runtime-config':
         specifier: workspace:*
         version: link:packages/runtime-config
+      '@the-town-remembers/test-support':
+        specifier: workspace:*
+        version: link:packages/test-support
       '@the-town-remembers/town-seed':
         specifier: workspace:*
         version: link:packages/town-seed

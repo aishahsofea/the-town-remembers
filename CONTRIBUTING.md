@@ -36,13 +36,14 @@ corepack pnpm validate
 | `pnpm typecheck` | Strict build of every project plus the test-only programs |
 | `pnpm lint` | ESLint with type-aware rules across every project |
 | `pnpm test` | Contract, configuration, runtime-shell, and browser-component tests, with coverage thresholds on the shared packages |
+| `pnpm test:api` | `packages/game-server`'s pure suites — schema validation, executor branching, the security scans in `src/security/` — no database |
 | `pnpm test:contracts` | The executable HTTP and Bedrock contracts alone |
-| `pnpm test:db` | Schema, grant, constraint, transaction, vector, seed, and inspection suites against real CockroachDB |
+| `pnpm test:db` | Schema, grant, constraint, transaction, vector, seed, inspection, and `game-server`'s own `*.db.test.ts` suites against real CockroachDB |
 | `pnpm test:content` | The authored `bell-mystery-v1` registry and its validators |
 | `pnpm build` | Library declarations, three Lambda bundles, and the web bundle |
 | `pnpm check:bundle` | The built browser bundle carries no server concern or credential |
 | `pnpm cdk:synth` | Deterministic CDK synthesis into `cdk.out/` |
-| `pnpm test:e2e` | The browser health journey |
+| `pnpm test:e2e` | The browser health journey, the invite/join bootstrap journey, and `phase-03-first-playable` — the full create/join/travel/inspect/leave/away/return journey against a real running pair and its own disposable database (`e2e/global-teardown.ts`, `packages/game-server/README.md`) |
 | `pnpm validate` | All of the above, in dependency order |
 
 `pnpm typecheck` comes before `pnpm lint` on purpose. Packages resolve each
@@ -259,22 +260,45 @@ vitest's positional filename filter against the file-naming convention its
 tests follow. `pnpm rules:scenario [<scenario-name>]` replays one of the
 named golden scenarios and prints its ordered plan and digest.
 
+## Game server package
+
+`packages/game-server` is the synchronous game API: routing, session
+authentication, the durable action claim/execute/commit machinery
+(`application/actions/executor.ts`), and structured logging/metrics
+(`observability/`). It calls `@the-town-remembers/rules`' pure planners for
+steps 1–3 of the five-step action order above and owns steps 4–5 for the
+four action kinds this phase enables. See
+[`packages/game-server/README.md`](packages/game-server/README.md) for
+starting the local pair, seeding a town two different ways, running each of
+its suites, reading the three non-failure things that can happen mid-action
+(a town-revision retry, a takeover, an ambiguous commit — each logged and
+counted, never silently retried), and exactly which action kinds this phase
+deliberately does not route yet.
+
+Everything in this package runs entirely locally, against the same local
+CockroachDB `pnpm db:up` starts — no public-cloud deployment exists yet
+(Phase 7's own job; see "Deferred work" below).
+
 ## Deferred work
 
-Every shell in this phase names the phase that replaces it.
+Every shell names the phase that replaces it. `apps/game-api`,
+`packages/rules`'s orchestration, and `packages/town-seed` are Phase 3 work
+and have moved off this table — see
+[`packages/game-server/README.md`](packages/game-server/README.md)'s own
+"Deliberate Phase 4/5 exclusions" for the nine `ACTION_KINDS` Phase 3 still
+does not route, and why that is a boundary, not a gap.
 
 | Shell | Current behavior | Owning phase |
 |---|---|---|
-| `apps/game-api` routes | Health only; every other path returns `404` | Phase 3 |
+| `apps/game-api` routes | Four action kinds (`start_visit`/`travel`/`inspect`/`leave`) plus town creation, invite, join, and player-view; the other nine action kinds `404` | Phase 4 (six model-backed kinds) and Phase 6 (`add_note`/`accuse`/`resolve`) |
 | `apps/ambient-worker` | Parses the envelope, then reports `unsupported` | Phase 5 |
 | `apps/recovery-worker` | Validates the schedule, then reports `no_work` | Phase 5 |
-| `apps/web` health page | Foundation diagnostic, not the game shell | Phases 3 and 6 |
+| `apps/web` health page | Foundation diagnostic, not the game shell | Phase 6 (asset manifest) |
 | `apps/web` asset manifest | Every authored key resolves to a placeholder | Phase 6 |
+| `apps/web` away screen | No time-passes stage — `leave` always reports `transitionStatus: "not_required"` this phase (`D3-Q`) | Phase 5 |
 | `infrastructure` stack | Lambda bundling contracts only | Phase 7 |
 | Bedrock contracts | Wire shapes only; no semantic validator | Phase 4 |
-| `packages/rules` | Pure planners only; no orchestration, persistence, or model calls | Phase 3 |
-| `packages/town-seed` CLI | Test-only; stores an unreachable invite hash | Phase 3 |
-| Repository layer | Schema and transaction primitives only; no typed repositories | Phases 2 and 3 |
+| Repository layer | Schema and transaction primitives only; no typed repositories | Later phases, as the need arises |
 | Production database | Local pinned node only; no cluster, secrets, or managed MCP | Phase 7 |
 
 A shell must report that unsupported work is unavailable. None of them may
@@ -291,6 +315,7 @@ return a fabricated success for persistence, model, queue, or gameplay work.
 | `Cannot find module .../dist/...` | `pnpm build` has not run. `test:e2e` and `cdk:synth` read built output. |
 | A wave of `no-unsafe-*` lint errors on a fresh clone | `dist` does not exist yet, so cross-package types are unresolvable. Run `pnpm typecheck` first. |
 | Playwright times out waiting for a server | Another process holds `TTR_API_PORT` or `TTR_WEB_PORT`. Both use `strictPort`. |
+| `phase-03-first-playable.spec.ts` 403s on town creation, or its DB queries find nothing | A `pnpm dev` (or an earlier `test:e2e` run) left a stale server bound to `TTR_API_PORT`/`TTR_WEB_PORT`; `reuseExistingServer` then reuses it instead of spawning a fresh one with this run's disposable database and `TTR_APP_ORIGIN` override. Kill whatever holds those ports and rerun. |
 | Configuration error naming `TTR_ENV` | The variable is unset and `.env.defaults` was not read. Only repository tooling loads it; a bare `node` invocation must set it. |
 
 ## Workspace ownership

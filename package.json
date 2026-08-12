@@ -55,6 +55,7 @@
     "@the-town-remembers/database-admin": "workspace:*",
     "@the-town-remembers/rules": "workspace:*",
     "@the-town-remembers/runtime-config": "workspace:*",
+    "@the-town-remembers/test-support": "workspace:*",
     "@the-town-remembers/town-seed": "workspace:*",
     "@types/node": "^26.1.2",
     "@types/pg": "^8.15.6",
