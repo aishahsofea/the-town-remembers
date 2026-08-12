@@ -257,6 +257,14 @@ describe.skipIf(!shouldRunDatabaseTests())("player-view", () => {
        VALUES ($1, $2, $3, $4, $5, $6)`,
       [townId, randomUUID(), clueId, player.playerId, eventId, new Date()],
     );
+    await db().pool.query(
+      `INSERT INTO public.case_board_entries
+         (town_id, id, entry_kind, contributed_by_player_id, source_event_id,
+          clue_id, verification_status, created_at)
+       VALUES ($1, $2, 'verified_evidence', $3, $4, $5,
+               'verified_physical', $6)`,
+      [townId, randomUUID(), player.playerId, eventId, clueId, new Date()],
+    );
 
     const { response } = await routeRequest(
       playerViewRequest(townId, player.cookie),
@@ -268,6 +276,12 @@ describe.skipIf(!shouldRunDatabaseTests())("player-view", () => {
     expect(view.discoveredClues).toHaveLength(1);
     expect(view.discoveredClues[0]?.title).toBe("Scorched Guard Note");
     expect(view.discoveredClues[0]?.firstContributor.id).toBe(player.playerId);
+    expect(view.caseBoard).toHaveLength(1);
+    expect(view.caseBoard[0]).toMatchObject({
+      entryKind: "verified_evidence",
+      contributedBy: { id: player.playerId, displayName: "Priya Chen" },
+      clue: { clueId, title: "Scorched Guard Note" },
+    });
 
     const inspectable = view.currentLocation?.inspectables.find(
       (candidate) => candidate.displayName === "Ash in the Back Hearth",

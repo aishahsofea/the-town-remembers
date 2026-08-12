@@ -347,6 +347,9 @@ importers:
       '@the-town-remembers/database':
         specifier: workspace:*
         version: link:../database
+      '@the-town-remembers/serialization':
+        specifier: workspace:*
+        version: link:../serialization
       pg:
         specifier: ^8.16.3
         version: 8.22.0

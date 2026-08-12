@@ -232,7 +232,7 @@ export const EXPECTED_PACKAGES = Object.freeze([
     name: TOWN_SEED,
     kind: "library",
     exports: STANDARD_EXPORTS,
-    allowedDependencies: [CONTENT, DATABASE, DATABASE_ADMIN],
+    allowedDependencies: [CONTENT, DATABASE, DATABASE_ADMIN, SERIALIZATION],
   },
   {
     path: "packages/game-server",

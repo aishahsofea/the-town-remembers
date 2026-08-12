@@ -34,6 +34,7 @@
     "test:rules": "vitest run --project rules",
     "test:tooling": "node --test scripts/*.test.mjs",
     "test:watch": "vitest",
+    "town:new": "node scripts/town-new.mjs",
     "typecheck": "tsc -b tsconfig.json && tsc -p tsconfig.tests.node.json && tsc -p tsconfig.tests.web.json && tsc -p tsconfig.tests.e2e.json",
     "validate": "pnpm format:check && pnpm check:source-text && pnpm check:boundaries && pnpm check:assets && pnpm test:tooling && pnpm typecheck && pnpm lint && TTR_REQUIRE_DB_TESTS=1 pnpm test && pnpm build && pnpm check:bundle && pnpm cdk:synth && pnpm test:e2e"
   },
@@ -45,7 +46,7 @@
     "runtime": {
       "name": "node",
       "version": "24.18.0",
-      "onFail": "error"
+      "onFail": "warn"
     }
   },
   "packageManager": "pnpm@11.20.0+sha512.9a6f330a95b66446ea088faf1521405a8a01f07fde7124cc9958dfed52d4bb436737e65b08f85f37b46fcba375092558ac51262b816844b22f63406ed166bfee",

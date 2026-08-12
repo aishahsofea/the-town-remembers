@@ -33,6 +33,7 @@ import {
 import type { Pool } from "pg";
 
 import type { ActionHandler, LoadInputsContext } from "../executor.js";
+import { isDatabaseUuid } from "../../../persistence/identifiers.js";
 
 export interface TravelLoadedInputs {
   readonly playerId: string;
@@ -62,6 +63,7 @@ async function readLocationById(
   townId: string,
   id: string,
 ): Promise<DestinationEntity | undefined> {
+  if (!isDatabaseUuid(id)) return undefined;
   const result = await pool.query<{ readonly id: string; readonly entity_key: string }>(
     `SELECT id, entity_key FROM public.story_entities
       WHERE town_id = $1 AND id = $2 AND entity_type = 'location'`,

@@ -8,6 +8,7 @@
  */
 
 import { CONTENT_VERSION } from "@the-town-remembers/content";
+import { DatabaseError } from "@the-town-remembers/database";
 import type { Pool } from "pg";
 
 import { materializeTown } from "@the-town-remembers/town-seed";
@@ -17,6 +18,7 @@ import { AppError, internalError, rateLimited } from "../http/errors.js";
 import {
   claimCreationRequest,
   completeCreationRequest,
+  readTownIdByInviteHash,
 } from "../persistence/creation-ledger.js";
 import { NO_TOWN_SCOPE, rateScopeKey } from "../persistence/rate-limits.js";
 import { townCreationRequestHash } from "../security/fingerprint.js";
@@ -117,33 +119,55 @@ export async function createTown(
   const token = deriveInviteToken(key, input.idempotencyKey);
   const tokenHash = inviteTokenHash(token);
 
-  const materialized = await materializeTown(deps.pool, {
-    contentVersion: decision.contentVersion,
-    createdAt: deps.now(),
-    inviteTokenHash: tokenHash,
-  });
+  // The invite hash is deterministic for this creation key and unique in
+  // `towns`. Checking it first closes the crash window where materialization
+  // committed but the request ledger did not: a reclaimed attempt adopts the
+  // already-created town instead of trying to create another one.
+  let townId = await readTownIdByInviteHash(deps.pool, tokenHash);
+  if (townId === undefined) {
+    try {
+      const materialized = await materializeTown(deps.pool, {
+        contentVersion: decision.contentVersion,
+        createdAt: deps.now(),
+        inviteTokenHash: tokenHash,
+      });
+      townId =
+        materialized.outcome === "committed"
+          ? materialized.value.townId
+          : await readTownIdByInviteHash(deps.pool, tokenHash);
+    } catch (error) {
+      if (!(error instanceof DatabaseError) || error.category !== "unique_violation") {
+        throw error;
+      }
+      townId = await readTownIdByInviteHash(deps.pool, tokenHash);
+    }
+  }
 
-  if (materialized.outcome === "ambiguous") {
-    // Whether the town exists is genuinely unknown. The ledger row stays
-    // "processing" and its claim will expire, so a retry under the same key
-    // reclaims and re-attempts rather than silently losing the request.
+  if (townId === undefined) {
+    // An ambiguous materialization that is not visible yet remains safe to
+    // retry: the deterministic invite hash lets a later attempt reconcile it.
     throw internalError("Town materialization outcome is unknown.");
   }
 
   const responsePayload = {
-    townId: materialized.value.townId,
+    townId,
     status: "active" as const,
   };
-  await completeCreationRequest(deps.pool, deadlineAt, {
-    idempotencyKey: input.idempotencyKey,
-    townId: materialized.value.townId,
-    responseStatus: 201,
-    responsePayload,
-    now: deps.now,
-  });
+  await completeCreationRequest(
+    deps.pool,
+    deps.now().getTime() + CREATE_TOWN_DEADLINE_MS,
+    {
+      idempotencyKey: input.idempotencyKey,
+      processingToken: decision.processingToken,
+      townId,
+      responseStatus: 201,
+      responsePayload,
+      now: deps.now,
+    },
+  );
 
   return {
-    townId: materialized.value.townId,
+    townId,
     status: "active",
     inviteUrl: inviteUrl(deps.appOrigin, token),
   };

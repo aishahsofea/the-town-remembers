@@ -236,6 +236,9 @@ export function Join() {
       navigate(buildWebPath("map", { townId: preview.townId }), { replace: true });
     } catch (error) {
       if (error instanceof ApiError && error.problem.code === "DISPLAY_NAME_TAKEN") {
+        // The server conclusively rejected this body, so the next edited name
+        // is a new operation rather than a retry of the old fingerprint.
+        clearJoinSession();
         dispatch({ type: "submit_conflict" });
         return;
       }

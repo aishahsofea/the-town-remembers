@@ -42,6 +42,27 @@ export async function mintSessionForPlayer(
   return { sessionId };
 }
 
+/** Verifies that an ambiguously committed join stored this exact minted session. */
+export async function hasActiveSessionForJoin(
+  pool: Pool,
+  params: {
+    readonly townId: string;
+    readonly playerId: string;
+    readonly joinRequestId: string;
+    readonly tokenHash: Buffer;
+  },
+): Promise<boolean> {
+  const result = await pool.query(
+    `SELECT 1
+       FROM public.player_sessions
+      WHERE town_id = $1 AND player_id = $2 AND join_request_id = $3
+        AND token_hash = $4 AND status = 'active'
+      LIMIT 1`,
+    [params.townId, params.playerId, params.joinRequestId, params.tokenHash],
+  );
+  return result.rows.length > 0;
+}
+
 export interface AuthenticatedSession {
   readonly sessionId: string;
   readonly playerId: string;

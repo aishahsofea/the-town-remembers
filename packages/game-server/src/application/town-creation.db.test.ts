@@ -1,6 +1,7 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 
 import type { SecurityConfig } from "@the-town-remembers/runtime-config/security";
+import { materializeTown } from "@the-town-remembers/town-seed";
 import {
   createDisposableDatabase,
   shouldRunDatabaseTests,
@@ -11,6 +12,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { routeRequest, type RouterConfig } from "../http/router.js";
 import type { HttpRequest } from "../http/types.js";
+import { claimCreationRequest } from "../persistence/creation-ledger.js";
+import { deriveInviteToken, inviteTokenHash } from "../security/invite.js";
+import { townCreationRequestHash } from "../security/fingerprint.js";
 
 const JUDGE_CODE = "correct-judge-code-for-tests";
 const APP_ORIGIN = "https://town.example";
@@ -139,6 +143,52 @@ describe.skipIf(!shouldRunDatabaseTests())("town creation", () => {
     const replayed = await routeRequest(request, "req_2", rotatedConfig);
     expect(replayed.response.status).toBe(201);
     expect(replayed.response.body).toBe(created.response.body);
+  }, 30_000);
+
+  it("adopts a town that committed before its creation ledger could complete", async () => {
+    const idempotencyKey = randomUUID();
+    const crashedAt = new Date(Date.now() - 60_000);
+    const claim = await claimCreationRequest(db().pool, {
+      idempotencyKey,
+      requestHash: townCreationRequestHash(),
+      contentVersion: "bell-mystery-v1",
+      securityKeyVersion: "v1",
+      rateLimitScopeKey: randomBytes(32),
+      now: () => crashedAt,
+      deadlineAt: Date.now() + 5_000,
+    });
+    expect(claim.outcome).toBe("claimed");
+
+    const token = deriveInviteToken(
+      SECURITY_CONFIG.inviteSigningKeys[0]!,
+      idempotencyKey,
+    );
+    const seeded = await materializeTown(db().pool, {
+      contentVersion: "bell-mystery-v1",
+      createdAt: crashedAt,
+      inviteTokenHash: inviteTokenHash(token),
+    });
+    if (seeded.outcome !== "committed") throw new Error("The seed did not commit.");
+
+    const retried = await routeRequest(
+      createTownRequest({
+        idempotencyKey,
+        authorization: `Bearer ${JUDGE_CODE}`,
+        origin: APP_ORIGIN,
+      }),
+      "req_recovered",
+      config,
+    );
+    expect(retried.response.status).toBe(201);
+    expect(JSON.parse(retried.response.body)).toMatchObject({
+      townId: seeded.value.townId,
+    });
+
+    const towns = await db().pool.query(
+      "SELECT id FROM public.towns WHERE invite_token_hash = $1",
+      [inviteTokenHash(token)],
+    );
+    expect(towns.rowCount).toBe(1);
   }, 30_000);
 
   it("rejects an absent Authorization, a non-Bearer scheme, a wrong code, and a wrong Origin", async () => {

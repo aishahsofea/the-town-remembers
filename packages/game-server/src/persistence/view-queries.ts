@@ -360,3 +360,53 @@ export async function readDiscoveredClues(
     discoverySequence: row.discovery_sequence,
   }));
 }
+
+// --- shared verified-evidence board ----------------------------------------------------
+
+export interface VerifiedCaseBoardEntryRow {
+  readonly entryId: string;
+  readonly contributedByPlayerId: string;
+  readonly contributedByDisplayName: string;
+  readonly clueId: string;
+  readonly clueKey: string;
+  readonly createdAt: Date;
+}
+
+/** Phase 3 can create only verified physical-evidence entries. */
+export async function readVerifiedCaseBoardEntries(
+  pool: Pool,
+  townId: string,
+): Promise<readonly VerifiedCaseBoardEntryRow[]> {
+  const result = await pool.query<{
+    readonly entry_id: string;
+    readonly contributed_by_player_id: string;
+    readonly contributed_by_display_name: string;
+    readonly clue_id: string;
+    readonly clue_key: string;
+    readonly created_at: Date;
+  }>(
+    `SELECT cbe.id AS entry_id,
+            cbe.contributed_by_player_id,
+            actor.display_name AS contributed_by_display_name,
+            clue.id AS clue_id,
+            clue.clue_key,
+            cbe.created_at
+       FROM public.case_board_entries cbe
+       JOIN public.actors actor
+         ON actor.town_id = cbe.town_id AND actor.id = cbe.contributed_by_player_id
+       JOIN public.clues clue
+         ON clue.town_id = cbe.town_id AND clue.id = cbe.clue_id
+      WHERE cbe.town_id = $1
+        AND cbe.entry_kind = 'verified_evidence'
+        AND cbe.verification_status = 'verified_physical'`,
+    [townId],
+  );
+  return result.rows.map((row) => ({
+    entryId: row.entry_id,
+    contributedByPlayerId: row.contributed_by_player_id,
+    contributedByDisplayName: row.contributed_by_display_name,
+    clueId: row.clue_id,
+    clueKey: row.clue_key,
+    createdAt: row.created_at,
+  }));
+}

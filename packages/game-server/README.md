@@ -38,16 +38,18 @@ Two ways, for two different purposes:
   client will parse):
 
   ```sh
-  curl -s -X POST http://localhost:5174/api/v1/towns \
-    -H "Authorization: Bearer $TTR_JUDGE_CODE" \
-    -H "Origin: $TTR_APP_ORIGIN" \
-    -H "Idempotency-Key: $(node -e 'console.log(crypto.randomUUID())')" \
-    -H "Content-Type: application/json" -d '{}'
+  pnpm town:new                       # prints townId, status, invite URL, key
+  pnpm town:new <idempotency-key>     # replays that creation instead of making a second town
   ```
 
-  Returns `{ townId, status, inviteUrl }`. Open `inviteUrl` in a browser to
-  join as a player. `e2e/phase-03-first-playable.spec.ts` does exactly this,
-  twice with the same idempotency key, as its first acceptance step.
+  `scripts/town-new.mjs` is a thin `POST /api/v1/towns` against the running
+  pair — the same request a judge makes, with the four required headers
+  assembled for you and the judge code read from `.env` rather than echoed.
+  Open the printed `inviteUrl` in a browser to join as a player; town
+  creation is judge-authenticated and has no screen, so this is the only
+  step of the Phase 3 journey that is not pure UI.
+  `e2e/phase-03-first-playable.spec.ts` makes the same call directly, twice
+  with the same idempotency key, as its first acceptance step.
 
 - **Directly via `@the-town-remembers/town-seed#materializeTown`**, for a
   test that only needs a town to already exist and does not care how —

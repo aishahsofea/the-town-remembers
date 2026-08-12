@@ -389,11 +389,12 @@ describe.skipIf(!shouldRunDatabaseTests())(
       const crossTown = await travel(player, otherTownLocationId);
       const item = await travel(player, itemEntityId);
       const unknown = await travel(player, randomUUID());
+      const opaque = await travel(player, "opaque-location-id");
 
-      for (const outcome of [crossTown, item, unknown]) {
+      for (const outcome of [crossTown, item, unknown, opaque]) {
         expect(outcome.response.status).toBe(200);
       }
-      const bodies = [crossTown, item, unknown].map((outcome) => {
+      const bodies = [crossTown, item, unknown, opaque].map((outcome) => {
         const parsed = parseBody(outcome.response.body) as {
           actionId: string;
           result: unknown;
@@ -403,6 +404,7 @@ describe.skipIf(!shouldRunDatabaseTests())(
       });
       expect(bodies[0]).toStrictEqual(bodies[1]);
       expect(bodies[1]).toStrictEqual(bodies[2]);
+      expect(bodies[2]).toStrictEqual(bodies[3]);
       expect((bodies[0] as { result: { reasonCode: string } }).result.reasonCode).toBe(
         "DESTINATION_UNKNOWN",
       );

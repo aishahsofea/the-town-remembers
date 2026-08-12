@@ -2,15 +2,14 @@
  * `join_requests` claim, replay, and closure (Decision 005 §"join_requests").
  *
  * Scoped to `(town_id, idempotency_key)`, unlike the creation ledger: the
- * town already exists. A join attempt's replay window is one hour — long
- * enough to survive an interrupted first session, short enough to bound how
- * long the join-attempt secret stays a usable credential. Closing for
+ * town already exists. A completed join remains replayable for ten minutes
+ * unless bootstrap confirmation closes it first. Closing for
  * confirmation, expiry, or issue exhaustion always clears `join_secret_hash`
  * in the same statement that sets `replay_closed_at`, so a closed row can
  * never authenticate anyone even if compromised afterward.
  */
 
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 
 import {
   resolveAmbiguousCommit,
@@ -22,7 +21,7 @@ import type { Pool } from "pg";
 import { admitRateLimit, RATE_LIMIT_BUCKETS } from "./rate-limits.js";
 
 const CLAIM_MS = 30_000;
-const REPLAY_WINDOW_MS = 60 * 60 * 1000;
+const REPLAY_WINDOW_MS = 10 * 60 * 1000;
 const MAX_SESSION_ISSUE_COUNT = 3;
 
 export interface JoinLedgerRow {
@@ -42,7 +41,8 @@ export interface JoinLedgerRow {
 }
 
 export type JoinClaimDecision =
-  | { readonly outcome: "claimed" }
+  | { readonly outcome: "claimed"; readonly processingToken: string }
+  | { readonly outcome: "secret_mismatch" }
   | { readonly outcome: "hash_mismatch" }
   | { readonly outcome: "replay"; readonly row: JoinLedgerRow }
   | {
@@ -56,6 +56,7 @@ interface RawRow {
   readonly request_hash: Buffer;
   readonly join_secret_hash: Buffer | null;
   readonly status: "processing" | "completed" | "failed";
+  readonly processing_token: string | null;
   readonly processing_expires_at: Date | null;
   readonly player_id: string | null;
   readonly initial_visit_id: string | null;
@@ -93,7 +94,7 @@ async function readRow(
 ): Promise<RawRow | undefined> {
   const rows = await transaction.query<RawRow>(
     `SELECT idempotency_key, request_hash, join_secret_hash, status,
-            processing_expires_at, player_id, initial_visit_id, replay_expires_at,
+            processing_token, processing_expires_at, player_id, initial_visit_id, replay_expires_at,
             bootstrap_confirmed_at, replay_closed_at, replay_closed_reason,
             session_issue_count, response_status, response_payload
        FROM public.join_requests
@@ -110,7 +111,7 @@ async function readRowViaPool(
 ): Promise<RawRow | undefined> {
   const result = await pool.query<RawRow>(
     `SELECT idempotency_key, request_hash, join_secret_hash, status,
-            processing_expires_at, player_id, initial_visit_id, replay_expires_at,
+            processing_token, processing_expires_at, player_id, initial_visit_id, replay_expires_at,
             bootstrap_confirmed_at, replay_closed_at, replay_closed_reason,
             session_issue_count, response_status, response_payload
        FROM public.join_requests
@@ -118,6 +119,24 @@ async function readRowViaPool(
     [townId, idempotencyKey],
   );
   return result.rows[0];
+}
+
+function secretMatches(stored: Buffer | null, presented: Buffer): boolean {
+  return (
+    stored !== null &&
+    stored.length === presented.length &&
+    timingSafeEqual(stored, presented)
+  );
+}
+
+/** Reads the durable join ledger row when an enclosing commit is ambiguous. */
+export async function readJoinRequest(
+  pool: Pool,
+  townId: string,
+  idempotencyKey: string,
+): Promise<JoinLedgerRow | undefined> {
+  const row = await readRowViaPool(pool, townId, idempotencyKey);
+  return row ? toLedgerRow(row) : undefined;
 }
 
 /**
@@ -159,12 +178,22 @@ async function attemptOnce(
   deadlineAt: number,
   params: Omit<JoinClaimParams, "deadlineAt" | "sleep">,
 ): Promise<SingleAttemptOutcome> {
+  const processingToken = randomUUID();
   const result = await runSerializable(pool, { deadlineAt }, async (transaction) => {
     const now = params.now();
 
     const existing = await readRow(transaction, params.townId, params.idempotencyKey);
 
     if (existing !== undefined) {
+      // Open rows still retain the verifier, so authenticate before revealing
+      // request hashes, closure timing, or processing state. Closed rows have
+      // deliberately destroyed it and can only return their non-minting 410.
+      if (
+        existing.join_secret_hash !== null &&
+        !secretMatches(existing.join_secret_hash, params.joinSecretHash)
+      ) {
+        return { outcome: "secret_mismatch" } as const satisfies SingleAttemptOutcome;
+      }
       if (!existing.request_hash.equals(params.requestHash)) {
         return { outcome: "hash_mismatch" } as const satisfies SingleAttemptOutcome;
       }
@@ -208,12 +237,15 @@ async function attemptOnce(
           [
             params.townId,
             params.idempotencyKey,
-            randomUUID(),
+            processingToken,
             new Date(now.getTime() + CLAIM_MS),
             now,
           ],
         );
-        return { outcome: "claimed" } as const satisfies SingleAttemptOutcome;
+        return {
+          outcome: "claimed",
+          processingToken,
+        } as const satisfies SingleAttemptOutcome;
       }
       if (existing.session_issue_count >= MAX_SESSION_ISSUE_COUNT) {
         await closeRow(
@@ -257,7 +289,7 @@ async function attemptOnce(
          (town_id, idempotency_key, request_hash, join_secret_hash, status,
           processing_token, processing_expires_at, attempt_count,
           replay_expires_at, session_issue_count, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, 'processing', $5, $6, 1, $7, 0, $8, $8)
+       VALUES ($1, $2, $3, $4, 'processing', $5, $6, 1, NULL, 0, $7, $7)
        ON CONFLICT (town_id, idempotency_key) DO NOTHING
        RETURNING idempotency_key`,
       [
@@ -265,9 +297,8 @@ async function attemptOnce(
         params.idempotencyKey,
         params.requestHash,
         params.joinSecretHash,
-        randomUUID(),
+        processingToken,
         new Date(now.getTime() + CLAIM_MS),
-        new Date(now.getTime() + REPLAY_WINDOW_MS),
         now,
       ],
     );
@@ -276,7 +307,10 @@ async function attemptOnce(
       // same transaction, already established that no row exists.
       throw new Error("join request claim vanished mid-claim");
     }
-    return { outcome: "claimed" } as const satisfies SingleAttemptOutcome;
+    return {
+      outcome: "claimed",
+      processingToken,
+    } as const satisfies SingleAttemptOutcome;
   });
 
   if (result.outcome === "committed") return result.value;
@@ -285,12 +319,22 @@ async function attemptOnce(
     readRowViaPool(pool, params.townId, params.idempotencyKey),
   );
   if (resolved.outcome === "not_applied") return { outcome: "live_processing" };
+  if (
+    resolved.value.join_secret_hash !== null &&
+    !secretMatches(resolved.value.join_secret_hash, params.joinSecretHash)
+  ) {
+    return { outcome: "secret_mismatch" };
+  }
   if (!resolved.value.request_hash.equals(params.requestHash))
     return { outcome: "hash_mismatch" };
   if (resolved.value.replay_closed_at !== null) {
     return { outcome: "closed", reason: resolved.value.replay_closed_reason! };
   }
-  if (resolved.value.status === "processing") return { outcome: "live_processing" };
+  if (resolved.value.status === "processing") {
+    return resolved.value.processing_token === processingToken
+      ? { outcome: "claimed", processingToken }
+      : { outcome: "live_processing" };
+  }
   return { outcome: "replay", row: toLedgerRow(resolved.value) };
 }
 
@@ -299,10 +343,9 @@ const DEFAULT_SLEEP = (milliseconds: number): Promise<void> =>
 
 /**
  * Claims the row for a first attempt, or resolves an existing one to a
- * replay or a closure. The presented join-attempt secret is *not* checked
- * here — `application/join.ts` compares it against the returned row only
- * after confirming the row is open, so an unknown key and a wrong secret are
- * indistinguishable (`404`, never `401`). A live concurrent first attempt is
+ * replay or a closure. Open existing rows authenticate the join-attempt
+ * secret before exposing or changing any state, so an unknown key and a wrong
+ * secret remain indistinguishable (`404`, never `401`). A live concurrent first attempt is
  * retried with a short bounded wait rather than surfaced to the caller,
  * matching the creation ledger's approach for the same reason: this route's
  * wire contract has no `202 processing` shape.
@@ -327,38 +370,41 @@ export async function claimJoinRequest(
 export interface JoinCompleteParams {
   readonly townId: string;
   readonly idempotencyKey: string;
+  readonly processingToken: string;
   readonly playerId: string;
   readonly initialVisitId: string | null;
   readonly responseStatus: number;
   readonly responsePayload: Readonly<Record<string, unknown>>;
-  readonly now: () => Date;
 }
 
 export async function completeJoinRequest(
-  pool: Pool,
-  deadlineAt: number,
+  transaction: TransactionContext,
+  now: Date,
   params: JoinCompleteParams,
-): Promise<void> {
-  await runSerializable(pool, { deadlineAt }, async (transaction) => {
-    const now = params.now();
-    await transaction.query(
-      `UPDATE public.join_requests
-          SET status = 'completed', player_id = $3, initial_visit_id = $4,
-              response_status = $5, response_payload = $6,
-              processing_token = NULL, processing_expires_at = NULL,
-              session_issue_count = 1, completed_at = $7, updated_at = $7
-        WHERE town_id = $1 AND idempotency_key = $2`,
-      [
-        params.townId,
-        params.idempotencyKey,
-        params.playerId,
-        params.initialVisitId,
-        params.responseStatus,
-        JSON.stringify(params.responsePayload),
-        now,
-      ],
-    );
-  });
+): Promise<boolean> {
+  const updated = await transaction.query<{ readonly idempotency_key: string }>(
+    `UPDATE public.join_requests
+        SET status = 'completed', player_id = $3, initial_visit_id = $4,
+            response_status = $5, response_payload = $6,
+            processing_token = NULL, processing_expires_at = NULL,
+            replay_expires_at = $7, session_issue_count = 1,
+            completed_at = $8, updated_at = $8
+      WHERE town_id = $1 AND idempotency_key = $2 AND status = 'processing'
+        AND processing_token = $9
+      RETURNING idempotency_key`,
+    [
+      params.townId,
+      params.idempotencyKey,
+      params.playerId,
+      params.initialVisitId,
+      params.responseStatus,
+      JSON.stringify(params.responsePayload),
+      new Date(now.getTime() + REPLAY_WINDOW_MS),
+      now,
+      params.processingToken,
+    ],
+  );
+  return updated.length > 0;
 }
 
 /**

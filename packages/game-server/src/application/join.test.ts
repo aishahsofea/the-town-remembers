@@ -12,10 +12,11 @@ describe("normalizeDisplayName", () => {
   });
 
   it("matches town-seed's own NPC actor normalization exactly", () => {
-    // packages/town-seed/src/plan.ts normalizes character.displayName with
-    // the identical NFKC -> trim -> collapse -> lowercase pipeline.
-    expect(normalizeDisplayName("Mara Venn")).toBe(
-      "Mara Venn".normalize("NFKC").trim().replaceAll(/\s+/gu, " ").toLowerCase(),
-    );
+    expect(normalizeDisplayName("Mara Venn")).toBe("mara venn");
+  });
+
+  it("applies full folds that lowercasing alone misses", () => {
+    expect(normalizeDisplayName("Straße")).toBe(normalizeDisplayName("STRASSE"));
+    expect(normalizeDisplayName("ΟΣ")).toBe(normalizeDisplayName("ος"));
   });
 });

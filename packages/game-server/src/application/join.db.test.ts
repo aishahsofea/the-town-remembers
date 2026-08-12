@@ -11,6 +11,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { routeRequest, type RouterConfig } from "../http/router.js";
 import type { HttpRequest } from "../http/types.js";
+import { claimJoinRequest } from "../persistence/join-ledger.js";
+import { rateScopeKey } from "../persistence/rate-limits.js";
+import { joinRequestHash } from "../security/fingerprint.js";
 import { join } from "./join.js";
 
 const APP_ORIGIN = "https://town.example";
@@ -117,6 +120,19 @@ describe.skipIf(!shouldRunDatabaseTests())("first-time join", () => {
       [activeTownId, player.id],
     );
     expect(relationships.rowCount).toBe(3);
+
+    const ledger = await db().pool.query<{
+      completed_at: Date;
+      replay_expires_at: Date;
+    }>(
+      `SELECT completed_at, replay_expires_at FROM public.join_requests
+        WHERE town_id = $1 AND player_id = $2`,
+      [activeTownId, player.id],
+    );
+    expect(
+      ledger.rows[0]!.replay_expires_at.getTime() -
+        ledger.rows[0]!.completed_at.getTime(),
+    ).toBe(10 * 60_000);
   }, 30_000);
 
   it("rejects a case-different duplicate name with no partial rows", async () => {
@@ -204,6 +220,56 @@ describe.skipIf(!shouldRunDatabaseTests())("first-time join", () => {
       config,
     );
     expect(replay.response.status).toBe(404);
+  }, 30_000);
+
+  it("does not reveal the request hash or reclaim expired processing work to a wrong secret", async () => {
+    const idempotencyKey = randomUUID();
+    const secret = joinAttemptSecret();
+    const displayName = `Pending ${randomUUID().slice(0, 8)}`;
+    const oldNow = new Date(Date.now() - 60_000);
+    const claimed = await claimJoinRequest(db().pool, {
+      townId: activeTownId,
+      idempotencyKey,
+      requestHash: joinRequestHash({ displayName }),
+      joinSecretHash: createHash("sha256").update(secret).digest(),
+      rateLimitScopeKey: rateScopeKey(
+        "ip_hash",
+        activeTownId,
+        randomBytes(32).toString("base64url"),
+      ),
+      now: () => oldNow,
+      deadlineAt: Date.now() + 5_000,
+    });
+    expect(claimed.outcome).toBe("claimed");
+
+    const before = await db().pool.query<{
+      processing_token: string;
+      attempt_count: number;
+    }>(
+      `SELECT processing_token, attempt_count FROM public.join_requests
+        WHERE town_id = $1 AND idempotency_key = $2`,
+      [activeTownId, idempotencyKey],
+    );
+    const probe = await routeRequest(
+      joinRequest(inviteToken, {
+        idempotencyKey,
+        secret: joinAttemptSecret(),
+        displayName: `${displayName} changed`,
+      }),
+      "req_wrong_secret",
+      config,
+    );
+    expect(probe.response.status).toBe(404);
+
+    const after = await db().pool.query<{
+      processing_token: string;
+      attempt_count: number;
+    }>(
+      `SELECT processing_token, attempt_count FROM public.join_requests
+        WHERE town_id = $1 AND idempotency_key = $2`,
+      [activeTownId, idempotencyKey],
+    );
+    expect(after.rows[0]).toStrictEqual(before.rows[0]);
   }, 30_000);
 
   it("caps concurrent replay sessions at three and exhausts the rest", async () => {

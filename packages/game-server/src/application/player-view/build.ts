@@ -2,11 +2,9 @@
  * The version-one player-view build (`P3-06`).
  *
  * Feeds `persistence/view-queries.ts`'s reads into
- * `rules/projection/player-view.ts`'s projectors. Phase 3 has no promises,
- * shared board, case attempts, or ambient worker yet, so those regions are
- * supplied as their honest empty/derived-closed defaults rather than stubbed
- * with a placeholder: `activePromises: []`, `caseBoard: []`,
- * `caseBoardContradictions: []`, `caseAttempts: []`, `ambientTransition: null`.
+ * `rules/projection/player-view.ts`'s projectors. Phase 3 projects the shared
+ * verified-evidence entries created by `inspect`; promises, case attempts,
+ * contradictions, and ambient transitions remain their honest empty defaults.
  * `resolution` is genuinely derived from the real discovered-clue set through
  * `rules#isConfrontationGateOpen`, even though no Phase 3 action can open it
  * yet (`accuse` is Phase 6) — a future phase that opens the gate inherits a
@@ -54,6 +52,7 @@ import {
   readMapAccess,
   readPlayerAndVisit,
   readTownHeader,
+  readVerifiedCaseBoardEntries,
   type ClueDiscoveryRow,
   type StoryEntityRow,
 } from "../../persistence/view-queries.js";
@@ -100,6 +99,7 @@ export async function buildPlayerView(
     mapAccess,
     inventory,
     discoveredClues,
+    caseBoardEntries,
     gateStatus,
   ] = await Promise.all([
     readTownHeader(pool, townId),
@@ -107,6 +107,7 @@ export async function buildPlayerView(
     readMapAccess(pool, townId, playerId),
     readInventory(pool, townId, playerId),
     readDiscoveredClues(pool, townId),
+    readVerifiedCaseBoardEntries(pool, townId),
     readConfrontationGateStatus(pool, townId),
   ]);
 
@@ -144,6 +145,30 @@ export async function buildPlayerView(
 
   const gateOpen = isConfrontationGateOpen(gateStatus);
   const discoveredClueGroups = groupByClue(discoveredClues);
+  const caseBoard: PlayerViewProjectionInputs["caseBoard"] = caseBoardEntries.map(
+    (entry) => {
+      const authored = required(clueContentByKey.get(entry.clueKey));
+      return {
+        entryId: entry.entryId,
+        claimId: null,
+        createdAt: entry.createdAt,
+        view: {
+          entryKind: "verified_evidence",
+          verificationStatus: "verified_physical",
+          contributedBy: {
+            id: entry.contributedByPlayerId,
+            actorType: "player",
+            displayName: entry.contributedByDisplayName,
+          },
+          clue: {
+            clueId: entry.clueId,
+            title: authored.title,
+            description: authored.description,
+          },
+        },
+      };
+    },
+  );
 
   const [characterEntities, motiveEntities]: [
     readonly StoryEntityRow[],
@@ -234,7 +259,7 @@ export async function buildPlayerView(
       };
     }),
     activePromises: [],
-    caseBoard: [],
+    caseBoard,
     caseBoardContradictionsInput: { visibleEntries: [], contradictingClaimPairs: [] },
     caseAttempts: [],
     resolution: gateOpen

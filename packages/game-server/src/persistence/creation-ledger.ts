@@ -42,6 +42,7 @@ export type CreationClaimDecision =
       readonly outcome: "claimed";
       readonly contentVersion: string;
       readonly securityKeyVersion: string;
+      readonly processingToken: string;
     }
   | { readonly outcome: "replay"; readonly row: CreationLedgerRow }
   | { readonly outcome: "hash_mismatch" }
@@ -53,6 +54,7 @@ interface RawRow {
   readonly content_version: string;
   readonly security_key_version: string;
   readonly status: "processing" | "completed" | "failed";
+  readonly processing_token: string | null;
   readonly processing_expires_at: Date | null;
   readonly town_id: string | null;
   readonly response_status: number | null;
@@ -78,7 +80,7 @@ async function readRow(
 ): Promise<RawRow | undefined> {
   const rows = await transaction.query<RawRow>(
     `SELECT idempotency_key, request_hash, content_version, security_key_version, status,
-            processing_expires_at, town_id, response_status, response_payload
+            processing_token, processing_expires_at, town_id, response_status, response_payload
        FROM public.town_creation_requests
       WHERE idempotency_key = $1`,
     [idempotencyKey],
@@ -92,7 +94,7 @@ async function readRowViaPool(
 ): Promise<RawRow | undefined> {
   const result = await pool.query<RawRow>(
     `SELECT idempotency_key, request_hash, content_version, security_key_version, status,
-            processing_expires_at, town_id, response_status, response_payload
+            processing_token, processing_expires_at, town_id, response_status, response_payload
        FROM public.town_creation_requests
       WHERE idempotency_key = $1`,
     [idempotencyKey],
@@ -119,6 +121,7 @@ async function attemptOnce(
     readonly now: () => Date;
   },
 ): Promise<SingleAttemptOutcome> {
+  const processingToken = randomUUID();
   const result = await runSerializable(pool, { deadlineAt }, async (transaction) => {
     const now = params.now();
     const claimExpiry = new Date(now.getTime() + CLAIM_MS);
@@ -150,12 +153,13 @@ async function attemptOnce(
             SET processing_token = $2, processing_expires_at = $3,
                 attempt_count = attempt_count + 1, updated_at = $4
           WHERE idempotency_key = $1 AND status = 'processing'`,
-        [params.idempotencyKey, randomUUID(), claimExpiry, now],
+        [params.idempotencyKey, processingToken, claimExpiry, now],
       );
       return {
         outcome: "claimed",
         contentVersion: existing.content_version,
         securityKeyVersion: existing.security_key_version,
+        processingToken,
       } as const satisfies SingleAttemptOutcome;
     }
 
@@ -190,7 +194,7 @@ async function attemptOnce(
         params.requestHash,
         params.contentVersion,
         params.securityKeyVersion,
-        randomUUID(),
+        processingToken,
         claimExpiry,
         now,
       ],
@@ -204,6 +208,7 @@ async function attemptOnce(
       outcome: "claimed",
       contentVersion: params.contentVersion,
       securityKeyVersion: params.securityKeyVersion,
+      processingToken,
     } as const satisfies SingleAttemptOutcome;
   });
 
@@ -218,6 +223,14 @@ async function attemptOnce(
     return { outcome: "hash_mismatch" };
   if (resolved.value.status !== "processing")
     return { outcome: "replay", row: toLedgerRow(resolved.value) };
+  if (resolved.value.processing_token === processingToken) {
+    return {
+      outcome: "claimed",
+      contentVersion: resolved.value.content_version,
+      securityKeyVersion: resolved.value.security_key_version,
+      processingToken,
+    };
+  }
   return { outcome: "live_processing" };
 }
 
@@ -262,33 +275,61 @@ export async function claimCreationRequest(
 
 export interface CompleteParams {
   readonly idempotencyKey: string;
+  readonly processingToken: string;
   readonly townId: string;
   readonly responseStatus: number;
   readonly responsePayload: Readonly<Record<string, unknown>>;
   readonly now: () => Date;
 }
 
-/** Marks a claimed row completed. Runs after `materializeTown` has committed. */
+/** Marks a claimed row completed, conditional on the current processing claim. */
 export async function completeCreationRequest(
   pool: Pool,
   deadlineAt: number,
   params: CompleteParams,
 ): Promise<void> {
-  await runSerializable(pool, { deadlineAt }, async (transaction) => {
+  const result = await runSerializable(pool, { deadlineAt }, async (transaction) => {
     const now = params.now();
-    await transaction.query(
+    const updated = await transaction.query<{ readonly idempotency_key: string }>(
       `UPDATE public.town_creation_requests
           SET status = 'completed', town_id = $2, response_status = $3,
               response_payload = $4, processing_token = NULL,
               processing_expires_at = NULL, completed_at = $5, updated_at = $5
-        WHERE idempotency_key = $1`,
+        WHERE idempotency_key = $1 AND status = 'processing'
+          AND processing_token = $6
+        RETURNING idempotency_key`,
       [
         params.idempotencyKey,
         params.townId,
         params.responseStatus,
         JSON.stringify(params.responsePayload),
         now,
+        params.processingToken,
       ],
     );
+    return { matched: updated.length > 0 };
   });
+
+  if (result.outcome === "committed") {
+    if (result.value.matched) return;
+    const row = await readRowViaPool(pool, params.idempotencyKey);
+    if (row?.status === "completed" && row.town_id === params.townId) return;
+    throw new DatabaseError("unknown");
+  }
+
+  const row = await readRowViaPool(pool, params.idempotencyKey);
+  if (row?.status === "completed" && row.town_id === params.townId) return;
+  throw new DatabaseError("ambiguous_commit");
+}
+
+/** Finds a materialized town by the deterministic hash derived from a creation key. */
+export async function readTownIdByInviteHash(
+  pool: Pool,
+  inviteHash: Uint8Array,
+): Promise<string | undefined> {
+  const result = await pool.query<{ readonly id: string }>(
+    "SELECT id FROM public.towns WHERE invite_token_hash = $1",
+    [Buffer.from(inviteHash)],
+  );
+  return result.rows[0]?.id;
 }

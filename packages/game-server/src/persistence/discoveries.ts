@@ -7,6 +7,8 @@
 
 import type { Pool } from "pg";
 
+import { isDatabaseUuid } from "./identifiers.js";
+
 export interface InspectableAtLocationRow {
   readonly id: string;
   readonly clueId: string | null;
@@ -25,6 +27,7 @@ export async function readInspectableAtLocation(
   inspectableId: string,
   locationEntityId: string,
 ): Promise<InspectableAtLocationRow | undefined> {
+  if (!isDatabaseUuid(inspectableId)) return undefined;
   const result = await pool.query<{
     readonly id: string;
     readonly clue_id: string | null;

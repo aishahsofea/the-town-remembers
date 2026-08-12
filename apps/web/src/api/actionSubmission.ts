@@ -48,6 +48,8 @@ export interface UseActionSubmissionResult {
   readonly rateLimitedRetryAfterSeconds: number | undefined;
   /** True while another same-origin tab has a pending action for this player. */
   readonly readOnlyPending: boolean;
+  readonly refreshPending: boolean;
+  readonly retrySafely: () => void;
   readonly tryAsNewAction: () => void;
 }
 
@@ -66,23 +68,39 @@ const REASON_MESSAGES: Partial<Record<string, string>> = {
 export function useActionSubmission(
   townId: string,
   playerId: string,
-  onSettled: () => void,
+  onSettled: () => Promise<boolean>,
 ): UseActionSubmissionResult {
   const [recovery, setRecovery] = useState<RecoveryState | undefined>(undefined);
   const [readOnlyPending, setReadOnlyPending] = useState(false);
+  const [refreshPending, setRefreshPending] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
 
   const startedAtRef = useRef(0);
   const requestRef = useRef<
     { idempotencyKey: string; request: ActionRequest } | undefined
   >(undefined);
-  const channelRef = useRef(openJournalChannel());
+  const channelRef = useRef<ReturnType<typeof openJournalChannel>>(undefined);
+  const submissionActiveRef = useRef(false);
+  const readOnlyPendingRef = useRef(false);
+  const waitingForBlockingActionRef = useRef(false);
+  const journalClearRef = useRef<Promise<void> | undefined>(undefined);
+  const recoveryAttemptRef = useRef(false);
+  const freshStartRef = useRef(false);
 
   const elapsed = useCallback(() => Date.now() - startedAtRef.current, []);
 
   const finalize = useCallback(async () => {
-    onSettled();
+    setRefreshPending(true);
+    const refreshed = await onSettled();
+    if (!refreshed) {
+      setErrorMessage("Your action was saved, but the town view could not refresh.");
+      return;
+    }
     await deleteJournalEntry(townId, playerId);
+    requestRef.current = undefined;
+    submissionActiveRef.current = false;
+    setRefreshPending(false);
+    setErrorMessage(undefined);
     channelRef.current?.post({ type: "cleared", townId, playerId });
   }, [onSettled, townId, playerId]);
 
@@ -93,6 +111,20 @@ export function useActionSubmission(
 
       switch (outcome.kind) {
         case "completed": {
+          if (waitingForBlockingActionRef.current) {
+            waitingForBlockingActionRef.current = false;
+            const reason = "ACTION_IN_PROGRESS";
+            const { state } = reduceRecovery(
+              recovery ?? INITIAL_RECOVERY_STATE,
+              { type: "requiresNewAction", reason },
+              elapsed(),
+            );
+            setRecovery(state);
+            setErrorMessage(REASON_MESSAGES[reason]);
+            journalClearRef.current = deleteJournalEntry(townId, playerId);
+            channelRef.current?.post({ type: "cleared", townId, playerId });
+            return;
+          }
           const { state } = reduceRecovery(
             recovery ?? INITIAL_RECOVERY_STATE,
             { type: "completed", result: outcome.result },
@@ -113,6 +145,12 @@ export function useActionSubmission(
             elapsed(),
           );
           setRecovery(state);
+          if (waitingForBlockingActionRef.current) {
+            setTimeout(() => {
+              void pollAction(townId, outcome.actionId).then(handleOutcomeRef.current);
+            }, outcome.pollAfterMs);
+            return;
+          }
           void writeJournalEntry({
             townId,
             playerId,
@@ -153,10 +191,41 @@ export function useActionSubmission(
           setRecovery(state);
           return;
         }
-        case "actionInProgress":
+        case "actionInProgress": {
+          if (outcome.blockingActionId) {
+            waitingForBlockingActionRef.current = true;
+            const { state } = reduceRecovery(
+              recovery ?? INITIAL_RECOVERY_STATE,
+              {
+                type: "processing",
+                actionId: outcome.blockingActionId,
+                pollAfterMs: 2_000,
+              },
+              elapsed(),
+            );
+            setRecovery(state);
+            setErrorMessage(REASON_MESSAGES["ACTION_IN_PROGRESS"]);
+            setTimeout(() => {
+              void pollAction(townId, outcome.blockingActionId!).then(
+                handleOutcomeRef.current,
+              );
+            }, 2_000);
+            return;
+          }
+          const reason = "ACTION_IN_PROGRESS";
+          const { state } = reduceRecovery(
+            recovery ?? INITIAL_RECOVERY_STATE,
+            { type: "requiresNewAction", reason },
+            elapsed(),
+          );
+          setRecovery(state);
+          setErrorMessage(REASON_MESSAGES[reason]);
+          journalClearRef.current = deleteJournalEntry(townId, playerId);
+          channelRef.current?.post({ type: "cleared", townId, playerId });
+          return;
+        }
         case "requiresNewAction": {
-          const reason =
-            outcome.kind === "actionInProgress" ? "ACTION_IN_PROGRESS" : outcome.reason;
+          const reason = outcome.reason;
           const { state } = reduceRecovery(
             recovery ?? INITIAL_RECOVERY_STATE,
             { type: "requiresNewAction", reason },
@@ -166,7 +235,7 @@ export function useActionSubmission(
           setErrorMessage(
             REASON_MESSAGES[reason] ?? "Something went wrong. Try again.",
           );
-          void deleteJournalEntry(townId, playerId);
+          journalClearRef.current = deleteJournalEntry(townId, playerId);
           channelRef.current?.post({ type: "cleared", townId, playerId });
           return;
         }
@@ -202,6 +271,7 @@ export function useActionSubmission(
         idempotencyKey: entry.idempotencyKey,
         request: entry.requestBody,
       };
+      submissionActiveRef.current = true;
       setRecovery(INITIAL_RECOVERY_STATE);
       if (entry.actionId) {
         void pollAction(townId, entry.actionId).then((outcome) =>
@@ -248,6 +318,31 @@ export function useActionSubmission(
     return () => clearInterval(interval);
   }, [recovery, elapsed, townId]);
 
+  useEffect(() => {
+    if (
+      recovery?.phase !== "rate_limited" ||
+      recovery.rateLimitedRetryAfterSeconds === undefined ||
+      recovery.rateLimitedRetryAfterSeconds <= 0
+    ) {
+      return;
+    }
+    const timeout = setTimeout(() => {
+      setRecovery((previous) =>
+        previous?.phase === "rate_limited" &&
+        previous.rateLimitedRetryAfterSeconds !== undefined
+          ? {
+              ...previous,
+              rateLimitedRetryAfterSeconds: Math.max(
+                0,
+                previous.rateLimitedRetryAfterSeconds - 1,
+              ),
+            }
+          : previous,
+      );
+    }, 1_000);
+    return () => clearTimeout(timeout);
+  }, [recovery]);
+
   // Offline/online.
   useEffect(() => {
     function onOffline() {
@@ -282,17 +377,26 @@ export function useActionSubmission(
 
   // A second tab's pending action puts this tab into read-only pending mode.
   useEffect(() => {
-    const channel = channelRef.current;
+    const channel = openJournalChannel();
+    channelRef.current = channel;
     if (!channel) return;
-    return channel.subscribe((message) => {
+    const unsubscribe = channel.subscribe((message) => {
       if (message.townId !== townId || message.playerId !== playerId) return;
-      setReadOnlyPending(message.type === "pending");
+      const next = message.type === "pending";
+      readOnlyPendingRef.current = next;
+      setReadOnlyPending(next);
     });
+    return () => {
+      unsubscribe();
+      channel.close();
+      if (channelRef.current === channel) channelRef.current = undefined;
+    };
   }, [townId, playerId]);
 
-  const submit = useCallback(
+  const startSubmission = useCallback(
     async (request: ActionRequest) => {
       const idempotencyKey = crypto.randomUUID();
+      submissionActiveRef.current = true;
       startedAtRef.current = Date.now();
       requestRef.current = { idempotencyKey, request };
       setErrorMessage(undefined);
@@ -315,20 +419,70 @@ export function useActionSubmission(
     [townId, playerId],
   );
 
+  const submit = useCallback(
+    async (request: ActionRequest) => {
+      if (submissionActiveRef.current || readOnlyPendingRef.current) return;
+      await startSubmission(request);
+    },
+    [startSubmission],
+  );
+
+  const retrySafely = useCallback(() => {
+    if (recoveryAttemptRef.current) return;
+    if (
+      recovery?.phase === "rate_limited" &&
+      (recovery.rateLimitedRetryAfterSeconds ?? 0) > 0
+    ) {
+      return;
+    }
+    recoveryAttemptRef.current = true;
+    void (async () => {
+      try {
+        if (recovery?.phase === "completed") {
+          await finalize();
+          return;
+        }
+        const current = requestRef.current;
+        if (!current) return;
+        setRecovery((previous) =>
+          previous ? { ...previous, phase: "submitting" } : INITIAL_RECOVERY_STATE,
+        );
+        handleOutcomeRef.current(
+          await postAction(townId, current.idempotencyKey, current.request),
+        );
+      } finally {
+        recoveryAttemptRef.current = false;
+      }
+    })();
+  }, [finalize, recovery, townId]);
+
   const tryAsNewAction = useCallback(() => {
-    requestRef.current = undefined;
-    setRecovery(undefined);
-    setErrorMessage(undefined);
-  }, []);
+    if (freshStartRef.current) return;
+    const request = requestRef.current?.request;
+    if (!request) return;
+    freshStartRef.current = true;
+    void (async () => {
+      try {
+        await journalClearRef.current;
+        submissionActiveRef.current = false;
+        await startSubmission(request);
+      } finally {
+        freshStartRef.current = false;
+      }
+    })();
+  }, [startSubmission]);
 
   return {
-    pending: recovery !== undefined && recovery.phase !== "completed",
+    pending:
+      refreshPending || (recovery !== undefined && recovery.phase !== "completed"),
     lastResult: recovery?.result,
     error: errorMessage,
     submit,
     recoveryPhase: recovery?.phase,
     rateLimitedRetryAfterSeconds: recovery?.rateLimitedRetryAfterSeconds,
     readOnlyPending,
+    refreshPending,
+    retrySafely,
     tryAsNewAction,
   };
 }

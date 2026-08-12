@@ -14,6 +14,7 @@
 import { randomUUID } from "node:crypto";
 
 import { type ContentRegistry } from "@the-town-remembers/content";
+import { normalizeDisplayNameForUniqueness } from "@the-town-remembers/serialization";
 
 export interface MaterializationInput {
   readonly contentVersion: string;
@@ -112,11 +113,7 @@ export function planTown(
       id: id(`actor:${npc.npcKey}`),
       actor_type: "npc",
       display_name: character.displayName,
-      display_name_normalized: character.displayName
-        .normalize("NFKC")
-        .trim()
-        .replaceAll(/\s+/gu, " ")
-        .toLowerCase(),
+      display_name_normalized: normalizeDisplayNameForUniqueness(character.displayName),
       created_at: createdAt,
     };
   });

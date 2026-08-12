@@ -142,6 +142,15 @@ describe.skipIf(!shouldRunDatabaseTests())("action status route", () => {
     expect(ProblemResponseSchema.safeParse(parseBody(response.body)).success).toBe(
       true,
     );
+    const opaque = await routeRequest(
+      actionStatusRequest(townId, "opaque-action-id", player.cookie),
+      "req_opaque",
+      config,
+    );
+    expect(opaque.response.status).toBe(404);
+    expect(parseBody(opaque.response.body)).toMatchObject({
+      code: "RESOURCE_NOT_FOUND",
+    });
   }, 30_000);
 
   it("returns 404 for another player's action, identical to a nonexistent one", async () => {

@@ -13,6 +13,7 @@
   "dependencies": {
     "@the-town-remembers/content": "workspace:*",
     "@the-town-remembers/database": "workspace:*",
+    "@the-town-remembers/serialization": "workspace:*",
     "pg": "^8.16.3"
   },
   "devDependencies": {

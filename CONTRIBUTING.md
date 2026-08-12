@@ -174,6 +174,19 @@ The page is a foundation diagnostic, not the game shell from Decision 011. It
 reports API liveness, build identity, and server time, and it claims nothing
 about CockroachDB, Bedrock, SQS, or Secrets Manager.
 
+## Playing the Phase 3 slice locally
+
+With the pair running, `pnpm town:new` creates one town through the real
+judge-authenticated route and prints its invite URL; opening that URL in a
+browser starts the join/travel/inspect/leave journey. Town creation belongs to
+an operator, not a player, so it is the one step with no screen behind it —
+everything after the invite is the actual UI. Passing the printed idempotency
+key back (`pnpm town:new <key>`) replays the creation rather than making a
+second town. See
+[`packages/game-server/README.md`](packages/game-server/README.md) for what
+each route does and which nine action kinds this phase deliberately does not
+serve.
+
 ## Configuration
 
 Every variable is documented with a safe placeholder in `.env.example`. Copy it

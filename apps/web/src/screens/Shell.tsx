@@ -11,6 +11,7 @@ import { useEffect, useState } from "react";
 import { useActionSubmission } from "../api/actionSubmission.js";
 import { usePlayerView } from "../api/playerView.js";
 import { Casebook } from "../components/Casebook.js";
+import { ActionRecoveryNotice } from "../components/ActionRecoveryNotice.js";
 import { Header } from "../components/Header.js";
 import { LeaveSheet } from "../components/LeaveSheet.js";
 import { navigate } from "../routing/navigation.js";
@@ -34,6 +35,7 @@ export function Shell({ match }: ShellProps) {
   const townId = match.params["townId"]!;
   const { status, view, refresh } = usePlayerView(townId);
   const action = useActionSubmission(townId, view?.player.id ?? "", refresh);
+  const mutationPending = action.pending || action.readOnlyPending;
   const [showLeaveSheet, setShowLeaveSheet] = useState(false);
 
   const redirect = view ? computeGuardRedirect(view, match) : undefined;
@@ -74,15 +76,15 @@ export function Shell({ match }: ShellProps) {
     <div className="shell">
       <Header
         view={view}
-        pending={action.pending}
+        pending={mutationPending}
         onLeave={() => setShowLeaveSheet(true)}
-        leaveDisabled={action.pending}
+        leaveDisabled={mutationPending}
       />
       <div className="shell__body">
         {match.name === "map" ? (
           <Map
             view={view}
-            pending={action.pending}
+            pending={mutationPending}
             onTravel={(destinationLocationId) =>
               void action.submit({ kind: "travel", destinationLocationId })
             }
@@ -96,19 +98,20 @@ export function Shell({ match }: ShellProps) {
         ) : match.name === "betweenVisits" ? (
           <Away
             activePromises={view.activePromises}
-            pending={action.pending}
+            pending={mutationPending}
             onReturnToFestivalSquare={() => void action.submit({ kind: "start_visit" })}
             onReviewCaseBoard={() => navigate(buildWebPath("board", { townId }))}
           />
         ) : match.name === "resolution" ? (
           <ResolutionPlaceholder />
         ) : null}
+        <ActionRecoveryNotice action={action} />
         <Casebook inventory={view.inventory} activePromises={view.activePromises} />
       </div>
       {showLeaveSheet ? (
         <LeaveSheet
           activePromises={view.activePromises}
-          pending={action.pending}
+          pending={mutationPending}
           onStay={() => setShowLeaveSheet(false)}
           onLeave={() => {
             setShowLeaveSheet(false);

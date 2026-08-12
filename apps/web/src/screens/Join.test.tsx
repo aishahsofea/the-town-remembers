@@ -143,10 +143,10 @@ describe("Join — first-time join", () => {
     });
   }
 
-  it("keeps the field populated, selects it, and shows conflict copy on a server-side name conflict, without an automatic second POST", async () => {
+  it("keeps the field populated after a conflict and uses a fresh key for the corrected name", async () => {
     setCapturedInviteToken("token-1");
-    let joinPostCount = 0;
-    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+    const joinKeys: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
       const url = requestedUrl(input);
       if (url.includes("/invites/") && !url.includes("/join")) {
         return Promise.resolve(jsonResponse(PREVIEW));
@@ -155,9 +155,17 @@ describe("Join — first-time join", () => {
         return Promise.resolve(problemResponse(401, "INVALID_SESSION", "no session"));
       }
       if (url.endsWith("/join")) {
-        joinPostCount += 1;
+        const headers = init?.headers as Record<string, string>;
+        joinKeys.push(headers["idempotency-key"]!);
         return Promise.resolve(
-          problemResponse(409, "DISPLAY_NAME_TAKEN", "That name is already in use."),
+          joinKeys.length === 1
+            ? problemResponse(409, "DISPLAY_NAME_TAKEN", "That name is already in use.")
+            : jsonResponse({
+                townId: "town-1",
+                townStatus: "active",
+                player: { id: "p1", displayName: "Aishah Second" },
+                initialVisit: { visitId: "v1", locationId: "loc1" },
+              }),
         );
       }
       throw new Error(`unexpected fetch: ${url}`);
@@ -171,11 +179,16 @@ describe("Join — first-time join", () => {
 
     await screen.findByText("That name is already in use in this town.");
     expect(input.value).toBe("Aishah Sofea");
-    expect(joinPostCount).toBe(1);
+    expect(joinKeys).toHaveLength(1);
 
     // No automatic retry — the count stays at one even after settling.
     await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(joinPostCount).toBe(1);
+    expect(joinKeys).toHaveLength(1);
+
+    fireEvent.change(input, { target: { value: "Aishah Second" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enter the town" }));
+    await waitFor(() => expect(joinKeys).toHaveLength(2));
+    expect(joinKeys[1]).not.toBe(joinKeys[0]);
   });
 
   it("never renders the join secret anywhere in the DOM", async () => {

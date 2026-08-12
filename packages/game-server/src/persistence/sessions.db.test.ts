@@ -12,7 +12,12 @@ import { join } from "../application/join.js";
 import { joinRequestHash } from "../security/fingerprint.js";
 import { claimJoinRequest } from "./join-ledger.js";
 import { rateScopeKey } from "./rate-limits.js";
-import { authenticate, confirmBootstrap, reissueIfDue } from "./sessions.js";
+import {
+  authenticate,
+  confirmBootstrap,
+  hasActiveSessionForJoin,
+  reissueIfDue,
+} from "./sessions.js";
 
 const SESSION_TOKEN_PEPPER = "test-pepper-not-real";
 const IP_HASH_SECRET = "C".repeat(43);
@@ -78,6 +83,22 @@ describe.skipIf(!shouldRunDatabaseTests())("session authentication and refresh",
     expect(outcome.outcome).toBe("authenticated");
     if (outcome.outcome === "authenticated") {
       expect(outcome.session.playerId).toBe(result.player.id);
+      expect(
+        await hasActiveSessionForJoin(db().pool, {
+          townId,
+          playerId: result.player.id,
+          joinRequestId: outcome.session.joinRequestId,
+          tokenHash: sessionTokenHashOf(result.sessionToken),
+        }),
+      ).toBe(true);
+      expect(
+        await hasActiveSessionForJoin(db().pool, {
+          townId,
+          playerId: result.player.id,
+          joinRequestId: outcome.session.joinRequestId,
+          tokenHash: randomBytes(32),
+        }),
+      ).toBe(false);
     }
   }, 30_000);
 

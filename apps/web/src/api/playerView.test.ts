@@ -139,9 +139,127 @@ describe("usePlayerView", () => {
     expect(fetchCount).toBe(1);
 
     await act(async () => {
-      result.current.refresh();
+      await result.current.refresh();
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(fetchCount).toBe(2);
+  });
+
+  it("retries an immediate refresh once after a rate-limit response", async () => {
+    let fetchCount = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(() => {
+      fetchCount += 1;
+      if (fetchCount !== 2) return Promise.resolve(jsonResponse(playerViewBody()));
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            type: "https://the-town-remembers/errors/rate-limited",
+            status: 429,
+            code: "RATE_LIMITED",
+            title: "Rate limited",
+            detail: "Try again shortly.",
+            requestId: "req_1",
+            fieldErrors: [],
+          }),
+          {
+            status: 429,
+            headers: {
+              "content-type": "application/problem+json",
+              "retry-after": "0",
+            },
+          },
+        ),
+      );
+    });
+
+    const { result } = renderHook(() => usePlayerView("town-1"));
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+
+    let succeeded: boolean | undefined;
+    await act(async () => {
+      succeeded = await result.current.refresh();
+    });
+    expect(succeeded).toBe(true);
+    expect(fetchCount).toBe(3);
+  });
+
+  it("does not let an older overlapping response replace a newer refresh", async () => {
+    let resolveFirst: ((response: Response) => void) | undefined;
+    const first = new Promise<Response>((resolve) => {
+      resolveFirst = resolve;
+    });
+    let call = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(() => {
+      call += 1;
+      return call === 1
+        ? first
+        : Promise.resolve(
+            jsonResponse(
+              playerViewBody({
+                player: {
+                  id: "p1",
+                  displayName: "Newest View",
+                  visit: { status: "away" },
+                },
+              }),
+              { etag: '"v2"' },
+            ),
+          );
+    });
+
+    const { result } = renderHook(() => usePlayerView("town-1"));
+    await waitFor(() => expect(call).toBe(1));
+    await act(async () => {
+      await result.current.refresh();
+    });
+    expect(result.current.view?.player.displayName).toBe("Newest View");
+
+    await act(async () => {
+      resolveFirst?.(
+        jsonResponse(
+          playerViewBody({
+            player: {
+              id: "p1",
+              displayName: "Stale View",
+              visit: { status: "away" },
+            },
+          }),
+          { etag: '"v1"' },
+        ),
+      );
+      await Promise.resolve();
+    });
+    expect(result.current.view?.player.displayName).toBe("Newest View");
+  });
+
+  it("does not confirm a stale refresh when the newer overlapping request failed", async () => {
+    let resolveStale: ((response: Response) => void) | undefined;
+    const stale = new Promise<Response>((resolve) => {
+      resolveStale = resolve;
+    });
+    let call = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(() => {
+      call += 1;
+      if (call === 1) return Promise.resolve(jsonResponse(playerViewBody()));
+      if (call === 2) return stale;
+      return Promise.reject(new Error("offline"));
+    });
+
+    const { result } = renderHook(() => usePlayerView("town-1"));
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+
+    let staleSucceeded: boolean | undefined;
+    let newerSucceeded: boolean | undefined;
+    await act(async () => {
+      const staleRefresh = result.current.refresh().then((value) => {
+        staleSucceeded = value;
+      });
+      newerSucceeded = await result.current.refresh();
+      resolveStale?.(jsonResponse(playerViewBody()));
+      await staleRefresh;
+    });
+
+    expect(newerSucceeded).toBe(false);
+    expect(staleSucceeded).toBe(false);
   });
 });

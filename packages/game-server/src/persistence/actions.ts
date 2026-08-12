@@ -39,6 +39,7 @@ import {
   type BlockingActionRow,
   type ExistingActionRow,
 } from "../application/actions/ledger.js";
+import { isDatabaseUuid } from "./identifiers.js";
 
 /** Docs/007: player processing claims last 35 seconds and do not renew. */
 const CLAIM_MS = 35_000;
@@ -659,6 +660,7 @@ export async function readActionForPlayer(
   playerId: string,
   actionId: string,
 ): Promise<ActionStatusRow | undefined> {
+  if (!isDatabaseUuid(actionId)) return undefined;
   const result = await pool.query<{
     readonly id: string;
     readonly status: ActionRecordStatus;

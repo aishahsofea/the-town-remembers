@@ -10,6 +10,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 
 import { DatabaseError, runSerializable } from "@the-town-remembers/database";
+import { normalizeDisplayNameForUniqueness } from "@the-town-remembers/serialization";
 import type { Pool } from "pg";
 
 import { AppError, internalError, rateLimited } from "../http/errors.js";
@@ -18,11 +19,15 @@ import {
   claimReplaySessionSlot,
   closeExhaustedReplay,
   completeJoinRequest,
+  readJoinRequest,
   type JoinLedgerRow,
 } from "../persistence/join-ledger.js";
 import { createPlayer } from "../persistence/players.js";
 import { rateScopeKey } from "../persistence/rate-limits.js";
-import { mintSessionForPlayer } from "../persistence/sessions.js";
+import {
+  hasActiveSessionForJoin,
+  mintSessionForPlayer,
+} from "../persistence/sessions.js";
 import { joinRequestHash } from "../security/fingerprint.js";
 import { hashIp } from "../security/ip-hash.js";
 import { mintSessionToken, sessionTokenHash } from "../security/session-token.js";
@@ -33,7 +38,7 @@ const JOIN_DEADLINE_MS = 20_000;
  * player name collides with an authored NPC the same way it collides with
  * another player. */
 export function normalizeDisplayName(displayName: string): string {
-  return displayName.normalize("NFKC").trim().replaceAll(/\s+/gu, " ").toLowerCase();
+  return normalizeDisplayNameForUniqueness(displayName);
 }
 
 export interface JoinDependencies {
@@ -167,6 +172,7 @@ export async function join(
     deadlineAt,
   });
 
+  if (decision.outcome === "secret_mismatch") notFound();
   if (decision.outcome === "hash_mismatch") idempotencyKeyReused();
   if (decision.outcome === "closed") replayClosed(decision.reason);
   if (decision.outcome === "rate_limited")
@@ -223,26 +229,66 @@ export async function join(
   const token = mintSessionToken();
   const tokenHash = sessionTokenHash(deps.sessionTokenPepper, token);
 
-  let created;
+  let committed;
   try {
     const result = await runSerializable(
       deps.pool,
       { deadlineAt },
-      async (transaction) =>
-        createPlayer(transaction, {
+      async (transaction) => {
+        const now = deps.now();
+        const created = await createPlayer(transaction, {
           townId: input.townId,
           townActive: input.townActive,
           displayName: input.displayName,
           displayNameNormalized: normalized,
           sessionTokenHash: tokenHash,
           joinRequestId: input.idempotencyKey,
-          now: deps.now(),
-        }),
+          now,
+        });
+        const responsePayload: Readonly<Record<string, unknown>> = {
+          townId: input.townId,
+          townStatus: input.townStatus,
+          player: { id: created.playerId, displayName: input.displayName },
+          initialVisit: created.initialVisit,
+        };
+        const completed = await completeJoinRequest(transaction, now, {
+          townId: input.townId,
+          idempotencyKey: input.idempotencyKey,
+          processingToken: decision.processingToken,
+          playerId: created.playerId,
+          initialVisitId: created.initialVisit?.visitId ?? null,
+          responseStatus: 201,
+          responsePayload,
+        });
+        if (!completed) {
+          // Throw inside the transaction so none of the player/session rows
+          // can commit under a processing claim this worker no longer owns.
+          throw new DatabaseError("unknown");
+        }
+        return { created, responsePayload };
+      },
     );
-    if (result.outcome !== "committed") {
-      throw internalError("Player creation outcome is unknown.");
+    if (result.outcome === "committed") {
+      committed = result.value;
+    } else {
+      const row = await readJoinRequest(deps.pool, input.townId, input.idempotencyKey);
+      if (
+        row?.status !== "completed" ||
+        row.playerId === null ||
+        !row.requestHash.equals(requestHash) ||
+        !secretMatches(row.joinSecretHash, joinSecretDigest) ||
+        !(await hasActiveSessionForJoin(deps.pool, {
+          townId: input.townId,
+          playerId: row.playerId,
+          joinRequestId: input.idempotencyKey,
+          tokenHash,
+        }))
+      ) {
+        throw internalError("Player creation outcome is unknown.");
+      }
+      const saved = respondFromCompletedRow(row);
+      return { ...saved, sessionToken: token };
     }
-    created = result.value;
   } catch (error) {
     if (error instanceof DatabaseError && error.category === "unique_violation") {
       displayNameTaken();
@@ -250,28 +296,11 @@ export async function join(
     throw error;
   }
 
-  const responsePayload: Readonly<Record<string, unknown>> = {
-    townId: input.townId,
-    townStatus: input.townStatus,
-    player: { id: created.playerId, displayName: input.displayName },
-    initialVisit: created.initialVisit,
-  };
-
-  await completeJoinRequest(deps.pool, deadlineAt, {
-    townId: input.townId,
-    idempotencyKey: input.idempotencyKey,
-    playerId: created.playerId,
-    initialVisitId: created.initialVisit?.visitId ?? null,
-    responseStatus: 201,
-    responsePayload,
-    now: deps.now,
-  });
-
   return {
     townId: input.townId,
     townStatus: input.townStatus,
-    player: { id: created.playerId, displayName: input.displayName },
-    initialVisit: created.initialVisit,
+    player: { id: committed.created.playerId, displayName: input.displayName },
+    initialVisit: committed.created.initialVisit,
     sessionToken: token,
   };
 }

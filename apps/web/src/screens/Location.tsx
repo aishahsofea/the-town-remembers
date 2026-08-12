@@ -75,7 +75,7 @@ export function Location({ view, action }: LocationProps) {
               ) : (
                 <button
                   type="button"
-                  disabled={action.pending}
+                  disabled={action.pending || action.readOnlyPending}
                   onClick={() => handleExamine(inspectable.id)}
                 >
                   Examine

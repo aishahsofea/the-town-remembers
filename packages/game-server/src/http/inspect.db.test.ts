@@ -448,6 +448,7 @@ describe.skipIf(!shouldRunDatabaseTests())("POST /actions — inspect", () => {
     // The player is at Festival Square (bootstrap); inn_hearth is at the inn.
     const wrongLocation = await inspect(player, innHearthId);
     const unknown = await inspect(player, randomUUID());
+    const opaque = await inspect(player, "opaque-inspectable-id");
 
     const wrongBody = CompletedActionResponseSchema.parse(
       parseBody(wrongLocation.response.body),
@@ -455,11 +456,17 @@ describe.skipIf(!shouldRunDatabaseTests())("POST /actions — inspect", () => {
     const unknownBody = CompletedActionResponseSchema.parse(
       parseBody(unknown.response.body),
     );
+    const opaqueBody = CompletedActionResponseSchema.parse(
+      parseBody(opaque.response.body),
+    );
     expect(wrongBody.outcome).toBe("denied");
     expect((wrongBody as { result: { reasonCode: string } }).result.reasonCode).toBe(
       "INSPECTABLE_NOT_FOUND",
     );
     expect((unknownBody as { result: { reasonCode: string } }).result.reasonCode).toBe(
+      "INSPECTABLE_NOT_FOUND",
+    );
+    expect((opaqueBody as { result: { reasonCode: string } }).result.reasonCode).toBe(
       "INSPECTABLE_NOT_FOUND",
     );
   }, 30_000);

@@ -24,6 +24,7 @@ import type {
   PlayerAndVisitRow,
   StoryEntityRow,
   TownHeaderRow,
+  VerifiedCaseBoardEntryRow,
 } from "../../persistence/view-queries.js";
 
 const {
@@ -32,6 +33,7 @@ const {
   readMapAccess,
   readInventory,
   readDiscoveredClues,
+  readVerifiedCaseBoardEntries,
   readConfrontationGateStatus,
   readInspectables,
   readCoLocatedNpcs,
@@ -42,6 +44,7 @@ const {
   readMapAccess: vi.fn(),
   readInventory: vi.fn(),
   readDiscoveredClues: vi.fn(),
+  readVerifiedCaseBoardEntries: vi.fn(),
   readConfrontationGateStatus: vi.fn(),
   readInspectables: vi.fn(),
   readCoLocatedNpcs: vi.fn(),
@@ -54,6 +57,7 @@ vi.mock("../../persistence/view-queries.js", () => ({
   readMapAccess,
   readInventory,
   readDiscoveredClues,
+  readVerifiedCaseBoardEntries,
   readConfrontationGateStatus,
   readInspectables,
   readCoLocatedNpcs,
@@ -98,6 +102,9 @@ function baseMocks(): void {
   readMapAccess.mockResolvedValue(locationRows());
   readInventory.mockResolvedValue([] satisfies InventoryItemRow[]);
   readDiscoveredClues.mockResolvedValue([] satisfies ClueDiscoveryRow[]);
+  readVerifiedCaseBoardEntries.mockResolvedValue(
+    [] satisfies VerifiedCaseBoardEntryRow[],
+  );
   readConfrontationGateStatus.mockResolvedValue(zeroGateStatus());
   readInspectables.mockResolvedValue([] satisfies InspectableRow[]);
   readCoLocatedNpcs.mockResolvedValue([] satisfies CoLocatedNpcRow[]);
@@ -235,6 +242,46 @@ describe("discoveredClues grouping", () => {
     expect(view.discoveredClues).toHaveLength(1);
     expect(view.discoveredClues[0]?.contributors).toHaveLength(2);
     expect(view.discoveredClues[0]?.firstContributor.id).toBe("player_a");
+  });
+});
+
+describe("shared case board", () => {
+  it("projects verified evidence with authored clue content and its contributor", async () => {
+    const clue = CONTENT.clues[0]!;
+    readVerifiedCaseBoardEntries.mockResolvedValue([
+      {
+        entryId: "entry_1",
+        contributedByPlayerId: "player_a",
+        contributedByDisplayName: "Player A",
+        clueId: "clue_1",
+        clueKey: clue.clueKey,
+        createdAt: new Date("2026-08-12T12:00:00.000Z"),
+      },
+    ] satisfies VerifiedCaseBoardEntryRow[]);
+
+    const view = await buildPlayerView(UNUSED_POOL, {
+      townId: TOWN_ID,
+      playerId: PLAYER_ID,
+    });
+
+    expect(view.caseBoard).toStrictEqual([
+      {
+        entryId: "entry_1",
+        entryKind: "verified_evidence",
+        verificationStatus: "verified_physical",
+        createdAt: "2026-08-12T12:00:00.000Z",
+        contributedBy: {
+          id: "player_a",
+          actorType: "player",
+          displayName: "Player A",
+        },
+        clue: {
+          clueId: "clue_1",
+          title: clue.title,
+          description: clue.description,
+        },
+      },
+    ]);
   });
 });
 
