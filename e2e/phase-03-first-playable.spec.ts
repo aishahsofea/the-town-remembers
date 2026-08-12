@@ -11,6 +11,7 @@ import {
   DISPOSABLE_DB_STATE_FILE,
   type DisposableDbState,
 } from "./disposable-db-state.js";
+import { E2E_JUDGE_CODE } from "./security-fixtures.js";
 
 /**
  * `P3-19`: the single ordered Phase 3 acceptance journey — create town
@@ -27,7 +28,10 @@ import {
 applyLocalDefaults();
 
 const { apiBaseUrl, webBaseUrl } = loadTestConfig(process.env);
-const JUDGE_CODE = process.env["TTR_JUDGE_CODE"] ?? "placeholder-judge-code-change-me";
+// The same constant `playwright.config.ts` started the API server with, not
+// a `process.env` read: an ignored `.env` holding a different judge code
+// would otherwise make every creation request here a 401.
+const JUDGE_CODE = E2E_JUDGE_CODE;
 
 function readDisposableDbState(): DisposableDbState {
   return JSON.parse(

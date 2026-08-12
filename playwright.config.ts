@@ -13,6 +13,7 @@ import {
   DISPOSABLE_DB_STATE_FILE,
   type DisposableDbState,
 } from "./e2e/disposable-db-state.js";
+import { E2E_SECURITY_ENV } from "./e2e/security-fixtures.js";
 
 applyLocalDefaults();
 
@@ -93,6 +94,11 @@ export default defineConfig({
       stdout: "pipe",
       stderr: "pipe",
       env: {
+        // The journey's own throwaway secrets rather than whatever a
+        // developer's ignored `.env` happens to hold — CI has no `.env` at
+        // all, and `loadSecurityConfig` fails closed, so without these the
+        // server never starts there.
+        ...E2E_SECURITY_ENV,
         TTR_DATABASE_URL: disposableDbAppRuntimeUrl,
         // A real browser navigating to `webBaseUrl` presents that exact
         // origin on every same-origin request; `requireExactOrigin` does a
