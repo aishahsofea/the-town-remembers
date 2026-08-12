@@ -1,3 +1,9 @@
+# Each entry under here is a separate git worktree (a separate checkout with
+# its own history), not source this repository owns. `check-source-text.mjs`
+# and `eslint.config.js` already skip it for the same reason; without this,
+# a leftover worktree fails `pnpm validate` locally on files CI never sees.
+.claude/
+
 # Generated or vendored output
 node_modules/
 dist/
