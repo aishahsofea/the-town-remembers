@@ -72,15 +72,15 @@ function toLedgerRow(raw: RawRow): CreationLedgerRow {
   };
 }
 
-const SELECT_COLUMNS = `idempotency_key, request_hash, content_version, security_key_version,
-       status, processing_expires_at, town_id, response_status, response_payload`;
-
 async function readRow(
   transaction: TransactionContext,
   idempotencyKey: string,
 ): Promise<RawRow | undefined> {
   const rows = await transaction.query<RawRow>(
-    `SELECT ${SELECT_COLUMNS} FROM public.town_creation_requests WHERE idempotency_key = $1`,
+    `SELECT idempotency_key, request_hash, content_version, security_key_version, status,
+            processing_expires_at, town_id, response_status, response_payload
+       FROM public.town_creation_requests
+      WHERE idempotency_key = $1`,
     [idempotencyKey],
   );
   return rows[0];
@@ -91,7 +91,10 @@ async function readRowViaPool(
   idempotencyKey: string,
 ): Promise<RawRow | undefined> {
   const result = await pool.query<RawRow>(
-    `SELECT ${SELECT_COLUMNS} FROM public.town_creation_requests WHERE idempotency_key = $1`,
+    `SELECT idempotency_key, request_hash, content_version, security_key_version, status,
+            processing_expires_at, town_id, response_status, response_payload
+       FROM public.town_creation_requests
+      WHERE idempotency_key = $1`,
     [idempotencyKey],
   );
   return result.rows[0];

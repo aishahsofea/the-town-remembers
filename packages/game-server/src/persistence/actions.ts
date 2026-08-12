@@ -86,9 +86,6 @@ interface RawExistingRow {
   readonly response_payload: unknown;
 }
 
-const EXISTING_COLUMNS = `id, request_hash, status, processing_expires_at, retry_after_at,
-       attempt_count, response_status, response_payload`;
-
 function toExistingRow(raw: RawExistingRow): ExistingActionRow {
   return {
     id: raw.id,
@@ -109,7 +106,9 @@ async function readExisting(
   idempotencyKey: string,
 ): Promise<RawExistingRow | undefined> {
   const rows = await transaction.query<RawExistingRow>(
-    `SELECT ${EXISTING_COLUMNS} FROM public.player_actions
+    `SELECT id, request_hash, status, processing_expires_at, retry_after_at,
+            attempt_count, response_status, response_payload
+       FROM public.player_actions
       WHERE town_id = $1 AND player_id = $2 AND idempotency_key = $3`,
     [townId, playerId, idempotencyKey],
   );
@@ -123,7 +122,9 @@ async function readExistingViaPool(
   idempotencyKey: string,
 ): Promise<RawExistingRow | undefined> {
   const result = await pool.query<RawExistingRow>(
-    `SELECT ${EXISTING_COLUMNS} FROM public.player_actions
+    `SELECT id, request_hash, status, processing_expires_at, retry_after_at,
+            attempt_count, response_status, response_payload
+       FROM public.player_actions
       WHERE town_id = $1 AND player_id = $2 AND idempotency_key = $3`,
     [townId, playerId, idempotencyKey],
   );
@@ -317,7 +318,8 @@ async function exhaustProcessing(
             response_payload = $4, processing_token = NULL,
             processing_expires_at = NULL, completed_at = $5, updated_at = $5
       WHERE town_id = $1 AND id = $2 AND status = 'processing'
-      RETURNING ${EXISTING_COLUMNS}`,
+      RETURNING id, request_hash, status, processing_expires_at, retry_after_at,
+                attempt_count, response_status, response_payload`,
     [townId, actionId, EXHAUSTED_BODY.code, JSON.stringify(EXHAUSTED_BODY), now],
   );
   const row = updated[0];

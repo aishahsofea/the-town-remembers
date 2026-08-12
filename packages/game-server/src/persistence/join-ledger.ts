@@ -68,11 +68,6 @@ interface RawRow {
   readonly response_payload: unknown;
 }
 
-const SELECT_COLUMNS = `idempotency_key, request_hash, join_secret_hash, status,
-       processing_expires_at, player_id, initial_visit_id, replay_expires_at,
-       bootstrap_confirmed_at, replay_closed_at, replay_closed_reason,
-       session_issue_count, response_status, response_payload`;
-
 function toLedgerRow(raw: RawRow): JoinLedgerRow {
   return {
     idempotencyKey: raw.idempotency_key,
@@ -97,7 +92,11 @@ async function readRow(
   idempotencyKey: string,
 ): Promise<RawRow | undefined> {
   const rows = await transaction.query<RawRow>(
-    `SELECT ${SELECT_COLUMNS} FROM public.join_requests
+    `SELECT idempotency_key, request_hash, join_secret_hash, status,
+            processing_expires_at, player_id, initial_visit_id, replay_expires_at,
+            bootstrap_confirmed_at, replay_closed_at, replay_closed_reason,
+            session_issue_count, response_status, response_payload
+       FROM public.join_requests
       WHERE town_id = $1 AND idempotency_key = $2`,
     [townId, idempotencyKey],
   );
@@ -110,7 +109,11 @@ async function readRowViaPool(
   idempotencyKey: string,
 ): Promise<RawRow | undefined> {
   const result = await pool.query<RawRow>(
-    `SELECT ${SELECT_COLUMNS} FROM public.join_requests
+    `SELECT idempotency_key, request_hash, join_secret_hash, status,
+            processing_expires_at, player_id, initial_visit_id, replay_expires_at,
+            bootstrap_confirmed_at, replay_closed_at, replay_closed_reason,
+            session_issue_count, response_status, response_payload
+       FROM public.join_requests
       WHERE town_id = $1 AND idempotency_key = $2`,
     [townId, idempotencyKey],
   );
