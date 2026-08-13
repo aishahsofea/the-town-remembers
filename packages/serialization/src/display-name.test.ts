@@ -12,6 +12,7 @@ describe("normalizeDisplayNameForUniqueness", () => {
     ["ος", "οσ"],
     ["ᎠᎹᏂ", "ᎠᎹᏂ"],
     ["ꭰ", "Ꭰ"],
+    ["ᏸ", "Ᏸ"],
     ["ǰ", "ǰ"],
     ["ΐ", "ΐ"],
   ])("folds %s to %s", (input, expected) => {
