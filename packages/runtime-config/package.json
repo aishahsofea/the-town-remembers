@@ -36,6 +36,10 @@
     "./security": {
       "types": "./dist/security.d.ts",
       "import": "./dist/security.js"
+    },
+    "./model": {
+      "types": "./dist/model.d.ts",
+      "import": "./dist/model.js"
     }
   },
   "dependencies": {

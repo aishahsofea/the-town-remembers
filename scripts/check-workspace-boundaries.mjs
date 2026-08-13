@@ -75,6 +75,10 @@ export const RUNTIME_CONFIG_EXPORTS = Object.freeze({
     types: "./dist/security.d.ts",
     import: "./dist/security.js",
   },
+  "./model": {
+    types: "./dist/model.d.ts",
+    import: "./dist/model.js",
+  },
 });
 
 export const TEST_SUPPORT_EXPORTS = Object.freeze({
@@ -120,6 +124,11 @@ const TOWN_SEED = `${SCOPE}town-seed`;
 const RULES = `${SCOPE}rules`;
 const GAME_SERVER = `${SCOPE}game-server`;
 const GAME_API = `${SCOPE}game-api`;
+const AMBIENT_WORKER = `${SCOPE}ambient-worker`;
+// Not yet an EXPECTED_PACKAGES entry — scaffolded by P4-02. Referenced ahead
+// of that so the model-config import boundary can land in the same commit as
+// the configuration category itself (D4-C).
+const MODEL_RUNTIME = `${SCOPE}model-runtime`;
 
 export const EXPECTED_PACKAGES = Object.freeze([
   {
@@ -379,14 +388,29 @@ function validateRuntimeConfigImport(
   }
 
   const expectedByConsumer = new Map([
-    [GAME_API, [`${RUNTIME_CONFIG}/game`, `${RUNTIME_CONFIG}/security`]],
-    [GAME_SERVER, [`${RUNTIME_CONFIG}/game`, `${RUNTIME_CONFIG}/security`]],
-    [`${SCOPE}ambient-worker`, [`${RUNTIME_CONFIG}/ambient`]],
+    [
+      GAME_API,
+      [
+        `${RUNTIME_CONFIG}/game`,
+        `${RUNTIME_CONFIG}/security`,
+        `${RUNTIME_CONFIG}/model`,
+      ],
+    ],
+    [
+      GAME_SERVER,
+      [
+        `${RUNTIME_CONFIG}/game`,
+        `${RUNTIME_CONFIG}/security`,
+        `${RUNTIME_CONFIG}/model`,
+      ],
+    ],
+    [AMBIENT_WORKER, [`${RUNTIME_CONFIG}/ambient`, `${RUNTIME_CONFIG}/model`]],
     [`${SCOPE}recovery-worker`, [`${RUNTIME_CONFIG}/recovery`]],
     [`${SCOPE}infrastructure`, [`${RUNTIME_CONFIG}/deployment`]],
     [TEST_SUPPORT, [`${RUNTIME_CONFIG}/test`]],
     [DATABASE, [`${RUNTIME_CONFIG}/database`]],
     [DATABASE_ADMIN, [`${RUNTIME_CONFIG}/operator`]],
+    [MODEL_RUNTIME, [`${RUNTIME_CONFIG}/model`]],
   ]);
   const expected = expectedByConsumer.get(packageDefinition.name);
   if (expected && !expected.includes(specifier)) {
@@ -452,6 +476,33 @@ function validateSecurityConfigImport(
     violations,
     "forbidden_security_config_import",
     `${SECURITY_CONFIG_SPECIFIER} may only be imported by ${GAME_SERVER} or ${GAME_API}.`,
+    filePath,
+  );
+}
+
+const MODEL_CONFIG_SPECIFIER = `${RUNTIME_CONFIG}/model`;
+const MODEL_CONFIG_ALLOWED_PACKAGES = new Set([
+  MODEL_RUNTIME,
+  GAME_SERVER,
+  GAME_API,
+  AMBIENT_WORKER,
+]);
+
+/**
+ * `runtime-config/model` (`D4-C`) carries no credential, but it still names
+ * the only packages that call a model. Only they may import it — most
+ * importantly `apps/web` and `packages/rules` have no import path to it even
+ * by accident, matching `D4-A`'s "no model dependency in the browser or the
+ * pure rules layer" boundary.
+ */
+function validateModelConfigImport(packageDefinition, specifier, violations, filePath) {
+  if (specifier !== MODEL_CONFIG_SPECIFIER) return;
+  if (MODEL_CONFIG_ALLOWED_PACKAGES.has(packageDefinition.name)) return;
+
+  addViolation(
+    violations,
+    "forbidden_model_config_import",
+    `${MODEL_CONFIG_SPECIFIER} may only be imported by ${MODEL_RUNTIME}, ${GAME_SERVER}, ${GAME_API}, or ${AMBIENT_WORKER}.`,
     filePath,
   );
 }
@@ -607,6 +658,7 @@ function validateSourceImports(
         violations,
         sourceFile,
       );
+      validateModelConfigImport(packageDefinition, specifier, violations, sourceFile);
     }
   }
 }

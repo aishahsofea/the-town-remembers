@@ -7,6 +7,7 @@ import { loadAmbientConfig } from "./ambient.js";
 import { loadDeploymentConfig } from "./deployment.js";
 import { DEFAULT_API_PORT, loadGameConfig } from "./game.js";
 import { loadDatabaseConfig, readSslMode } from "./database.js";
+import { loadModelConfig } from "./model.js";
 import { loadOperatorConfig } from "./operator.js";
 import { loadRecoveryConfig } from "./recovery.js";
 import {
@@ -385,6 +386,79 @@ describe("security configuration", () => {
     ]) {
       expect(SECRET_VARIABLE_PATTERN.test(`VITE_${variable}`)).toBe(true);
     }
+  });
+});
+
+describe("model-runtime configuration", () => {
+  const VALID = {
+    TTR_AWS_REGION: "us-east-1",
+    TTR_BEDROCK_HAIKU_MODEL_ID: "anthropic.claude-haiku-4-5-20251001-v1:0",
+    TTR_BEDROCK_SONNET_MODEL_ID: "anthropic.claude-sonnet-5-20260101-v1:0",
+    TTR_BEDROCK_TITAN_MODEL_ID: "amazon.titan-embed-text-v2:0",
+    TTR_MODEL_PRICE_CATALOG_VERSION: "bedrock-prices/2026-08-01",
+  };
+
+  it("reads a complete environment with no inference profile configured", () => {
+    expect(loadModelConfig(VALID)).toStrictEqual({
+      region: "us-east-1",
+      haikuModelId: "anthropic.claude-haiku-4-5-20251001-v1:0",
+      sonnetModelId: "anthropic.claude-sonnet-5-20260101-v1:0",
+      titanModelId: "amazon.titan-embed-text-v2:0",
+      haikuInferenceProfileArn: undefined,
+      sonnetInferenceProfileArn: undefined,
+      priceCatalogVersion: "bedrock-prices/2026-08-01",
+      reducedCostOverride: false,
+      liveTestsEnabled: false,
+    });
+  });
+
+  it("reads optional inference profile ARNs and the two opt-in flags", () => {
+    const config = loadModelConfig({
+      ...VALID,
+      TTR_BEDROCK_HAIKU_INFERENCE_PROFILE_ARN:
+        "arn:aws:bedrock:us-east-1:1:profile/haiku",
+      TTR_BEDROCK_SONNET_INFERENCE_PROFILE_ARN:
+        "arn:aws:bedrock:us-east-1:1:profile/sonnet",
+      TTR_MODEL_REDUCED_COST_OVERRIDE: "1",
+      TTR_MODEL_LIVE_TESTS: "1",
+    });
+    expect(config.haikuInferenceProfileArn).toBe(
+      "arn:aws:bedrock:us-east-1:1:profile/haiku",
+    );
+    expect(config.sonnetInferenceProfileArn).toBe(
+      "arn:aws:bedrock:us-east-1:1:profile/sonnet",
+    );
+    expect(config.reducedCostOverride).toBe(true);
+    expect(config.liveTestsEnabled).toBe(true);
+  });
+
+  it("fails closed when a required variable is absent", () => {
+    const error = expectConfigurationError(() =>
+      loadModelConfig({ ...VALID, TTR_BEDROCK_SONNET_MODEL_ID: undefined }),
+    );
+    expect(error.category).toBe("model-runtime");
+    expect(error.issues).toStrictEqual([
+      {
+        variable: "TTR_BEDROCK_SONNET_MODEL_ID",
+        category: "model-runtime",
+        code: "missing",
+      },
+    ]);
+  });
+
+  it.each(["TTR_MODEL_REDUCED_COST_OVERRIDE", "TTR_MODEL_LIVE_TESTS"])(
+    "rejects a non-flag value for %s",
+    (variable) => {
+      const error = expectConfigurationError(() =>
+        loadModelConfig({ ...VALID, [variable]: "yes" }),
+      );
+      expect(error.issues[0]?.variable).toBe(variable);
+    },
+  );
+
+  it("carries no AWS access key or secret in its shape", () => {
+    expect(Object.keys(loadModelConfig(VALID))).not.toContain("accessKeyId");
+    expect(Object.keys(loadModelConfig(VALID))).not.toContain("secretAccessKey");
   });
 });
 
