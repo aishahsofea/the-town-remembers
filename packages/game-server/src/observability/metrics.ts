@@ -18,8 +18,15 @@
  * threading a value through an `as`-widened type instead of a real one.
  */
 
-import type { RateLimitBucketKind } from "@the-town-remembers/database";
+import {
+  AGENT_RUN_OUTCOMES,
+  AGENT_RUN_PURPOSES,
+  type AgentRunOutcome,
+  type AgentRunPurpose,
+  type RateLimitBucketKind,
+} from "@the-town-remembers/database";
 import type { ActionKind } from "@the-town-remembers/http-contracts";
+import { COST_MODES, type CostMode } from "@the-town-remembers/model-runtime";
 
 import { logEvent, type LoggableRouteTemplate } from "./events.js";
 
@@ -82,4 +89,38 @@ export function recordRateLimitDecision(params: {
 /** Counted separately from the general processing metric: this is the terminal-failure case docs/007 bounds by rate, not by latency. */
 export function recordActionProcessingExhausted(actionKind: ActionKind): void {
   logEvent({ event: "metric_action_processing_exhausted", actionKind });
+}
+
+/** One `model_cost_reservations` admission decision, aggregatable into an admit/reject rate per purpose and cost mode — never a dollar amount (`P4-05` acceptance 8). */
+export function recordModelCostAdmission(params: {
+  readonly purpose: AgentRunPurpose;
+  readonly admitted: boolean;
+  readonly mode: CostMode;
+}): void {
+  assertMember(AGENT_RUN_PURPOSES, params.purpose, "purpose");
+  assertMember(COST_MODES, params.mode, "mode");
+  logEvent({ event: "metric_model_cost_admission", ...params });
+}
+
+/** One resolved model call, aggregatable into latency and cost distributions per purpose and outcome. */
+export function recordModelRun(params: {
+  readonly purpose: AgentRunPurpose;
+  readonly outcome: AgentRunOutcome;
+  readonly latencyMs: number;
+  readonly estimatedCostMicroUsd: number;
+}): void {
+  assertMember(AGENT_RUN_PURPOSES, params.purpose, "purpose");
+  assertMember(AGENT_RUN_OUTCOMES, params.outcome, "outcome");
+  logEvent({ event: "metric_model_run", ...params });
+}
+
+const RESERVATION_TERMINAL_STATUSES = ["settled", "released"] as const;
+
+/** One reservation reaching a terminal state, aggregatable into a clamp rate — how often real cost exceeds the worst-case estimate that reserved for it. */
+export function recordModelCostSettlement(params: {
+  readonly status: "settled" | "released";
+  readonly clamped: boolean;
+}): void {
+  assertMember(RESERVATION_TERMINAL_STATUSES, params.status, "status");
+  logEvent({ event: "metric_model_cost_settlement", ...params });
 }

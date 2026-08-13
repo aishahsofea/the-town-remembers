@@ -75,3 +75,31 @@ export function microUsdToDecimalString(microUsd: number): string {
   const fractionalPart = String(absolute % 1_000_000).padStart(6, "0");
   return `${sign}${wholePart}.${fractionalPart}`;
 }
+
+export class MalformedDecimalStringError extends Error {
+  constructor(decimal: string) {
+    super(`"${decimal}" is not a DECIMAL(12,6)-shaped string.`);
+    this.name = "MalformedDecimalStringError";
+  }
+}
+
+const DECIMAL_STRING_PATTERN = /^(-?)(\d+)\.(\d{1,6})$/;
+
+/**
+ * The inverse of {@link microUsdToDecimalString} — admission re-reads
+ * `SUM(...)` over already-persisted `DECIMAL(12,6)` columns (`pg` returns
+ * `DECIMAL` as text) and needs it back as an exact integer to add to a
+ * worst-case reservation. Parsed digit-by-digit, never through
+ * `Number(decimal) * 1_000_000`, which would round-trip a large sum through
+ * binary floating point right before a cost-ceiling comparison.
+ */
+export function decimalStringToMicroUsd(decimal: string): number {
+  const match = DECIMAL_STRING_PATTERN.exec(decimal);
+  if (!match) {
+    throw new MalformedDecimalStringError(decimal);
+  }
+  const [, sign, wholePart, fractionalPart] = match;
+  const microUsd =
+    Number(wholePart) * 1_000_000 + Number(fractionalPart!.padEnd(6, "0"));
+  return sign === "-" ? -microUsd : microUsd;
+}

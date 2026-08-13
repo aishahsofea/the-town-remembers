@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   clampToReservation,
+  decimalStringToMicroUsd,
   microUsdToDecimalString,
   settledMicroUsd,
   worstCaseMicroUsd,
@@ -110,5 +111,35 @@ describe("microUsdToDecimalString", () => {
 
   it("formats a negative amount with a leading sign", () => {
     expect(microUsdToDecimalString(-1_500_000)).toBe("-1.500000");
+  });
+});
+
+describe("decimalStringToMicroUsd", () => {
+  it.each([
+    ["0.000000", 0],
+    ["0.000001", 1],
+    ["1.000000", 1_000_000],
+    ["1.234567", 1_234_567],
+    ["10.350000", 10_350_000],
+    ["-1.500000", -1_500_000],
+  ])("parses %s as %i micro-USD", (decimal, expected) => {
+    expect(decimalStringToMicroUsd(decimal)).toBe(expected);
+  });
+
+  it("round-trips every value microUsdToDecimalString can produce", () => {
+    for (const microUsd of [0, 1, 999_999, 1_000_000, 10_350_000, 123_456_789]) {
+      expect(decimalStringToMicroUsd(microUsdToDecimalString(microUsd))).toBe(microUsd);
+    }
+  });
+
+  it("pads a short fractional part, matching CockroachDB's own trimmed-zero text output", () => {
+    expect(decimalStringToMicroUsd("1.5")).toBe(1_500_000);
+    expect(decimalStringToMicroUsd("0.2")).toBe(200_000);
+  });
+
+  it("throws on a non-decimal string, including more than six fractional digits", () => {
+    expect(() => decimalStringToMicroUsd("not-a-decimal")).toThrow();
+    expect(() => decimalStringToMicroUsd("1.2345678")).toThrow();
+    expect(() => decimalStringToMicroUsd("")).toThrow();
   });
 });

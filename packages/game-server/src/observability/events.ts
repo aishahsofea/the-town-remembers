@@ -14,12 +14,18 @@
 
 import process from "node:process";
 
-import type { RateLimitBucketKind, Uuid } from "@the-town-remembers/database";
+import type {
+  AgentRunOutcome,
+  AgentRunPurpose,
+  RateLimitBucketKind,
+  Uuid,
+} from "@the-town-remembers/database";
 import type {
   ActionKind,
   RouteTemplate,
   UNMATCHED_ROUTE_TEMPLATE,
 } from "@the-town-remembers/http-contracts";
+import type { CostMode, PricingModelKey } from "@the-town-remembers/model-runtime";
 
 export type LoggableRouteTemplate = RouteTemplate | typeof UNMATCHED_ROUTE_TEMPLATE;
 
@@ -93,6 +99,47 @@ export interface RateLimitDecisionLogEvent {
 }
 
 /**
+ * One `model_cost_reservations` admission decision (`P4-05`). Never carries a
+ * dollar amount — `mode` is the cost-ladder rung the projected total landed
+ * on, which is enough to alert and dashboard from without exposing a figure
+ * in a channel `test-support/redaction.ts` does not itself redact.
+ */
+export interface ModelCostAdmissionLogEvent {
+  readonly event: "model_cost_admission";
+  readonly purpose: AgentRunPurpose;
+  readonly attemptOrdinal: number;
+  readonly admitted: boolean;
+  readonly mode: CostMode;
+}
+
+/**
+ * A reservation's terminal outcome (`P4-05`): settled (with `clamped` true
+ * when the real cost exceeded the reservation and was capped rather than
+ * rejected at the database,
+ * `ck_model_cost_reservations__settlement_within_reservation`) or released
+ * (a proven non-call). Never the reservation's own dollar figures — `clamped`
+ * is enough to alert on without a figure in a channel
+ * `test-support/redaction.ts` does not itself redact.
+ */
+export interface ModelCostSettlementLogEvent {
+  readonly event: "model_cost_settlement";
+  readonly reservationId: Uuid;
+  readonly status: "settled" | "released";
+  readonly clamped: boolean;
+}
+
+/** One `agent_runs` row successfully recorded (`P4-05`) — never the prompt, the model's raw output, or player-authored text, only identity, versions, and measures. */
+export interface ModelRunRecordedLogEvent {
+  readonly event: "model_run_recorded";
+  readonly runId: Uuid;
+  readonly purpose: AgentRunPurpose;
+  readonly model: PricingModelKey;
+  readonly outcome: AgentRunOutcome;
+  readonly latencyMs: number;
+  readonly estimatedCostMicroUsd: number;
+}
+
+/**
  * The four `metrics.ts` (`P3-18`) event kinds. Defined here, not in
  * `metrics.ts`, so `metrics.ts` can import both the types and `logEvent`
  * from this one module without a circular dependency back the other way.
@@ -124,14 +171,41 @@ export interface ActionProcessingExhaustedMetricLogEvent {
   readonly actionKind: ActionKind;
 }
 
+export interface ModelCostAdmissionMetricLogEvent {
+  readonly event: "metric_model_cost_admission";
+  readonly purpose: AgentRunPurpose;
+  readonly admitted: boolean;
+  readonly mode: CostMode;
+}
+
+export interface ModelRunMetricLogEvent {
+  readonly event: "metric_model_run";
+  readonly purpose: AgentRunPurpose;
+  readonly outcome: AgentRunOutcome;
+  readonly latencyMs: number;
+  readonly estimatedCostMicroUsd: number;
+}
+
+export interface ModelCostSettlementMetricLogEvent {
+  readonly event: "metric_model_cost_settlement";
+  readonly status: "settled" | "released";
+  readonly clamped: boolean;
+}
+
 export type GameServerLogEvent =
   | UnexpectedErrorLogEvent
   | ActionLifecycleLogEvent
   | RateLimitDecisionLogEvent
+  | ModelCostAdmissionLogEvent
+  | ModelCostSettlementLogEvent
+  | ModelRunRecordedLogEvent
   | HttpLatencyMetricLogEvent
   | ActionProcessingMetricLogEvent
   | RateLimitMetricLogEvent
-  | ActionProcessingExhaustedMetricLogEvent;
+  | ActionProcessingExhaustedMetricLogEvent
+  | ModelCostAdmissionMetricLogEvent
+  | ModelRunMetricLogEvent
+  | ModelCostSettlementMetricLogEvent;
 
 /**
  * Writes exactly one JSON object per line directly to stdout, matching

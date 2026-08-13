@@ -265,6 +265,7 @@ export const EXPECTED_PACKAGES = Object.freeze([
       CONTENT,
       DATABASE,
       HTTP_CONTRACTS,
+      MODEL_RUNTIME,
       RULES,
       RUNTIME_CONFIG,
       SERIALIZATION,

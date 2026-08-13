@@ -80,8 +80,17 @@ describe("persistence SQL safety (P3-17 acceptance 1)", () => {
  *  - `rate-limits.ts`: `api_rate_limits`' primary key is
  *    `(scope_kind, scope_key, bucket_kind)`; a per-town scope folds the town
  *    into the `scope_key` hash itself (`rateScopeKey`), not a column.
+ *  - `model-cost.ts`: `model_cost_reservations` is migration 0008's one
+ *    deliberately global table — a monthly spend ceiling cannot be enforced
+ *    per town, `town_id` is nullable (`NULL` for non-game operations like
+ *    prewarm), and admission/settlement/release all scope by `billing_month`
+ *    or the reservation's own `id` instead (`P4-05`, `D4-M`).
  */
-const FILE_EXEMPT_FROM_TOWN_ID = new Set(["creation-ledger.ts", "rate-limits.ts"]);
+const FILE_EXEMPT_FROM_TOWN_ID = new Set([
+  "creation-ledger.ts",
+  "rate-limits.ts",
+  "model-cost.ts",
+]);
 
 /**
  * A statement reads or writes `public.towns`' own row (by that table's own

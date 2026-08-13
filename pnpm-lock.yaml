@@ -249,6 +249,9 @@ importers:
       '@the-town-remembers/http-contracts':
         specifier: workspace:*
         version: link:../http-contracts
+      '@the-town-remembers/model-runtime':
+        specifier: workspace:*
+        version: link:../model-runtime
       '@the-town-remembers/rules':
         specifier: workspace:*
         version: link:../rules
