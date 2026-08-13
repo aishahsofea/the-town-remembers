@@ -48,6 +48,7 @@ export const PROBLEM_CODES = {
   joinReplayClosed: "JOIN_REPLAY_CLOSED",
   joinReplayExpired: "JOIN_REPLAY_EXPIRED",
   joinReplayExhausted: "JOIN_REPLAY_EXHAUSTED",
+  rateLimited: "RATE_LIMITED",
 } as const;
 
 export type ProblemCode = (typeof PROBLEM_CODES)[keyof typeof PROBLEM_CODES];

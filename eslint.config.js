@@ -22,6 +22,9 @@ export default tseslint.config(
       "**/playwright-report/**",
       "**/test-results/**",
       "**/node_modules/**",
+      // Each entry under here is a separate git worktree (a separate
+      // checkout with its own history), not source this repository owns.
+      ".claude/**",
     ],
   },
   js.configs.recommended,
@@ -39,6 +42,7 @@ export default tseslint.config(
           "./infrastructure/tsconfig.json",
           "./tsconfig.tests.node.json",
           "./tsconfig.tests.web.json",
+          "./tsconfig.tests.e2e.json",
         ],
         tsconfigRootDir: import.meta.dirname,
       },

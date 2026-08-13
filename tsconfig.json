@@ -33,6 +33,9 @@
       "path": "./packages/town-seed"
     },
     {
+      "path": "./packages/game-server"
+    },
+    {
       "path": "./packages/test-support"
     },
     {

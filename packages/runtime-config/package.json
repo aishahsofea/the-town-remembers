@@ -32,6 +32,10 @@
     "./operator": {
       "types": "./dist/operator.d.ts",
       "import": "./dist/operator.js"
+    },
+    "./security": {
+      "types": "./dist/security.d.ts",
+      "import": "./dist/security.js"
     }
   },
   "dependencies": {

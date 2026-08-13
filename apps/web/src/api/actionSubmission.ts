@@ -1,0 +1,488 @@
+/**
+ * The recovery-aware action submission hook (Decision 011 §"Pending actions
+ * and retry recovery"; `P3-15`). Wraps `journal/machine.ts`'s pure reducer
+ * with the actual journal (IndexedDB), `BroadcastChannel` coordination, and
+ * timing: a 1-second tick drives the 35s/70s/`ACTION_CONFLICT` transitions,
+ * `online`/`offline` window events drive the offline row, and every
+ * automatic resend reuses the exact same idempotency key the journal
+ * already holds.
+ *
+ * The returned shape's first four fields (`pending`, `lastResult`, `error`,
+ * `submit`) match `P3-14`'s original minimal hook exactly, so `Map`/
+ * `Location` need no changes — this really is a wrap, not a replacement.
+ */
+
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import type {
+  ActionRequest,
+  CompletedActionResponse,
+} from "@the-town-remembers/http-contracts";
+
+import {
+  pollAction,
+  postAction,
+  type ActionAttemptOutcome,
+} from "./actionTransport.js";
+import {
+  deleteJournalEntry,
+  readJournalEntry,
+  writeJournalEntry,
+} from "../journal/db.js";
+import { openJournalChannel } from "../journal/channel.js";
+import {
+  INITIAL_RECOVERY_STATE,
+  reduceRecovery,
+  type RecoveryPhase,
+  type RecoveryState,
+} from "../journal/machine.js";
+
+const TICK_MS = 1_000;
+
+export interface UseActionSubmissionResult {
+  readonly pending: boolean;
+  readonly lastResult: CompletedActionResponse | undefined;
+  readonly error: string | undefined;
+  readonly submit: (request: ActionRequest) => Promise<void>;
+  readonly recoveryPhase: RecoveryPhase | undefined;
+  readonly rateLimitedRetryAfterSeconds: number | undefined;
+  /** True while another same-origin tab has a pending action for this player. */
+  readonly readOnlyPending: boolean;
+  readonly refreshPending: boolean;
+  readonly retrySafely: () => void;
+  readonly tryAsNewAction: () => void;
+}
+
+const REASON_MESSAGES: Partial<Record<string, string>> = {
+  IDEMPOTENCY_KEY_REUSED:
+    "This browser lost track of the action. Refresh the town before trying again.",
+  MODEL_UNAVAILABLE_RETRY_ACTION:
+    "The town could not interpret that claim. Try again when ready.",
+  ACTION_PROCESSING_EXHAUSTED:
+    "The town could not finish that action. Nothing changed.",
+  ACTION_IN_PROGRESS: "Another action from this browser is still being saved.",
+  UNAUTHORIZED:
+    "This browser no longer has its town pass. Reopen the invite link to join again.",
+};
+
+export function useActionSubmission(
+  townId: string,
+  playerId: string,
+  onSettled: () => Promise<boolean>,
+): UseActionSubmissionResult {
+  const [recovery, setRecovery] = useState<RecoveryState | undefined>(undefined);
+  const [readOnlyPending, setReadOnlyPending] = useState(false);
+  const [refreshPending, setRefreshPending] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
+
+  const startedAtRef = useRef(0);
+  const requestRef = useRef<
+    { idempotencyKey: string; request: ActionRequest } | undefined
+  >(undefined);
+  const channelRef = useRef<ReturnType<typeof openJournalChannel>>(undefined);
+  const submissionActiveRef = useRef(false);
+  const readOnlyPendingRef = useRef(false);
+  const waitingForBlockingActionRef = useRef(false);
+  const journalClearRef = useRef<Promise<void> | undefined>(undefined);
+  const recoveryAttemptRef = useRef(false);
+  const freshStartRef = useRef(false);
+
+  const elapsed = useCallback(() => Date.now() - startedAtRef.current, []);
+
+  const finalize = useCallback(async () => {
+    setRefreshPending(true);
+    const refreshed = await onSettled();
+    if (!refreshed) {
+      setErrorMessage("Your action was saved, but the town view could not refresh.");
+      return;
+    }
+    await deleteJournalEntry(townId, playerId);
+    requestRef.current = undefined;
+    submissionActiveRef.current = false;
+    setRefreshPending(false);
+    setErrorMessage(undefined);
+    channelRef.current?.post({ type: "cleared", townId, playerId });
+  }, [onSettled, townId, playerId]);
+
+  const handleOutcome = useCallback(
+    (outcome: ActionAttemptOutcome) => {
+      const current = requestRef.current;
+      if (!current) return;
+
+      switch (outcome.kind) {
+        case "completed": {
+          if (waitingForBlockingActionRef.current) {
+            waitingForBlockingActionRef.current = false;
+            const reason = "ACTION_IN_PROGRESS";
+            const { state } = reduceRecovery(
+              recovery ?? INITIAL_RECOVERY_STATE,
+              { type: "requiresNewAction", reason },
+              elapsed(),
+            );
+            setRecovery(state);
+            setErrorMessage(REASON_MESSAGES[reason]);
+            journalClearRef.current = deleteJournalEntry(townId, playerId);
+            channelRef.current?.post({ type: "cleared", townId, playerId });
+            return;
+          }
+          const { state } = reduceRecovery(
+            recovery ?? INITIAL_RECOVERY_STATE,
+            { type: "completed", result: outcome.result },
+            elapsed(),
+          );
+          setRecovery(state);
+          void finalize();
+          return;
+        }
+        case "processing": {
+          const { state } = reduceRecovery(
+            recovery ?? INITIAL_RECOVERY_STATE,
+            {
+              type: "processing",
+              actionId: outcome.actionId,
+              pollAfterMs: outcome.pollAfterMs,
+            },
+            elapsed(),
+          );
+          setRecovery(state);
+          if (waitingForBlockingActionRef.current) {
+            setTimeout(() => {
+              void pollAction(townId, outcome.actionId).then(handleOutcomeRef.current);
+            }, outcome.pollAfterMs);
+            return;
+          }
+          void writeJournalEntry({
+            townId,
+            playerId,
+            idempotencyKey: current.idempotencyKey,
+            requestBody: current.request,
+            createdAt: new Date(startedAtRef.current).toISOString(),
+            actionId: outcome.actionId,
+            pollAfterMs: outcome.pollAfterMs,
+            takeoverPostSent: false,
+          });
+          setTimeout(() => {
+            void pollAction(townId, outcome.actionId).then(handleOutcomeRef.current);
+          }, outcome.pollAfterMs);
+          return;
+        }
+        case "conflict": {
+          const { state, shouldResend } = reduceRecovery(
+            recovery ?? INITIAL_RECOVERY_STATE,
+            { type: "actionConflict" },
+            elapsed(),
+          );
+          setRecovery(state);
+          if (shouldResend) {
+            setTimeout(() => {
+              void postAction(townId, current.idempotencyKey, current.request).then(
+                handleOutcomeRef.current,
+              );
+            }, 1_000);
+          }
+          return;
+        }
+        case "rateLimited": {
+          const { state } = reduceRecovery(
+            recovery ?? INITIAL_RECOVERY_STATE,
+            { type: "rateLimited", retryAfterSeconds: outcome.retryAfterSeconds },
+            elapsed(),
+          );
+          setRecovery(state);
+          return;
+        }
+        case "actionInProgress": {
+          if (outcome.blockingActionId) {
+            waitingForBlockingActionRef.current = true;
+            const { state } = reduceRecovery(
+              recovery ?? INITIAL_RECOVERY_STATE,
+              {
+                type: "processing",
+                actionId: outcome.blockingActionId,
+                pollAfterMs: 2_000,
+              },
+              elapsed(),
+            );
+            setRecovery(state);
+            setErrorMessage(REASON_MESSAGES["ACTION_IN_PROGRESS"]);
+            setTimeout(() => {
+              void pollAction(townId, outcome.blockingActionId!).then(
+                handleOutcomeRef.current,
+              );
+            }, 2_000);
+            return;
+          }
+          const reason = "ACTION_IN_PROGRESS";
+          const { state } = reduceRecovery(
+            recovery ?? INITIAL_RECOVERY_STATE,
+            { type: "requiresNewAction", reason },
+            elapsed(),
+          );
+          setRecovery(state);
+          setErrorMessage(REASON_MESSAGES[reason]);
+          journalClearRef.current = deleteJournalEntry(townId, playerId);
+          channelRef.current?.post({ type: "cleared", townId, playerId });
+          return;
+        }
+        case "requiresNewAction": {
+          const reason = outcome.reason;
+          const { state } = reduceRecovery(
+            recovery ?? INITIAL_RECOVERY_STATE,
+            { type: "requiresNewAction", reason },
+            elapsed(),
+          );
+          setRecovery(state);
+          setErrorMessage(
+            REASON_MESSAGES[reason] ?? "Something went wrong. Try again.",
+          );
+          journalClearRef.current = deleteJournalEntry(townId, playerId);
+          channelRef.current?.post({ type: "cleared", townId, playerId });
+          return;
+        }
+        case "offline": {
+          const { state } = reduceRecovery(
+            recovery ?? INITIAL_RECOVERY_STATE,
+            { type: "offline" },
+            elapsed(),
+          );
+          setRecovery(state);
+          return;
+        }
+      }
+    },
+    [recovery, elapsed, finalize, townId, playerId],
+  );
+
+  // `handleOutcome` closes over `recovery`, which changes every dispatch —
+  // callbacks scheduled by `setTimeout` need the *current* handler, not the
+  // one captured when they were scheduled.
+  const handleOutcomeRef = useRef(handleOutcome);
+  useEffect(() => {
+    handleOutcomeRef.current = handleOutcome;
+  }, [handleOutcome]);
+
+  // Resume a journaled action left behind by a reload.
+  useEffect(() => {
+    let active = true;
+    void readJournalEntry(townId, playerId).then((entry) => {
+      if (!active || !entry) return;
+      startedAtRef.current = new Date(entry.createdAt).getTime();
+      requestRef.current = {
+        idempotencyKey: entry.idempotencyKey,
+        request: entry.requestBody,
+      };
+      submissionActiveRef.current = true;
+      setRecovery(INITIAL_RECOVERY_STATE);
+      if (entry.actionId) {
+        void pollAction(townId, entry.actionId).then((outcome) =>
+          handleOutcomeRef.current(outcome),
+        );
+      } else {
+        void postAction(townId, entry.idempotencyKey, entry.requestBody).then(
+          (outcome) => handleOutcomeRef.current(outcome),
+        );
+      }
+    });
+    return () => {
+      active = false;
+    };
+    // Runs once per (townId, playerId) pair; `handleOutcomeRef` is a stable ref.
+  }, [townId, playerId]);
+
+  // The 1-second tick driving 35s/70s recovery transitions.
+  useEffect(() => {
+    if (!recovery) return;
+    const terminal: readonly RecoveryPhase[] = [
+      "completed",
+      "requires_new_action",
+      "manual_recovery",
+      "conflict_manual",
+      "rate_limited",
+    ];
+    if (terminal.includes(recovery.phase)) return;
+
+    const interval = setInterval(() => {
+      const { state, shouldResend } = reduceRecovery(
+        recovery,
+        { type: "tick" },
+        elapsed(),
+      );
+      setRecovery(state);
+      const current = requestRef.current;
+      if (shouldResend && current) {
+        void postAction(townId, current.idempotencyKey, current.request).then(
+          handleOutcomeRef.current,
+        );
+      }
+    }, TICK_MS);
+    return () => clearInterval(interval);
+  }, [recovery, elapsed, townId]);
+
+  useEffect(() => {
+    if (
+      recovery?.phase !== "rate_limited" ||
+      recovery.rateLimitedRetryAfterSeconds === undefined ||
+      recovery.rateLimitedRetryAfterSeconds <= 0
+    ) {
+      return;
+    }
+    const timeout = setTimeout(() => {
+      setRecovery((previous) =>
+        previous?.phase === "rate_limited" &&
+        previous.rateLimitedRetryAfterSeconds !== undefined
+          ? {
+              ...previous,
+              rateLimitedRetryAfterSeconds: Math.max(
+                0,
+                previous.rateLimitedRetryAfterSeconds - 1,
+              ),
+            }
+          : previous,
+      );
+    }, 1_000);
+    return () => clearTimeout(timeout);
+  }, [recovery]);
+
+  // Offline/online.
+  useEffect(() => {
+    function onOffline() {
+      setRecovery((prev) =>
+        prev ? reduceRecovery(prev, { type: "offline" }, elapsed()).state : prev,
+      );
+    }
+    function onOnline() {
+      setRecovery((prev) => {
+        if (!prev) return prev;
+        const next = reduceRecovery(prev, { type: "online" }, elapsed()).state;
+        const current = requestRef.current;
+        if (current) {
+          if (next.actionId) {
+            void pollAction(townId, next.actionId).then(handleOutcomeRef.current);
+          } else {
+            void postAction(townId, current.idempotencyKey, current.request).then(
+              handleOutcomeRef.current,
+            );
+          }
+        }
+        return next;
+      });
+    }
+    window.addEventListener("offline", onOffline);
+    window.addEventListener("online", onOnline);
+    return () => {
+      window.removeEventListener("offline", onOffline);
+      window.removeEventListener("online", onOnline);
+    };
+  }, [elapsed, townId]);
+
+  // A second tab's pending action puts this tab into read-only pending mode.
+  useEffect(() => {
+    const channel = openJournalChannel();
+    channelRef.current = channel;
+    if (!channel) return;
+    const unsubscribe = channel.subscribe((message) => {
+      if (message.townId !== townId || message.playerId !== playerId) return;
+      const next = message.type === "pending";
+      readOnlyPendingRef.current = next;
+      setReadOnlyPending(next);
+    });
+    return () => {
+      unsubscribe();
+      channel.close();
+      if (channelRef.current === channel) channelRef.current = undefined;
+    };
+  }, [townId, playerId]);
+
+  const startSubmission = useCallback(
+    async (request: ActionRequest) => {
+      const idempotencyKey = crypto.randomUUID();
+      submissionActiveRef.current = true;
+      startedAtRef.current = Date.now();
+      requestRef.current = { idempotencyKey, request };
+      setErrorMessage(undefined);
+      setRecovery(INITIAL_RECOVERY_STATE);
+
+      await writeJournalEntry({
+        townId,
+        playerId,
+        idempotencyKey,
+        requestBody: request,
+        createdAt: new Date(startedAtRef.current).toISOString(),
+        pollAfterMs: 2_000,
+        takeoverPostSent: false,
+      });
+      channelRef.current?.post({ type: "pending", townId, playerId });
+
+      const outcome = await postAction(townId, idempotencyKey, request);
+      handleOutcomeRef.current(outcome);
+    },
+    [townId, playerId],
+  );
+
+  const submit = useCallback(
+    async (request: ActionRequest) => {
+      if (submissionActiveRef.current || readOnlyPendingRef.current) return;
+      await startSubmission(request);
+    },
+    [startSubmission],
+  );
+
+  const retrySafely = useCallback(() => {
+    if (recoveryAttemptRef.current) return;
+    if (
+      recovery?.phase === "rate_limited" &&
+      (recovery.rateLimitedRetryAfterSeconds ?? 0) > 0
+    ) {
+      return;
+    }
+    recoveryAttemptRef.current = true;
+    void (async () => {
+      try {
+        if (recovery?.phase === "completed") {
+          await finalize();
+          return;
+        }
+        const current = requestRef.current;
+        if (!current) return;
+        setRecovery((previous) =>
+          previous ? { ...previous, phase: "submitting" } : INITIAL_RECOVERY_STATE,
+        );
+        handleOutcomeRef.current(
+          await postAction(townId, current.idempotencyKey, current.request),
+        );
+      } finally {
+        recoveryAttemptRef.current = false;
+      }
+    })();
+  }, [finalize, recovery, townId]);
+
+  const tryAsNewAction = useCallback(() => {
+    if (freshStartRef.current) return;
+    const request = requestRef.current?.request;
+    if (!request) return;
+    freshStartRef.current = true;
+    void (async () => {
+      try {
+        await journalClearRef.current;
+        submissionActiveRef.current = false;
+        await startSubmission(request);
+      } finally {
+        freshStartRef.current = false;
+      }
+    })();
+  }, [startSubmission]);
+
+  return {
+    pending:
+      refreshPending || (recovery !== undefined && recovery.phase !== "completed"),
+    lastResult: recovery?.result,
+    error: errorMessage,
+    submit,
+    recoveryPhase: recovery?.phase,
+    rateLimitedRetryAfterSeconds: recovery?.rateLimitedRetryAfterSeconds,
+    readOnlyPending,
+    refreshPending,
+    retrySafely,
+    tryAsNewAction,
+  };
+}

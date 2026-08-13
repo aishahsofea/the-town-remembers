@@ -176,6 +176,40 @@ test("rejects runtime configuration imported through the wrong role", () => {
   assertViolation(rootDir, "invalid_runtime_config_import");
 });
 
+test("rejects security configuration imported outside game-server and game-api", () => {
+  const rootDir = createValidFixture();
+  mutateManifest(rootDir, "infrastructure", (manifest) => {
+    manifest.dependencies = {
+      "@the-town-remembers/runtime-config": "workspace:*",
+    };
+  });
+  const sourcePath = path.join(rootDir, "infrastructure/src/config.ts");
+  fs.mkdirSync(path.dirname(sourcePath), { recursive: true });
+  fs.writeFileSync(
+    sourcePath,
+    'import "@the-town-remembers/runtime-config/security";\n',
+  );
+
+  assertViolation(rootDir, "forbidden_security_config_import");
+});
+
+test("accepts security configuration imported by game-api", () => {
+  const rootDir = createValidFixture();
+  mutateManifest(rootDir, "apps/game-api", (manifest) => {
+    manifest.dependencies = {
+      "@the-town-remembers/runtime-config": "workspace:*",
+    };
+  });
+  const sourcePath = path.join(rootDir, "apps/game-api/src/config.ts");
+  fs.mkdirSync(path.dirname(sourcePath), { recursive: true });
+  fs.writeFileSync(
+    sourcePath,
+    'import "@the-town-remembers/runtime-config/security";\n',
+  );
+
+  assert.deepEqual(validateWorkspace(rootDir), []);
+});
+
 test("rejects a missing library export map", () => {
   const rootDir = createValidFixture();
   mutateManifest(rootDir, "packages/http-contracts", (manifest) => {
@@ -201,6 +235,18 @@ test("rejects duplicate package names", () => {
   });
 
   assertViolation(rootDir, "duplicate_package_name");
+});
+
+test("ignores other git worktrees checked out under .claude", () => {
+  const rootDir = createValidFixture();
+  writeJson(path.join(rootDir, ".claude/worktrees/some-session/package.json"), {
+    name: "the-town-remembers",
+    version: "0.0.0",
+    private: true,
+    license: "MIT",
+  });
+
+  assert.deepEqual(validateWorkspace(rootDir), []);
 });
 
 test("rejects an unexpected package name at a declared path", () => {

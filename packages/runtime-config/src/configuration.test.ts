@@ -15,6 +15,7 @@ import {
   DATABASE,
   PLAYER_API_TIMING,
 } from "./reliability.js";
+import { loadSecurityConfig } from "./security.js";
 import { ConfigurationError, SECRET_VARIABLE_PATTERN } from "./shared.js";
 import { DEFAULT_TEST_DB_PORT, DEFAULT_WEB_PORT, loadTestConfig } from "./test.js";
 
@@ -283,6 +284,110 @@ describe("operator configuration", () => {
   });
 });
 
+describe("security configuration", () => {
+  const KEY_V1 = "ellozwDF6MjC9aIaV_C3JAm1N0itqbhqINMe21ZurOc";
+  const KEY_V2 = "caKGzXEXbrucEppOwWFRCTlJ-1Q0xvy4F65g2pmFIZQ";
+  const PEPPER = "0S_sHeUl8wqdysN8AM7JK6SHbjlnkCoCYgeWplF8k8E";
+  const IP_HASH_SECRET = "ChUALDNE4I_6Qy0vPTPKExGWmvrACeAmwxbQxUUfLi4";
+  const VALID = {
+    TTR_JUDGE_CODE: "a-16-char-minimum-code",
+    TTR_INVITE_SIGNING_KEYS: `v1:${KEY_V1}`,
+    TTR_SESSION_TOKEN_PEPPER: PEPPER,
+    TTR_IP_HASH_SECRET: IP_HASH_SECRET,
+  };
+
+  it("reads a complete security environment", () => {
+    const config = loadSecurityConfig(VALID);
+    expect(config.judgeCode).toBe(VALID.TTR_JUDGE_CODE);
+    expect(config.sessionTokenPepper).toBe(PEPPER);
+    expect(config.ipHashSecret).toBe(IP_HASH_SECRET);
+    expect(config.inviteSigningKeys).toHaveLength(1);
+    expect(config.inviteSigningKeys[0]?.version).toBe("v1");
+    expect(Buffer.from(config.inviteSigningKeys[0]!.key).toString("base64url")).toBe(
+      KEY_V1,
+    );
+  });
+
+  it("keeps the first signing-key entry active and every entry decodable", () => {
+    const config = loadSecurityConfig({
+      ...VALID,
+      TTR_INVITE_SIGNING_KEYS: `v2:${KEY_V2},v1:${KEY_V1}`,
+    });
+    expect(config.inviteSigningKeys.map((entry) => entry.version)).toStrictEqual([
+      "v2",
+      "v1",
+    ]);
+  });
+
+  it("fails closed when a variable is absent", () => {
+    const error = expectConfigurationError(() =>
+      loadSecurityConfig({ ...VALID, TTR_JUDGE_CODE: undefined }),
+    );
+    expect(error.category).toBe("security-runtime");
+    expect(error.issues).toStrictEqual([
+      { variable: "TTR_JUDGE_CODE", category: "security-runtime", code: "missing" },
+    ]);
+  });
+
+  it("rejects a judge code shorter than 16 characters", () => {
+    expect(
+      expectConfigurationError(() =>
+        loadSecurityConfig({ ...VALID, TTR_JUDGE_CODE: "too-short" }),
+      ).issues[0],
+    ).toStrictEqual({
+      variable: "TTR_JUDGE_CODE",
+      category: "security-runtime",
+      code: "invalid",
+    });
+  });
+
+  it.each([
+    ["missing version prefix", KEY_V1],
+    ["malformed version", `1:${KEY_V1}`],
+    ["wrong byte length", "v1:tooshort"],
+    ["duplicate versions", `v1:${KEY_V1},v1:${KEY_V2}`],
+    ["empty entry", `v1:${KEY_V1},`],
+  ])("rejects invite signing keys with %s", (_label, value) => {
+    const error = expectConfigurationError(() =>
+      loadSecurityConfig({ ...VALID, TTR_INVITE_SIGNING_KEYS: value }),
+    );
+    expect(error.issues[0]?.variable).toBe("TTR_INVITE_SIGNING_KEYS");
+  });
+
+  it("rejects a pepper or IP-hash secret that is not 256 bits of base64url", () => {
+    expect(
+      expectConfigurationError(() =>
+        loadSecurityConfig({ ...VALID, TTR_SESSION_TOKEN_PEPPER: "short" }),
+      ).issues[0]?.variable,
+    ).toBe("TTR_SESSION_TOKEN_PEPPER");
+    expect(
+      expectConfigurationError(() =>
+        loadSecurityConfig({ ...VALID, TTR_IP_HASH_SECRET: "short" }),
+      ).issues[0]?.variable,
+    ).toBe("TTR_IP_HASH_SECRET");
+  });
+
+  it("never echoes a submitted value in the failure", () => {
+    const leaked = "hunter2-leak";
+    const error = expectConfigurationError(() =>
+      loadSecurityConfig({ ...VALID, TTR_JUDGE_CODE: leaked }),
+    );
+    expect(error.message).not.toContain(leaked);
+    expect(JSON.stringify(error.issues)).not.toContain(leaked);
+  });
+
+  it("matches every variable name against the secret-name policy", () => {
+    for (const variable of [
+      "TTR_JUDGE_CODE",
+      "TTR_INVITE_SIGNING_KEYS",
+      "TTR_SESSION_TOKEN_PEPPER",
+      "TTR_IP_HASH_SECRET",
+    ]) {
+      expect(SECRET_VARIABLE_PATTERN.test(`VITE_${variable}`)).toBe(true);
+    }
+  });
+});
+
 describe("secret-name policy", () => {
   it.each([
     "VITE_TTR_JUDGE_CODE",
@@ -359,6 +464,10 @@ describe(".env.example", () => {
       "VITE_TTR_ENV",
       "VITE_TTR_BUILD_ID",
       "TTR_MIGRATION_DATABASE_URL",
+      "TTR_JUDGE_CODE",
+      "TTR_INVITE_SIGNING_KEYS",
+      "TTR_SESSION_TOKEN_PEPPER",
+      "TTR_IP_HASH_SECRET",
     ]) {
       expect(example).toContain(`${variable}=`);
     }

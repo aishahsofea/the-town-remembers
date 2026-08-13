@@ -1,7 +1,7 @@
 # Phased MVP Implementation Plan
 
 - **Project:** The Town Remembers
-- **Status:** Phases 0 and 1 complete; Phases 2–8 pending
+- **Status:** Phases 0, 1, and 2 complete; Phases 3–8 pending
 - **Date:** 2026-08-04
 - **Scope:** Implementation sequence from accepted contracts to a deployed,
   repeatable hackathon demo
@@ -64,7 +64,7 @@ rather than silently changing what an existing ID means.
 |---:|---|---|
 | 0 | [Engineering foundation](phase-00-engineering-foundation.md) — complete | `P0-01`–`P0-14` |
 | 1 | [Persistence and authored seed](phase-01-persistence-and-authored-seed.md) — complete | `P1-01`–`P1-21` |
-| 2 | [Deterministic simulation core](phase-02-deterministic-simulation-core.md) | `P2-01`–`P2-21` |
+| 2 | [Deterministic simulation core](phase-02-deterministic-simulation-core.md) — complete | `P2-01`–`P2-21` |
 | 3 | [First playable vertical slice](phase-03-first-playable-vertical-slice.md) | `P3-01`–`P3-19` |
 | 4 | [Grounded NPC and memory loop](phase-04-grounded-npc-and-memory-loop.md) | `P4-01`–`P4-24` |
 | 5 | [Ambient propagation and recovery](phase-05-ambient-propagation-and-recovery.md) | `P5-01`–`P5-22` |
@@ -87,25 +87,37 @@ contract changes.
 | 0 | 4–6 | 4–6 | Workspace, executable contracts, shells, CI |
 | 1 | 12–18 | 16–24 | Forty-table schema, constraints, seed, CockroachDB tests |
 | 2 | 14–20 | 30–44 | Pure rules, projections, property/scenario coverage |
-| 3 | 10–15 | 40–59 | Auth/session/idempotency API and first browser slice |
-| 4 | 15–22 | 55–81 | Bedrock/Titan, vector recall, six NPC actions, evaluations |
-| 5 | 13–19 | 68–100 | Outbox/FIFO worker/recovery and fault-safe transition UI |
-| 6 | 12–18 | 80–118 | Complete mystery, board, endings, accessibility closure |
-| 7 | 8–13 | 88–131 | Production CDK, security, alarms, MCP, deployment proof |
-| 8 | 8–12 | 96–143 | Fault campaigns, performance, compatibility, rehearsals |
+| 3 | 14–22 | 44–66 | Query layer, auth/session/idempotency API, first browser slice |
+| 4 | 15–22 | 59–88 | Bedrock/Titan, vector recall, six NPC actions, evaluations |
+| 5 | 13–19 | 72–107 | Outbox/FIFO worker/recovery and fault-safe transition UI |
+| 6 | 12–18 | 84–125 | Complete mystery, board, endings, accessibility closure |
+| 7 | 8–13 | 92–138 | Production CDK, security, alarms, MCP, deployment proof |
+| 8 | 8–12 | 100–150 | Fault campaigns, performance, compatibility, rehearsals |
 
-The base one-engineer estimate is **96–143 engineer-days**, or approximately
-**19–29 workweeks**. Use a 20% planning contingency for external-service
-variance, integration discoveries, and release fixes: **115–172 engineer-days
-(23–35 workweeks)**.
+The base one-engineer estimate is **100–150 engineer-days**, or approximately
+**20–30 workweeks**. Use a 20% planning contingency for external-service
+variance, integration discoveries, and release fixes: **120–180 engineer-days
+(24–36 workweeks)**.
 
 Useful cumulative milestones are:
 
-- first saved playable slice through Phase 3: **40–59 engineer-days**;
+- first saved playable slice through Phase 3: **44–66 engineer-days**;
 - complete cross-player agentic-memory demo through Phase 5:
-  **68–100 engineer-days**; and
-- fully deployed, hardened release through Phase 8: **96–143 engineer-days**
+  **72–107 engineer-days**; and
+- fully deployed, hardened release through Phase 8: **100–150 engineer-days**
   before contingency.
+
+Phase 3 was re-estimated from 10–15 after its execution detail was written. The
+original figure assumed a database access layer that Phase 1 did not in fact
+produce: Phase 1 shipped the generated Kysely interface, branded column types,
+closed domains, the bounded pool, and `runSerializable`, but no query layer, so
+the only gameplay SQL in the repository is the town materializer's. Phase 3
+therefore also writes roughly eleven town-scoped persistence modules and their
+CockroachDB concurrency suites, which its task descriptions had treated as thin
+calls. See
+[Phase 3 execution detail §9.3](phase-03-execution-detail.md). No other phase
+estimate changed; the cumulative column and both totals move only by that
+four-to-seven-day shift.
 
 The default phase gates make substantial portions sequential. Adding engineers
 can parallelize schema/content, rules/UI, and infrastructure work inside a

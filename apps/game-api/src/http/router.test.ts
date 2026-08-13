@@ -5,12 +5,14 @@ import {
   ROUTE_TEMPLATES,
 } from "@the-town-remembers/http-contracts";
 import { loadGameConfig } from "@the-town-remembers/runtime-config/game";
+import { loadSecurityConfig } from "@the-town-remembers/runtime-config/security";
 import {
   FORBIDDEN_LOG_PROPERTIES,
   SENSITIVE_TEST_MARKERS,
   captureStdout,
   findSensitiveMarkers,
 } from "@the-town-remembers/test-support";
+import type { Pool } from "pg";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -18,18 +20,42 @@ import {
   handleRequest,
   type RouterContext,
 } from "./router.js";
-import type { HttpResponse } from "./types.js";
+import type { HttpRequest, HttpResponse } from "./types.js";
+
+/** Never queried: every route this file drives fails before reaching the pool. */
+const UNUSED_POOL = {} as unknown as Pool;
 
 const context: RouterContext = {
   config: loadGameConfig({ TTR_ENV: "local", TTR_BUILD_ID: "a1b2c3d" }),
+  securityConfig: loadSecurityConfig({
+    TTR_JUDGE_CODE: "test-judge-code-not-real",
+    TTR_INVITE_SIGNING_KEYS: `v1:${"A".repeat(43)}`,
+    TTR_SESSION_TOKEN_PEPPER: "B".repeat(43),
+    TTR_IP_HASH_SECRET: "C".repeat(43),
+  }),
+  pool: UNUSED_POOL,
   now: () => new Date("2026-08-02T00:00:00.000Z"),
   monotonicMs: () => 0,
 };
 
+function fixtureRequest(input: {
+  readonly method: string;
+  readonly path: string;
+}): HttpRequest {
+  return {
+    method: input.method,
+    path: input.path,
+    headers: new Map(),
+    body: undefined,
+    sourceIp: undefined,
+  };
+}
+
 async function request(method: string, path: string): Promise<HttpResponse> {
   let response: HttpResponse | undefined;
-  await captureStdout(() => {
-    response = handleRequest({ method, path }, context).response;
+  await captureStdout(async () => {
+    response = (await handleRequest(fixtureRequest({ method, path }), context))
+      .response;
   });
   return response!;
 }
@@ -83,16 +109,16 @@ describe("health route", () => {
     expect((await request("GET", `${ROUTE_TEMPLATES.health}/`)).status).toBe(200);
   });
 
-  it("serves exactly one route in this phase", () => {
-    expect(IMPLEMENTED_ROUTE_TEMPLATES).toStrictEqual([ROUTE_TEMPLATES.health]);
+  it("serves all seven route templates", () => {
+    expect([...IMPLEMENTED_ROUTE_TEMPLATES].toSorted()).toStrictEqual(
+      Object.values(ROUTE_TEMPLATES).toSorted(),
+    );
   });
 });
 
 describe("unimplemented routes", () => {
   it.each([
     ["GET", ROUTE_TEMPLATES.towns],
-    ["POST", ROUTE_TEMPLATES.towns],
-    ["GET", "/api/v1/towns/town_1/player-view"],
     ["GET", "/health"],
     ["GET", "/"],
     ["POST", ROUTE_TEMPLATES.health],
@@ -139,16 +165,21 @@ describe("request identity", () => {
 });
 
 describe("safe logging", () => {
-  it("emits one JSON event per request with only safe fields", async () => {
-    const captured = await captureStdout(() => {
-      handleRequest({ method: "GET", path: ROUTE_TEMPLATES.health }, context);
+  it("emits one JSON log event and one metric event per request, both with only safe fields", async () => {
+    const captured = await captureStdout(async () => {
+      await handleRequest(
+        fixtureRequest({ method: "GET", path: ROUTE_TEMPLATES.health }),
+        context,
+      );
     });
 
     expect(captured.unparsedLines).toStrictEqual([]);
-    expect(captured.events).toHaveLength(1);
+    expect(captured.events).toHaveLength(2);
 
-    const event = captured.events[0]!;
-    expect(Object.keys(event).toSorted()).toStrictEqual([
+    const logEvent = captured.events.find(
+      (event) => event["event"] === "http_request",
+    )!;
+    expect(Object.keys(logEvent).toSorted()).toStrictEqual([
       "build",
       "durationMs",
       "environment",
@@ -158,28 +189,73 @@ describe("safe logging", () => {
       "routeTemplate",
       "status",
     ]);
-    expect(event["routeTemplate"]).toBe(ROUTE_TEMPLATES.health);
-    expect(event["status"]).toBe(200);
+    expect(logEvent["routeTemplate"]).toBe(ROUTE_TEMPLATES.health);
+    expect(logEvent["status"]).toBe(200);
+
+    const metricEvent = captured.events.find(
+      (event) => event["event"] === "metric_http_latency",
+    )!;
+    expect(Object.keys(metricEvent).toSorted()).toStrictEqual([
+      "event",
+      "latencyMs",
+      "method",
+      "routeTemplate",
+      "status",
+    ]);
+    expect(metricEvent["routeTemplate"]).toBe(ROUTE_TEMPLATES.health);
+    expect(metricEvent["status"]).toBe(200);
   });
 
-  it("logs the unmatched placeholder instead of the requested path", async () => {
-    const captured = await captureStdout(() => {
-      handleRequest(
-        {
+  it("logs the registered route template, never the literal path it matched", async () => {
+    const captured = await captureStdout(async () => {
+      await handleRequest(
+        fixtureRequest({
           method: "GET",
           path: `/api/v1/invites/${SENSITIVE_TEST_MARKERS.inviteToken}`,
-        },
+        }),
+        context,
+      );
+    });
+
+    expect(captured.events[0]?.["routeTemplate"]).toBe(ROUTE_TEMPLATES.invitePreview);
+    expect(findSensitiveMarkers(captured.raw)).toStrictEqual([]);
+  });
+
+  it("logs the unmatched placeholder for a path with no registered shape", async () => {
+    const captured = await captureStdout(async () => {
+      await handleRequest(
+        fixtureRequest({ method: "GET", path: "/api/v1/x" }),
         context,
       );
     });
 
     expect(captured.events[0]?.["routeTemplate"]).toBe("unmatched");
-    expect(findSensitiveMarkers(captured.raw)).toStrictEqual([]);
   });
 
+  it.each(Object.entries(ROUTE_TEMPLATES))(
+    "logs a routeTemplate that is a member of ROUTE_TEMPLATES for %s",
+    async (_name, template) => {
+      const concretePath = template.replaceAll(/\{[^}]+\}/g, "id_1");
+      const captured = await captureStdout(async () => {
+        await handleRequest(
+          fixtureRequest({ method: "GET", path: concretePath }),
+          context,
+        );
+      });
+
+      expect(captured.unparsedLines).toStrictEqual([]);
+      expect(Object.values(ROUTE_TEMPLATES)).toContain(
+        captured.events[0]?.["routeTemplate"],
+      );
+    },
+  );
+
   it("carries no property that could hold raw request material", async () => {
-    const captured = await captureStdout(() => {
-      handleRequest({ method: "GET", path: ROUTE_TEMPLATES.health }, context);
+    const captured = await captureStdout(async () => {
+      await handleRequest(
+        fixtureRequest({ method: "GET", path: ROUTE_TEMPLATES.health }),
+        context,
+      );
     });
 
     for (const property of FORBIDDEN_LOG_PROPERTIES) {
@@ -189,9 +265,12 @@ describe("safe logging", () => {
   });
 
   it("folds an unrecognized verb into one label", async () => {
-    const captured = await captureStdout(() => {
-      handleRequest(
-        { method: `PROPFIND-${SENSITIVE_TEST_MARKERS.queryValue}`, path: "/api/v1/x" },
+    const captured = await captureStdout(async () => {
+      await handleRequest(
+        fixtureRequest({
+          method: `PROPFIND-${SENSITIVE_TEST_MARKERS.queryValue}`,
+          path: "/api/v1/x",
+        }),
         context,
       );
     });

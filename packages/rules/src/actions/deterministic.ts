@@ -145,6 +145,30 @@ export interface InspectInputs {
   readonly clueAlreadyDiscoveredInTown: boolean;
   readonly clueAlreadyDiscoveredByThisPlayer: boolean;
   readonly playerId: string;
+  readonly townId: string;
+  /** `clue_discoveries`/`case_board_entries` have no unique guard against a
+   * concurrent double board-entry (`P3-11` §"exactly one board entry" —
+   * see acceptance 3), so a real towns-revision guard is what makes the
+   * loser of a race replay through `D3-O`'s reload-and-replan loop rather
+   * than committing a second contradictory record. */
+  readonly townRevision: number;
+  /** The player's current location — also the revealed item's resting place
+   * for a non-portable reveal, since inspecting always happens from the
+   * inspectable's own location. */
+  readonly locationEntityId: string;
+  readonly revealsItemId: string | null;
+  /** An inspectable's item reveal is independent of its clue, if it even has
+   * one — `square_bench_glint` reveals `nessas_field_lens` with no clue at
+   * all. `revealed_event_id` is immutable once set (docs/005), so this is
+   * the reveal's own once-only gate, entirely separate from
+   * `clueAlreadyDiscoveredInTown`. */
+  readonly itemAlreadyRevealed: boolean;
+  readonly revealedItemPortable: boolean;
+  readonly revealedItemRevision: number;
+  /** A second, independent guard against the same double-board-entry race:
+   * even if `clueAlreadyDiscoveredInTown` were somehow stale, a board entry
+   * that already exists for this clue is never inserted twice. */
+  readonly boardEntryAlreadyExists: boolean;
 }
 
 export function planInspect(inputs: InspectInputs): DecisionResult<EffectPlanEntry> {
@@ -157,8 +181,11 @@ export function planInspect(inputs: InspectInputs): DecisionResult<EffectPlanEnt
     clueAlreadyDiscoveredInTown: inputs.clueAlreadyDiscoveredInTown,
     clueAlreadyDiscoveredByThisPlayer: inputs.clueAlreadyDiscoveredByThisPlayer,
   });
+  const discoversNewClue =
+    shouldRecordClueDiscovery(discovery) && inputs.clueId !== null;
+  const revealsNewItem = inputs.revealsItemId !== null && !inputs.itemAlreadyRevealed;
 
-  if (discovery === "already_discovered_by_player" || discovery === "none") {
+  if (!discoversNewClue && !revealsNewItem) {
     return {
       outcome: "no_change",
       reasonCode: "OK",
@@ -170,12 +197,54 @@ export function planInspect(inputs: InspectInputs): DecisionResult<EffectPlanEnt
 
   const effects: EffectPlanEntry[] = [
     { kind: "event_origin", eventType: "inspected", effectIndex: 0 },
+    {
+      kind: "conditional_state_change",
+      table: "towns",
+      key: { id: inputs.townId },
+      expectedRevision: inputs.townRevision,
+      change: {},
+    },
   ];
-  if (shouldRecordClueDiscovery(discovery) && inputs.clueId !== null) {
+  if (discoversNewClue) {
     effects.push({
       kind: "insert",
       table: "clue_discoveries",
       row: { clue_id: inputs.clueId, player_id: inputs.playerId },
+    });
+  }
+  // The shared board record happens exactly once, the moment this clue first
+  // becomes known to the town — never on a later player's own first look at
+  // the same evidence (`D3-I`; docs/006's "first shared verified-evidence
+  // board record").
+  if (
+    discovery === "new_to_town" &&
+    !inputs.boardEntryAlreadyExists &&
+    inputs.clueId !== null
+  ) {
+    effects.push({
+      kind: "insert",
+      table: "case_board_entries",
+      row: {
+        entry_kind: "verified_evidence",
+        verification_status: "verified_physical",
+        clue_id: inputs.clueId,
+        contributed_by_player_id: inputs.playerId,
+      },
+    });
+  }
+  if (revealsNewItem) {
+    effects.push({
+      kind: "conditional_state_change",
+      table: "items",
+      key: { id: inputs.revealsItemId },
+      expectedRevision: inputs.revealedItemRevision,
+      change: inputs.revealedItemPortable
+        ? {
+            held_by_actor_id: inputs.playerId,
+            location_entity_id: null,
+            location_entity_type: null,
+          }
+        : {},
     });
   }
   return { outcome: "applied", reasonCode: "OK", effects, preconditions: {}, trace };

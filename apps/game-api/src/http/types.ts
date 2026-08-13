@@ -1,11 +1,14 @@
 /**
  * The internal request and response shapes both adapters translate to.
  *
- * The request type carries only what a Phase 0 route may act on. Headers,
- * query strings, and bodies are deliberately absent: the health route needs
- * none of them, and their absence makes an accidental log or echo impossible.
- * Phase 3 widens this type when authenticated routes arrive.
+ * Re-exported from `@the-town-remembers/game-server`, which owns the
+ * canonical transport contract its router dispatches over — this deployment
+ * unit cannot itself be imported by that library, so this re-export is the
+ * one place the two stay in step rather than two independent declarations
+ * that happen to be structurally equal.
  */
+
+export type { HttpRequest, HttpResponse } from "@the-town-remembers/game-server";
 
 export const HTTP_METHODS = [
   "GET",
@@ -29,16 +32,4 @@ export function toLoggableMethod(method: string): LoggableMethod {
   return (HTTP_METHODS as readonly string[]).includes(upper)
     ? (upper as HttpMethod)
     : UNKNOWN_METHOD;
-}
-
-export interface HttpRequest {
-  readonly method: string;
-  /** Path only. A caller must strip the query string before constructing this. */
-  readonly path: string;
-}
-
-export interface HttpResponse {
-  readonly status: number;
-  readonly headers: Readonly<Record<string, string>>;
-  readonly body: string;
 }

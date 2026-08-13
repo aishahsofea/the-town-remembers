@@ -74,6 +74,9 @@ The user-visible proof is a browser journey in which players can:
 - Grounded NPC dialogue with authored fallbacks and validated promise offers.
 - Transactional ambient propagation, transition polling, quarantine, and
   guaranteed re-entry behavior.
+- Player-safe presentation strings and the seven scene/portrait keys, already
+  authored in `packages/content` and already served in `PlayerView`. Phase 6
+  inherits them rather than introducing them — see `P6-01`.
 
 Phase 6 begins only when those phase exit gates pass. A missing prerequisite is
 fixed in its owning layer; it is not emulated in the UI.
@@ -115,12 +118,32 @@ input contracts are stable.
   block, NPC placement, disclosure tier, inspectable, clue effect, item,
   requested-item binding, promise terms version, accusation option, ending
   fragment, and fallback in Decision 009.
-- Add the seven accepted presentation keys for four scenes and three portraits
-  to a versioned web asset manifest. Keys resolve only to bundled assets, never
-  arbitrary URLs.
-- Define a neutral local placeholder for an unknown `sceneKey` or
-  `portraitKey`. Emit a sanitized client diagnostic containing the key and
-  content version, then keep the screen usable.
+- Bind the seven accepted presentation keys for four scenes and three portraits
+  to real illustrations. Keys resolve only to bundled assets, never arbitrary
+  URLs.
+
+  **Inherited from Phase 3.** The keys themselves already exist, deliberately
+  duplicated in two places: `packages/content/src/presentation.ts` is the
+  authority the server projects from, and `apps/web/src/assets/manifest.ts` is
+  the browser's key-to-asset lookup table. They cannot share an import —
+  `packages/content` depends on `packages/serialization`, which imports
+  `node:crypto`, and `scripts/check-bundle-safety.mjs` forbids both substrings
+  in the browser bundle. `scripts/check-asset-keys.mjs` fails the build if the
+  two lists disagree. Phase 6 replaces the placeholder each key resolves to; it
+  does not re-author the keys.
+
+  **Optional cleanup this phase may take.** Splitting `packages/content` so the
+  presentation strings sit behind a browser-safe entry point with no
+  `serialization` dependency would let `apps/web` import the list directly and
+  make both the duplication and `check-asset-keys.mjs` unnecessary. Phase 3
+  deferred this here on purpose — Phase 6 touches this table anyway, so the
+  package-boundary change costs once instead of twice. Deleting the drift script
+  without taking the split is not an option. See
+  [Phase 3 execution detail §9.5](phase-03-execution-detail.md).
+- Keep the neutral local placeholder for an unknown `sceneKey` or
+  `portraitKey`, and its sanitized client diagnostic containing the key and
+  content version, then keep the screen usable. Both already exist in
+  `apps/web/src/assets/placeholder.ts` and `manifest.ts#onAssetLookupFailure`.
 - Validate that existing towns resolve copy and assets through their frozen
   `contentVersion`; a later build must not reinterpret retained promise offers
   or active promises using newer terms.

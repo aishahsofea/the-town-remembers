@@ -25,6 +25,9 @@ const SOURCE_EXTENSIONS = new Set([
 ]);
 const IGNORED_DIRECTORIES = new Set([
   ".git",
+  // Each entry under here is a separate git worktree (a separate checkout
+  // with its own history), not source this repository owns.
+  ".claude",
   "node_modules",
   "dist",
   "build",
@@ -67,6 +70,10 @@ export const RUNTIME_CONFIG_EXPORTS = Object.freeze({
   "./operator": {
     types: "./dist/operator.d.ts",
     import: "./dist/operator.js",
+  },
+  "./security": {
+    types: "./dist/security.d.ts",
+    import: "./dist/security.js",
   },
 });
 
@@ -111,6 +118,8 @@ const DATABASE = `${SCOPE}database`;
 const DATABASE_ADMIN = `${SCOPE}database-admin`;
 const TOWN_SEED = `${SCOPE}town-seed`;
 const RULES = `${SCOPE}rules`;
+const GAME_SERVER = `${SCOPE}game-server`;
+const GAME_API = `${SCOPE}game-api`;
 
 export const EXPECTED_PACKAGES = Object.freeze([
   {
@@ -121,13 +130,14 @@ export const EXPECTED_PACKAGES = Object.freeze([
   },
   {
     path: "apps/game-api",
-    name: `${SCOPE}game-api`,
+    name: GAME_API,
     kind: "deployment",
     allowedDependencies: [
       HTTP_CONTRACTS,
       MODEL_CONTRACTS,
       SERIALIZATION,
       RUNTIME_CONFIG,
+      GAME_SERVER,
     ],
   },
   {
@@ -222,7 +232,22 @@ export const EXPECTED_PACKAGES = Object.freeze([
     name: TOWN_SEED,
     kind: "library",
     exports: STANDARD_EXPORTS,
-    allowedDependencies: [CONTENT, DATABASE, DATABASE_ADMIN],
+    allowedDependencies: [CONTENT, DATABASE, DATABASE_ADMIN, SERIALIZATION],
+  },
+  {
+    path: "packages/game-server",
+    name: GAME_SERVER,
+    kind: "library",
+    exports: STANDARD_EXPORTS,
+    allowedDependencies: [
+      CONTENT,
+      DATABASE,
+      HTTP_CONTRACTS,
+      RULES,
+      RUNTIME_CONFIG,
+      SERIALIZATION,
+      TOWN_SEED,
+    ],
   },
   {
     path: "packages/test-support",
@@ -354,20 +379,21 @@ function validateRuntimeConfigImport(
   }
 
   const expectedByConsumer = new Map([
-    [`${SCOPE}game-api`, `${RUNTIME_CONFIG}/game`],
-    [`${SCOPE}ambient-worker`, `${RUNTIME_CONFIG}/ambient`],
-    [`${SCOPE}recovery-worker`, `${RUNTIME_CONFIG}/recovery`],
-    [`${SCOPE}infrastructure`, `${RUNTIME_CONFIG}/deployment`],
-    [TEST_SUPPORT, `${RUNTIME_CONFIG}/test`],
-    [DATABASE, `${RUNTIME_CONFIG}/database`],
-    [DATABASE_ADMIN, `${RUNTIME_CONFIG}/operator`],
+    [GAME_API, [`${RUNTIME_CONFIG}/game`, `${RUNTIME_CONFIG}/security`]],
+    [GAME_SERVER, [`${RUNTIME_CONFIG}/game`, `${RUNTIME_CONFIG}/security`]],
+    [`${SCOPE}ambient-worker`, [`${RUNTIME_CONFIG}/ambient`]],
+    [`${SCOPE}recovery-worker`, [`${RUNTIME_CONFIG}/recovery`]],
+    [`${SCOPE}infrastructure`, [`${RUNTIME_CONFIG}/deployment`]],
+    [TEST_SUPPORT, [`${RUNTIME_CONFIG}/test`]],
+    [DATABASE, [`${RUNTIME_CONFIG}/database`]],
+    [DATABASE_ADMIN, [`${RUNTIME_CONFIG}/operator`]],
   ]);
   const expected = expectedByConsumer.get(packageDefinition.name);
-  if (expected && specifier !== expected) {
+  if (expected && !expected.includes(specifier)) {
     addViolation(
       violations,
       "invalid_runtime_config_import",
-      `${packageDefinition.name} must import runtime configuration through ${expected}.`,
+      `${packageDefinition.name} must import runtime configuration through ${expected.join(" or ")}.`,
       filePath,
     );
   }
@@ -399,6 +425,33 @@ function validateRulesDatabaseImport(
     violations,
     "forbidden_rules_database_import",
     `${RULES} may only import ${DATABASE}/schema, ${DATABASE}/brands, or ${DATABASE}/domains.`,
+    filePath,
+  );
+}
+
+const SECURITY_CONFIG_SPECIFIER = `${RUNTIME_CONFIG}/security`;
+const SECURITY_CONFIG_ALLOWED_PACKAGES = new Set([GAME_SERVER, GAME_API]);
+
+/**
+ * `runtime-config/security` (D3-C) holds the judge code, invite-derivation
+ * keys, session-token pepper, and IP-hash secret. Only the two units on the
+ * request path that need them may import it; every other package — most
+ * importantly `apps/web` and the ambient/recovery workers — has no import
+ * path to it even by accident.
+ */
+function validateSecurityConfigImport(
+  packageDefinition,
+  specifier,
+  violations,
+  filePath,
+) {
+  if (specifier !== SECURITY_CONFIG_SPECIFIER) return;
+  if (SECURITY_CONFIG_ALLOWED_PACKAGES.has(packageDefinition.name)) return;
+
+  addViolation(
+    violations,
+    "forbidden_security_config_import",
+    `${SECURITY_CONFIG_SPECIFIER} may only be imported by ${GAME_SERVER} or ${GAME_API}.`,
     filePath,
   );
 }
@@ -548,6 +601,12 @@ function validateSourceImports(
 
       validateRuntimeConfigImport(packageDefinition, specifier, violations, sourceFile);
       validateRulesDatabaseImport(packageDefinition, specifier, violations, sourceFile);
+      validateSecurityConfigImport(
+        packageDefinition,
+        specifier,
+        violations,
+        sourceFile,
+      );
     }
   }
 }

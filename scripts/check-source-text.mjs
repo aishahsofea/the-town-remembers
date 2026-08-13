@@ -33,6 +33,9 @@ const SOURCE_EXTENSIONS = new Set([
 
 const IGNORED_DIRECTORIES = new Set([
   ".git",
+  // Each entry under here is a separate git worktree (a separate checkout
+  // with its own history), not source this repository owns.
+  ".claude",
   "node_modules",
   "dist",
   "build",

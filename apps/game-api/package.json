@@ -5,12 +5,15 @@
   "license": "MIT",
   "type": "module",
   "dependencies": {
+    "@the-town-remembers/game-server": "workspace:*",
     "@the-town-remembers/http-contracts": "workspace:*",
     "@the-town-remembers/runtime-config": "workspace:*",
     "@the-town-remembers/serialization": "workspace:*"
   },
   "devDependencies": {
     "@the-town-remembers/test-support": "workspace:*",
-    "@types/aws-lambda": "^8.10.162"
+    "@types/aws-lambda": "^8.10.162",
+    "@types/pg": "^8.15.6",
+    "pg": "^8.16.3"
   }
 }
