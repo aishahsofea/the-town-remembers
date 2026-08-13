@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildDisclosureBundleForNpc,
+  buildNpcDialogueContext,
   buildRenderingCandidatesForNpc,
   defaultGateResult,
   disclosureRowsForNpc,
@@ -270,11 +271,16 @@ describe("defaultGateResult", () => {
   });
 });
 
+/** `buildRenderingCandidatesForNpc` maps `claimKey -> claimId`; these tests use the claim key as its own fixture id, so assertions can still name a claim by its authored key. */
+function identityClaimIds(claimKeys: readonly string[]): ReadonlyMap<string, string> {
+  return new Map(claimKeys.map((claimKey) => [claimKey, claimKey]));
+}
+
 describe("buildRenderingCandidatesForNpc", () => {
   it("offers only disclosure templates for claims the bundle actually approved", () => {
     const candidates = buildRenderingCandidatesForNpc(
       "mara_venn",
-      new Set(["bell_not_at_square"]),
+      identityClaimIds(["bell_not_at_square"]),
       new Set(),
       "passed",
     );
@@ -291,7 +297,7 @@ describe("buildRenderingCandidatesForNpc", () => {
   it("offers Corin's confession only when every one of its four claims is approved", () => {
     const partial = buildRenderingCandidatesForNpc(
       "corin_hale",
-      new Set(["lark_damaged_bell", "corin_moved_bell", "bell_at_chapel"]),
+      identityClaimIds(["lark_damaged_bell", "corin_moved_bell", "bell_at_chapel"]),
       new Set(),
       "passed",
     );
@@ -301,7 +307,7 @@ describe("buildRenderingCandidatesForNpc", () => {
 
     const complete = buildRenderingCandidatesForNpc(
       "corin_hale",
-      new Set([
+      identityClaimIds([
         "lark_damaged_bell",
         "corin_moved_bell",
         "bell_at_chapel",
@@ -324,7 +330,7 @@ describe("buildRenderingCandidatesForNpc", () => {
   it("offers an outcome template only for an approved outcome kind", () => {
     const none = buildRenderingCandidatesForNpc(
       "nessa_reed",
-      new Set(),
+      new Map(),
       new Set(),
       "passed",
     );
@@ -334,7 +340,7 @@ describe("buildRenderingCandidatesForNpc", () => {
 
     const withOutcome = buildRenderingCandidatesForNpc(
       "nessa_reed",
-      new Set(),
+      new Map(),
       new Set(["chapel_key_lent"]),
       "passed",
     );
@@ -347,7 +353,7 @@ describe("buildRenderingCandidatesForNpc", () => {
   it("offers a denial template only for the matching gate result", () => {
     const wrongGate = buildRenderingCandidatesForNpc(
       "nessa_reed",
-      new Set(),
+      new Map(),
       new Set(),
       "passed",
     );
@@ -357,7 +363,7 @@ describe("buildRenderingCandidatesForNpc", () => {
 
     const deniedAccess = buildRenderingCandidatesForNpc(
       "nessa_reed",
-      new Set(),
+      new Map(),
       new Set(),
       "denied_access",
     );
@@ -369,7 +375,7 @@ describe("buildRenderingCandidatesForNpc", () => {
   it("never offers a template belonging to a different NPC", () => {
     const candidates = buildRenderingCandidatesForNpc(
       "mara_venn",
-      new Set(["bell_not_at_square", "corin_was_at_inn"]),
+      identityClaimIds(["bell_not_at_square", "corin_was_at_inn"]),
       new Set(),
       "denied_access",
     );
@@ -378,6 +384,90 @@ describe("buildRenderingCandidatesForNpc", () => {
     ).toBe(true);
     expect(
       candidates.every((candidate) => !candidate.templateKey.startsWith("corin_")),
+    ).toBe(true);
+  });
+});
+
+describe("buildNpcDialogueContext", () => {
+  it("assembles a full trusted context for Mara answering a public question", () => {
+    const npcId = randomUUID();
+    const assembled = buildNpcDialogueContext({
+      npcKey: "mara_venn",
+      npcId,
+      currentLocationId: randomUUID(),
+      disclosureSources: resolveSources("mara_venn", new Set(["corin_protected_lark"])),
+      content: BELL_MYSTERY_V1,
+      disclosureGateContext: gateContext(),
+      playerAction: { actionKind: "ask", targetEntityIds: [] },
+      dialogueDirective: { requiredAct: "Answer the player's question." },
+      allowedResponseKinds: ["answer", "refuse", "deflect"],
+      canonicalEntities: [],
+      approvedActors: [],
+    });
+
+    expect(assembled.trustedContext.npc_profile.npc_id).toBe(npcId);
+    expect(assembled.trustedContext.dialogue_directive.gate_result).toBe("passed");
+    expect(assembled.trustedContext.approved_renderings.length).toBeGreaterThan(0);
+    expect(
+      assembled.trustedContext.approved_renderings.every(
+        (rendering) => !/[0-9a-f]{8}-[0-9a-f]{4}-/.test(rendering.text),
+      ),
+    ).toBe(true);
+  });
+
+  it("derives no_disclosure_available when nothing in the bundle qualifies", () => {
+    // Mara has no cover_story/final_truth row (unlike Corin, whose
+    // cover_story claim passes regardless of relevance), so denying
+    // relevance and trust together leaves every one of her rows failing.
+    const assembled = buildNpcDialogueContext({
+      npcKey: "mara_venn",
+      npcId: randomUUID(),
+      currentLocationId: randomUUID(),
+      disclosureSources: resolveSources("mara_venn", new Set(["corin_protected_lark"])),
+      content: BELL_MYSTERY_V1,
+      disclosureGateContext: gateContext({
+        isRelevantToRequest: () => false,
+        trust: 0,
+        suspicion: 0,
+      }),
+      playerAction: { actionKind: "ask", targetEntityIds: [] },
+      dialogueDirective: { requiredAct: "Answer the player's question." },
+      allowedResponseKinds: ["deflect"],
+      canonicalEntities: [],
+      approvedActors: [],
+    });
+
+    expect(assembled.trustedContext.dialogue_directive.gate_result).toBe(
+      "no_disclosure_available",
+    );
+    expect(assembled.trustedContext.approved_renderings).toHaveLength(0);
+  });
+
+  it("honors a caller-supplied gate result over the derived default", () => {
+    const assembled = buildNpcDialogueContext({
+      npcKey: "nessa_reed",
+      npcId: randomUUID(),
+      currentLocationId: randomUUID(),
+      disclosureSources: resolveSources("nessa_reed"),
+      content: BELL_MYSTERY_V1,
+      disclosureGateContext: gateContext(),
+      playerAction: { actionKind: "show", targetEntityIds: [] },
+      dialogueDirective: {
+        requiredAct: "Refuse to lend the chapel key.",
+        gateResult: "denied_access",
+      },
+      allowedResponseKinds: ["refuse"],
+      canonicalEntities: [],
+      approvedActors: [],
+    });
+
+    expect(assembled.trustedContext.dialogue_directive.gate_result).toBe(
+      "denied_access",
+    );
+    expect(
+      assembled.trustedContext.approved_renderings.some(
+        (rendering) => rendering.response_kind === "refuse",
+      ),
     ).toBe(true);
   });
 });

@@ -12,27 +12,40 @@
  */
 
 import {
+  CHARACTERS,
   claimNormalizedKeys,
   CONFESSION_TEMPLATES,
   DENIAL_TEMPLATES,
   DISCLOSURE_TEMPLATES,
   DISCLOSURE_TIER_TABLE,
+  NPC_DIALOGUE_PROFILES,
   OUTCOME_TEMPLATES,
   type ContentRegistry,
   type DisclosureTierBinding,
 } from "@the-town-remembers/content";
 import {
+  assembleDialogueContext,
   authoredTemplateText,
+  playerSafeText,
+  type ApprovedActorInput,
+  type AssembledDialogueContext,
+  type CanonicalNamedEntityInput,
+  type DialogueDirectiveInput,
+  type NpcProfileInput,
+  type PlayerActionInput,
   type RenderingCandidateInput,
 } from "@the-town-remembers/model-runtime";
 import {
   buildApprovedDisclosureBundle,
   isAuthoredCoverStory,
+  meetsDisclosureTier,
+  stanceFor as relationshipStanceForScores,
   type ApprovedDisclosureBundle,
   type ApprovedEpisodeSummary,
   type ApprovedOutcome,
   type ClaimStance,
   type DisclosureCandidateInput,
+  type DisclosureGateInputs,
   type DisclosureTier,
   type GateResult,
 } from "@the-town-remembers/rules";
@@ -116,6 +129,22 @@ function parentTransmissionIdFor(grounding: DisclosureGrounding): string | null 
  * its own) would need `true` — that shape does not exist in
  * `BELL_MYSTERY_V1`'s authored content today.
  */
+function gateInputsFor(
+  source: ResolvedDisclosureSource,
+  content: ContentRegistry,
+  context: DisclosureGateContext,
+): DisclosureGateInputs {
+  return {
+    isRelevantToRequest: context.isRelevantToRequest(source.claimKey),
+    trust: context.trust,
+    suspicion: context.suspicion,
+    verifiedCluePresentedThisAction: context.verifiedCluePresentedThisAction,
+    everBrokenPromiseToThisNpc: context.everBrokenPromiseToThisNpc,
+    isCorinsCoverStoryClaim: isAuthoredCoverStory(source.claimKey, content),
+    confrontationGateOpen: context.confrontationGateOpen,
+  };
+}
+
 function buildCandidate(
   source: ResolvedDisclosureSource,
   content: ContentRegistry,
@@ -129,19 +158,70 @@ function buildCandidate(
     sourceEpisodeId: sourceEpisodeIdFor(source.grounding),
     parentTransmissionId: parentTransmissionIdFor(source.grounding),
     tier: source.tier,
-    gateInputs: {
-      isRelevantToRequest: context.isRelevantToRequest(source.claimKey),
-      trust: context.trust,
-      suspicion: context.suspicion,
-      verifiedCluePresentedThisAction: context.verifiedCluePresentedThisAction,
-      everBrokenPromiseToThisNpc: context.everBrokenPromiseToThisNpc,
-      isCorinsCoverStoryClaim: isAuthoredCoverStory(source.claimKey, content),
-      confrontationGateOpen: context.confrontationGateOpen,
-    },
+    gateInputs: gateInputsFor(source, content, context),
     beliefScore: belief?.score ?? 0,
     contradictingClaimScores: belief?.contradictingScores ?? [],
     permittedEntityIds: source.permittedEntityIds,
   };
+}
+
+/** Mirrors `disclosure/tiers.ts#DisclosureTier`'s declared union order, least to most restricted — there is no exported runtime array for it in `rules`. */
+const DISCLOSURE_TIER_ORDER: readonly DisclosureTier[] = [
+  "public",
+  "guarded",
+  "confidential",
+  "cover_story",
+  "final_truth",
+];
+
+/**
+ * `DISCLOSURE_TIER_TABLE` sometimes authors more than one tier for the same
+ * (npc, claim) pair — e.g. Mara's `corin_protected_lark` has both a
+ * `guarded` framing ("an incomplete offer of help") and a `confidential`
+ * framing (the fuller protection motive). `rules#buildApprovedDisclosureBundle`
+ * assumes at most one `ApprovedDisclosure` per claim ID
+ * (`model-runtime#assignDisclosureIds` throws `DuplicateBundleKeyError`
+ * otherwise, since `D4-H`'s ephemeral id space is keyed by claim ID) — so
+ * when two or more authored tiers for the same claim would *simultaneously*
+ * pass their gate, only the single most-revealing (highest-tier) one is
+ * kept; the rest are dropped before ever reaching
+ * `buildApprovedDisclosureBundle`. A claim with only one row, or whose
+ * extra rows don't all pass, is unaffected — `buildApprovedDisclosureBundle`
+ * already filters a non-passing row out on its own.
+ */
+function selectOnePassingTierPerClaim(
+  sources: readonly ResolvedDisclosureSource[],
+  content: ContentRegistry,
+  context: DisclosureGateContext,
+): readonly ResolvedDisclosureSource[] {
+  const byClaimId = new Map<string, ResolvedDisclosureSource[]>();
+  for (const source of sources) {
+    const existing = byClaimId.get(source.claimId) ?? [];
+    existing.push(source);
+    byClaimId.set(source.claimId, existing);
+  }
+
+  const result: ResolvedDisclosureSource[] = [];
+  for (const group of byClaimId.values()) {
+    if (group.length === 1) {
+      result.push(...group);
+      continue;
+    }
+    const passing = group.filter((source) =>
+      meetsDisclosureTier(source.tier, gateInputsFor(source, content, context)),
+    );
+    if (passing.length <= 1) {
+      result.push(...group);
+      continue;
+    }
+    const [highest] = passing.toSorted(
+      (left, right) =>
+        DISCLOSURE_TIER_ORDER.indexOf(right.tier) -
+        DISCLOSURE_TIER_ORDER.indexOf(left.tier),
+    );
+    result.push(highest!);
+  }
+  return result;
 }
 
 export interface BuildDisclosureBundleParams {
@@ -166,7 +246,12 @@ export interface BuildDisclosureBundleParams {
 export function buildDisclosureBundleForNpc(
   params: BuildDisclosureBundleParams,
 ): ApprovedDisclosureBundle {
-  const candidates = params.sources.map((source) =>
+  const dedupedSources = selectOnePassingTierPerClaim(
+    params.sources,
+    params.content,
+    params.gateContext,
+  );
+  const candidates = dedupedSources.map((source) =>
     buildCandidate(source, params.content, params.gateContext),
   );
   return buildApprovedDisclosureBundle(
@@ -367,10 +452,17 @@ function toCandidate(
  * reject them anyway (`unapproved_entity_id`-style errors from
  * `renderings.ts`), but filtering here keeps the candidate set itself
  * honest about what this bundle actually supports.
+ *
+ * `approvedClaimIdByKey` maps the content-authored `claimKey` (what
+ * templates are keyed by) to the real claim ID (`ApprovedDisclosure.claimId`,
+ * what `assembleDialogueContext`'s `disclosureClaimKeys` must actually
+ * contain — `D4-H`'s ephemeral disclosure ids are assigned over real claim
+ * IDs, never over content string keys, so passing the string key itself
+ * here would fail translation with an "unknown key" error).
  */
 export function buildRenderingCandidatesForNpc(
   npcKey: string,
-  approvedClaimKeys: ReadonlySet<string>,
+  approvedClaimIdByKey: ReadonlyMap<string, string>,
   approvedOutcomeKinds: ReadonlySet<string>,
   gateResult: GateResult,
 ): readonly RenderingCandidateInput[] {
@@ -378,13 +470,14 @@ export function buildRenderingCandidatesForNpc(
 
   for (const template of DISCLOSURE_TEMPLATES) {
     if (template.npcKey !== npcKey) continue;
-    if (!approvedClaimKeys.has(template.claimKey)) continue;
+    const claimId = approvedClaimIdByKey.get(template.claimKey);
+    if (claimId === undefined) continue;
     candidates.push(
       toCandidate(
         template.templateKey,
         template.text,
         template.responseKind,
-        [template.claimKey],
+        [claimId],
         [],
         template.styleTags,
       ),
@@ -393,14 +486,17 @@ export function buildRenderingCandidatesForNpc(
 
   for (const template of CONFESSION_TEMPLATES) {
     if (template.npcKey !== npcKey) continue;
-    if (!template.claimKeys.every((claimKey) => approvedClaimKeys.has(claimKey)))
+    const claimIds = template.claimKeys.map((claimKey) =>
+      approvedClaimIdByKey.get(claimKey),
+    );
+    if (!claimIds.every((claimId): claimId is string => claimId !== undefined))
       continue;
     candidates.push(
       toCandidate(
         template.templateKey,
         template.text,
         template.responseKind,
-        [...template.claimKeys],
+        claimIds,
         [],
         template.styleTags,
       ),
@@ -462,4 +558,145 @@ export function defaultGateResult(bundle: ApprovedDisclosureBundle): GateResult 
     bundle.approvedOutcomes.length > 0 ||
     bundle.approvedEpisodes.length > 0;
   return hasAnything ? "passed" : "no_disclosure_available";
+}
+
+// --- Full assembly ------------------------------------------------------------
+
+/**
+ * `npc_profile`: display name from `content#CHARACTERS`, voice rules from
+ * `content#NPC_DIALOGUE_PROFILES` — both the authored "Voice" bullets and
+ * the "Never-do" bullets, since the wire schema (`model-contracts#
+ * NpcProfileInputSchema`) has only one `voice_rules` array, not a separate
+ * slot for either `coreWant` or the never-do list. `coreWant` itself has no
+ * wire slot at all and is not sent — it's authorial context for whoever
+ * writes new voice rules, not a runtime instruction.
+ */
+function npcProfileFor(
+  npcKey: string,
+  npcId: string,
+  currentLocationId: string,
+): NpcProfileInput {
+  const profile = NPC_DIALOGUE_PROFILES.find(
+    (candidate) => candidate.npcKey === npcKey,
+  );
+  if (profile === undefined) {
+    throw new Error(`No authored dialogue profile for NPC "${npcKey}"`);
+  }
+  const character = CHARACTERS.find((entity) => entity.entityKey === npcKey);
+  if (character === undefined) {
+    throw new Error(`No authored character entity for NPC "${npcKey}"`);
+  }
+  return {
+    npcId,
+    displayName: playerSafeText(character.displayName),
+    voiceRules: [
+      ...profile.voiceRules,
+      ...profile.neverDoRules.map(
+        (rule) => `Never ${rule[0]?.toLowerCase()}${rule.slice(1)}`,
+      ),
+    ].map(playerSafeText),
+    currentLocationId,
+  };
+}
+
+export interface BuildNpcDialogueContextParams {
+  readonly npcKey: string;
+  readonly npcId: string;
+  readonly currentLocationId: string;
+  readonly disclosureSources: readonly ResolvedDisclosureSource[];
+  readonly content: ContentRegistry;
+  readonly disclosureGateContext: DisclosureGateContext;
+  readonly requiredDisclosureIds?: readonly string[];
+  readonly approvedOutcomes?: readonly ApprovedOutcome[];
+  readonly requiredOutcomeIds?: readonly string[];
+  readonly approvedEpisodes?: readonly ApprovedEpisodeSummary[];
+  readonly playerAction: PlayerActionInput;
+  /** `gateResult` omitted -> derived by `defaultGateResult`; supply it when the caller's own action already computed a bespoke denial (`show`/`give`/`accept_promise`/`tell`/`normalize_claim`). */
+  readonly dialogueDirective: {
+    readonly requiredAct: string;
+    readonly gateResult?: GateResult;
+  };
+  readonly allowedResponseKinds: readonly string[];
+  readonly canonicalEntities: readonly CanonicalNamedEntityInput[];
+  readonly approvedActors: readonly ApprovedActorInput[];
+  readonly untrustedPlayerText?: string;
+}
+
+/**
+ * The full `NpcContextBuilder` assembly: disclosure bundle ->
+ * rendering candidates -> `model-runtime#assembleDialogueContext`. The
+ * action-specific pieces (`playerAction`, `dialogueDirective.requiredAct`,
+ * `allowedResponseKinds`, `canonicalEntities`, `approvedActors`,
+ * `disclosureGateContext.isRelevantToRequest`) are supplied by the caller
+ * rather than derived here — deriving "which claims are relevant to this
+ * request" needs the specific action's own query (`P4-11`'s `ask`, for a
+ * question; a fixed set for `show`/`give`), which this builder has no way
+ * to know in general. This function is the reusable core every
+ * model-backed action composes, not a replacement for their own input
+ * modules.
+ */
+export function buildNpcDialogueContext(
+  params: BuildNpcDialogueContextParams,
+): AssembledDialogueContext {
+  const bundle = buildDisclosureBundleForNpc({
+    sources: params.disclosureSources,
+    content: params.content,
+    gateContext: params.disclosureGateContext,
+    ...(params.requiredDisclosureIds === undefined
+      ? {}
+      : { requiredDisclosureIds: params.requiredDisclosureIds }),
+    ...(params.approvedOutcomes === undefined
+      ? {}
+      : { approvedOutcomes: params.approvedOutcomes }),
+    ...(params.requiredOutcomeIds === undefined
+      ? {}
+      : { requiredOutcomeIds: params.requiredOutcomeIds }),
+    ...(params.approvedEpisodes === undefined
+      ? {}
+      : { approvedEpisodes: params.approvedEpisodes }),
+  });
+
+  const gateResult = params.dialogueDirective.gateResult ?? defaultGateResult(bundle);
+
+  const approvedClaimIds = new Set(
+    bundle.approvedDisclosures.map((disclosure) => disclosure.claimId),
+  );
+  const approvedClaimIdByKey = new Map(
+    params.disclosureSources
+      .filter((source) => approvedClaimIds.has(source.claimId))
+      .map((source) => [source.claimKey, source.claimId] as const),
+  );
+  const approvedOutcomeKinds = new Set(
+    bundle.approvedOutcomes.map((outcome) => outcome.outcomeId),
+  );
+
+  const renderingCandidates = buildRenderingCandidatesForNpc(
+    params.npcKey,
+    approvedClaimIdByKey,
+    approvedOutcomeKinds,
+    gateResult,
+  );
+
+  return assembleDialogueContext({
+    disclosureBundle: bundle,
+    npcProfile: npcProfileFor(params.npcKey, params.npcId, params.currentLocationId),
+    playerAction: params.playerAction,
+    relationshipStance: playerSafeText(
+      relationshipStanceForScores(
+        params.disclosureGateContext.trust,
+        params.disclosureGateContext.suspicion,
+      ),
+    ),
+    dialogueDirective: {
+      requiredAct: params.dialogueDirective.requiredAct,
+      gateResult,
+    } satisfies DialogueDirectiveInput,
+    allowedResponseKinds: params.allowedResponseKinds,
+    renderingCandidates,
+    canonicalEntities: params.canonicalEntities,
+    approvedActors: params.approvedActors,
+    ...(params.untrustedPlayerText === undefined
+      ? {}
+      : { untrustedPlayerText: params.untrustedPlayerText }),
+  });
 }
