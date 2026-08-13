@@ -6,14 +6,45 @@
  * `Omit<Insertable<XTable>, "id" | "town_id" | "created_at">`: the three
  * columns only the caller (which owns identity generation, tenancy, and the
  * transaction clock) can supply.
+ *
+ * `D4-F`: a plan may need to insert two rows in one table, or one row that
+ * references another row the same plan just inserted (a `tell` plan's claim,
+ * transmission, and episode, for instance) — impossible to express with only
+ * `commitEffectPlan`'s pre-allocated `insertIds` map, which is keyed by table
+ * name. {@link InsertEffect.ref} names such an insert; {@link PlanRef} is the
+ * placeholder any later effect's `row`/`change` may use in place of a real id
+ * to point back at it. `commitEffectPlan` resolves every `PlanRef` in plan
+ * order and fails loudly on an unknown or forward reference — this package
+ * only defines the shape, not the resolver.
  */
 
 import type { EventType } from "@the-town-remembers/database/domains";
+
+/**
+ * A plan-local placeholder for another insert effect's not-yet-allocated id,
+ * used in place of a real id inside a later effect's `row` or `change`.
+ * Never persisted and never derived from a database id — resolved to the
+ * real id by `commitEffectPlan` before any statement runs.
+ */
+export interface PlanRef {
+  readonly $planRef: string;
+}
+
+export function isPlanRef(value: unknown): value is PlanRef {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "$planRef" in value &&
+    typeof (value as { readonly $planRef: unknown }).$planRef === "string"
+  );
+}
 
 export interface InsertEffect<TTable extends string = string, TRow = unknown> {
   readonly kind: "insert";
   readonly table: TTable;
   readonly row: TRow;
+  /** Plan-local handle a later effect in the same plan may reference via `{ $planRef: ref }`. */
+  readonly ref?: string;
 }
 
 /**
