@@ -13,10 +13,18 @@
 
 import {
   claimNormalizedKeys,
+  CONFESSION_TEMPLATES,
+  DENIAL_TEMPLATES,
+  DISCLOSURE_TEMPLATES,
   DISCLOSURE_TIER_TABLE,
+  OUTCOME_TEMPLATES,
   type ContentRegistry,
   type DisclosureTierBinding,
 } from "@the-town-remembers/content";
+import {
+  authoredTemplateText,
+  type RenderingCandidateInput,
+} from "@the-town-remembers/model-runtime";
 import {
   buildApprovedDisclosureBundle,
   isAuthoredCoverStory,
@@ -26,6 +34,7 @@ import {
   type ClaimStance,
   type DisclosureCandidateInput,
   type DisclosureTier,
+  type GateResult,
 } from "@the-town-remembers/rules";
 import type { Pool } from "pg";
 
@@ -319,4 +328,138 @@ export async function loadDisclosureSources(
     everBrokenPromiseToThisNpc,
     beliefByClaimId,
   };
+}
+
+// --- Rendering candidates ----------------------------------------------------
+
+function toCandidate(
+  templateKey: string,
+  text: string,
+  responseKind: string,
+  disclosureClaimKeys: readonly string[],
+  outcomeKeys: readonly string[],
+  styleTags: readonly string[],
+): RenderingCandidateInput {
+  // Every template in `content/dialogue/templates.ts`/`outcomes.ts`/
+  // `fallbacks.ts` is closed, hardcoded prose with no placeholder grammar
+  // (that module's own header comment) — no template ever needs to bind a
+  // specific episode, entity, or actor id, so these three are always empty.
+  return {
+    templateKey,
+    text: authoredTemplateText(text),
+    responseKind,
+    disclosureClaimKeys,
+    outcomeKeys,
+    episodeKeys: [],
+    entityIds: [],
+    actorIds: [],
+    styleTags,
+  };
+}
+
+/**
+ * Every rendering candidate this NPC's authored corpus offers for the
+ * current bundle: a disclosure/confession template for each claim (or, for
+ * Corin's confession, claim *set*) the bundle actually approved, an outcome
+ * template for each outcome the bundle actually approved, and a denial
+ * template for the resolved `gateResult`. Candidates whose claims/outcomes
+ * were not approved are never offered — `assembleDialogueContext` would
+ * reject them anyway (`unapproved_entity_id`-style errors from
+ * `renderings.ts`), but filtering here keeps the candidate set itself
+ * honest about what this bundle actually supports.
+ */
+export function buildRenderingCandidatesForNpc(
+  npcKey: string,
+  approvedClaimKeys: ReadonlySet<string>,
+  approvedOutcomeKinds: ReadonlySet<string>,
+  gateResult: GateResult,
+): readonly RenderingCandidateInput[] {
+  const candidates: RenderingCandidateInput[] = [];
+
+  for (const template of DISCLOSURE_TEMPLATES) {
+    if (template.npcKey !== npcKey) continue;
+    if (!approvedClaimKeys.has(template.claimKey)) continue;
+    candidates.push(
+      toCandidate(
+        template.templateKey,
+        template.text,
+        template.responseKind,
+        [template.claimKey],
+        [],
+        template.styleTags,
+      ),
+    );
+  }
+
+  for (const template of CONFESSION_TEMPLATES) {
+    if (template.npcKey !== npcKey) continue;
+    if (!template.claimKeys.every((claimKey) => approvedClaimKeys.has(claimKey)))
+      continue;
+    candidates.push(
+      toCandidate(
+        template.templateKey,
+        template.text,
+        template.responseKind,
+        [...template.claimKeys],
+        [],
+        template.styleTags,
+      ),
+    );
+  }
+
+  for (const template of OUTCOME_TEMPLATES) {
+    if (template.npcKey !== npcKey) continue;
+    if (!approvedOutcomeKinds.has(template.outcomeKind)) continue;
+    candidates.push(
+      toCandidate(
+        template.templateKey,
+        template.text,
+        template.responseKind,
+        [],
+        [template.outcomeKind],
+        template.styleTags,
+      ),
+    );
+  }
+
+  for (const template of DENIAL_TEMPLATES) {
+    if (template.npcKey !== npcKey) continue;
+    if (template.gateResult !== gateResult) continue;
+    candidates.push(
+      toCandidate(
+        template.templateKey,
+        template.text,
+        template.responseKind,
+        [],
+        [],
+        template.styleTags,
+      ),
+    );
+  }
+
+  return candidates;
+}
+
+// --- Gate result --------------------------------------------------------------
+
+/**
+ * The default `dialogue_directive.gate_result` for an action with no
+ * bespoke access/custody/promise/draft gate of its own (`ask` is the only
+ * one today — `show`/`give`/`accept_promise`/`tell`/`normalize_claim` each
+ * compute their own denial via `rules/actions/model-backed.ts`'s existing
+ * planners and must pass that resolved `GateResult` in directly rather than
+ * calling this). **This is a first-pass, deliberately narrow rule, not a
+ * full resolution of `D4-K`'s nine-value domain** — it only distinguishes
+ * "the bundle has nothing to say" from "the bundle has something to say";
+ * it cannot produce `denied_disclosure_tier`/`denied_belief` for a bundle
+ * that approved *some* claims but denied the specific one the player asked
+ * about, because this function never sees which claim was asked about.
+ * Revisit once `P4-11`'s `ask` input actually needs that distinction.
+ */
+export function defaultGateResult(bundle: ApprovedDisclosureBundle): GateResult {
+  const hasAnything =
+    bundle.approvedDisclosures.length > 0 ||
+    bundle.approvedOutcomes.length > 0 ||
+    bundle.approvedEpisodes.length > 0;
+  return hasAnything ? "passed" : "no_disclosure_available";
 }

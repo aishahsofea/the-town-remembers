@@ -10,6 +10,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildDisclosureBundleForNpc,
+  buildRenderingCandidatesForNpc,
+  defaultGateResult,
   disclosureRowsForNpc,
   type ClaimBeliefState,
   type DisclosureGateContext,
@@ -245,5 +247,137 @@ describe("buildDisclosureBundleForNpc", () => {
         expect(normalizedKeys.has(row.claimKey)).toBe(true);
       }
     }
+  });
+});
+
+describe("defaultGateResult", () => {
+  it("is no_disclosure_available for an empty bundle", () => {
+    const bundle = buildDisclosureBundleForNpc({
+      sources: [],
+      content: BELL_MYSTERY_V1,
+      gateContext: gateContext(),
+    });
+    expect(defaultGateResult(bundle)).toBe("no_disclosure_available");
+  });
+
+  it("is passed once at least one disclosure is approved", () => {
+    const bundle = buildDisclosureBundleForNpc({
+      sources: resolveSources("mara_venn"),
+      content: BELL_MYSTERY_V1,
+      gateContext: gateContext(),
+    });
+    expect(defaultGateResult(bundle)).toBe("passed");
+  });
+});
+
+describe("buildRenderingCandidatesForNpc", () => {
+  it("offers only disclosure templates for claims the bundle actually approved", () => {
+    const candidates = buildRenderingCandidatesForNpc(
+      "mara_venn",
+      new Set(["bell_not_at_square"]),
+      new Set(),
+      "passed",
+    );
+    expect(candidates.length).toBeGreaterThan(0);
+    for (const candidate of candidates) {
+      expect(candidate.disclosureClaimKeys).toEqual(["bell_not_at_square"]);
+      expect(candidate.outcomeKeys).toEqual([]);
+      expect(candidate.episodeKeys).toEqual([]);
+      expect(candidate.entityIds).toEqual([]);
+      expect(candidate.actorIds).toEqual([]);
+    }
+  });
+
+  it("offers Corin's confession only when every one of its four claims is approved", () => {
+    const partial = buildRenderingCandidatesForNpc(
+      "corin_hale",
+      new Set(["lark_damaged_bell", "corin_moved_bell", "bell_at_chapel"]),
+      new Set(),
+      "passed",
+    );
+    expect(
+      partial.some((candidate) => candidate.templateKey.includes("confession")),
+    ).toBe(false);
+
+    const complete = buildRenderingCandidatesForNpc(
+      "corin_hale",
+      new Set([
+        "lark_damaged_bell",
+        "corin_moved_bell",
+        "bell_at_chapel",
+        "corin_protected_lark",
+      ]),
+      new Set(),
+      "passed",
+    );
+    const confession = complete.find((candidate) =>
+      candidate.templateKey.includes("confession"),
+    );
+    expect(confession?.disclosureClaimKeys).toEqual([
+      "lark_damaged_bell",
+      "corin_moved_bell",
+      "bell_at_chapel",
+      "corin_protected_lark",
+    ]);
+  });
+
+  it("offers an outcome template only for an approved outcome kind", () => {
+    const none = buildRenderingCandidatesForNpc(
+      "nessa_reed",
+      new Set(),
+      new Set(),
+      "passed",
+    );
+    expect(
+      none.some((candidate) => candidate.templateKey.includes("chapel_key_lent")),
+    ).toBe(false);
+
+    const withOutcome = buildRenderingCandidatesForNpc(
+      "nessa_reed",
+      new Set(),
+      new Set(["chapel_key_lent"]),
+      "passed",
+    );
+    const outcome = withOutcome.find((candidate) =>
+      candidate.templateKey.includes("chapel_key_lent"),
+    );
+    expect(outcome?.outcomeKeys).toEqual(["chapel_key_lent"]);
+  });
+
+  it("offers a denial template only for the matching gate result", () => {
+    const wrongGate = buildRenderingCandidatesForNpc(
+      "nessa_reed",
+      new Set(),
+      new Set(),
+      "passed",
+    );
+    expect(
+      wrongGate.some((candidate) => candidate.templateKey.includes("denied_key")),
+    ).toBe(false);
+
+    const deniedAccess = buildRenderingCandidatesForNpc(
+      "nessa_reed",
+      new Set(),
+      new Set(),
+      "denied_access",
+    );
+    expect(
+      deniedAccess.some((candidate) => candidate.templateKey.includes("denied_key")),
+    ).toBe(true);
+  });
+
+  it("never offers a template belonging to a different NPC", () => {
+    const candidates = buildRenderingCandidatesForNpc(
+      "mara_venn",
+      new Set(["bell_not_at_square", "corin_was_at_inn"]),
+      new Set(),
+      "denied_access",
+    );
+    expect(
+      candidates.every((candidate) => !candidate.templateKey.startsWith("nessa_")),
+    ).toBe(true);
+    expect(
+      candidates.every((candidate) => !candidate.templateKey.startsWith("corin_")),
+    ).toBe(true);
   });
 });
