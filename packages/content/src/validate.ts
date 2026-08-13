@@ -13,6 +13,7 @@
 
 import { CLAIM_ENTITY_MATRIX } from "./claim-matrix.js";
 import { claimKeyV1 } from "./claim-key.js";
+import type { EntityType } from "./entities.js";
 import type { ContentRegistry } from "./registry.js";
 
 export interface ContentIssue {
@@ -362,5 +363,159 @@ export function validateContent(registry: ContentRegistry): readonly ContentIssu
   if (entityTypes.get(key.subjectItemKey) !== "item")
     add("promise_subject", key.termsVersion);
 
+  // --- Dialogue corpus (D4-I, P4-03a) --------------------------------------
+
+  validateDialogueCorpus(registry, npcKeys, claimKeys, entityTypes, add);
+
   return issues;
+}
+
+/**
+ * The closed placeholder grammar Decision 010/`D4-I` allow inside authored
+ * dialogue text. `{claim}` etc. are the only tokens a template may bind at
+ * render time; anything else is either a typo or a way for authored prose to
+ * accidentally carry something unbound.
+ */
+const CLOSED_PLACEHOLDERS: ReadonlySet<string> = new Set([
+  "claim",
+  "entity",
+  "actor",
+  "item",
+  "clue",
+]);
+
+/**
+ * Must stay the exact values `rules/kernel/gate-results.ts#GATE_RESULTS`
+ * declares. Duplicated rather than imported: `packages/content` may not
+ * depend on `packages/rules` (the dependency runs the other way).
+ */
+const KNOWN_GATE_RESULTS: ReadonlySet<string> = new Set([
+  "passed",
+  "denied_disclosure_tier",
+  "denied_belief",
+  "denied_access",
+  "denied_custody",
+  "denied_promise_context",
+  "denied_draft_state",
+  "no_disclosure_available",
+  "town_frozen",
+]);
+
+function checkPlaceholders(text: string, label: string, add: AddIssue): void {
+  for (const match of text.matchAll(/\{([^}]*)\}/g)) {
+    if (!CLOSED_PLACEHOLDERS.has(match[1] ?? "")) {
+      add("template_placeholder", `${label}: {${match[1]}}`);
+    }
+  }
+}
+
+type AddIssue = (code: string, detail: string) => void;
+
+function validateDialogueCorpus(
+  registry: ContentRegistry,
+  npcKeys: ReadonlySet<string>,
+  claimKeys: ReadonlySet<string>,
+  entityTypeByKey: ReadonlyMap<string, EntityType>,
+  add: AddIssue,
+): void {
+  const profileNpcKeys = new Set(
+    registry.npcDialogueProfiles.map((profile) => profile.npcKey),
+  );
+  for (const npc of registry.npcs) {
+    if (!profileNpcKeys.has(npc.npcKey)) add("dialogue_profile_missing", npc.npcKey);
+  }
+
+  for (const binding of registry.requestedItemBindings) {
+    if (!npcKeys.has(binding.npcKey)) add("requested_item_npc", binding.npcKey);
+    if (entityTypeByKey.get(binding.itemKey) !== "item") {
+      add("requested_item_key", binding.itemKey);
+    }
+    checkPlaceholders(binding.prompt, `requested_item:${binding.npcKey}`, add);
+  }
+
+  // No template may name a claim outside its NPC's authored disclosure tier
+  // — this is what makes "Mara's corpus contains no chapel location" and
+  // "Nessa's corpus contains no cart-load truth" true by construction rather
+  // than by a keyword scan, since neither NPC's allowlist row ever includes
+  // Corin's final-truth claims.
+  const authorizedPairs = new Set(
+    registry.disclosureTierTable.map((row) => `${row.npcKey}|${row.claimKey}`),
+  );
+  for (const template of registry.disclosureTemplates) {
+    if (!npcKeys.has(template.npcKey)) add("template_npc", template.templateKey);
+    if (!claimKeys.has(template.claimKey)) add("template_claim", template.templateKey);
+    if (!authorizedPairs.has(`${template.npcKey}|${template.claimKey}`)) {
+      add(
+        "template_unauthorized_claim",
+        `${template.templateKey}: ${template.npcKey} has no authored tier for ${template.claimKey}`,
+      );
+    }
+    checkPlaceholders(template.text, template.templateKey, add);
+  }
+
+  // Every authored disclosure tier row needs at least one voiced template —
+  // a coarse, content-local completeness check. The full per-action,
+  // per-response-kind, per-gate-result cross product is `assertFallbackCoverage`
+  // (model-runtime, P4-03), which needs a runtime requirement matrix this
+  // package has no way to construct.
+  //
+  // Corin's four final-truth rows are deliberately covered by one combined
+  // confession template each (ConfessionTemplate.claimKeys), never by four
+  // separate one-claim DisclosureTemplates — Decision 009 frames the
+  // confession as a single event, not four independent disclosures.
+  const templatedPairs = new Set([
+    ...registry.disclosureTemplates.map(
+      (template) => `${template.npcKey}|${template.claimKey}`,
+    ),
+    ...registry.confessionTemplates.flatMap((confession) =>
+      confession.claimKeys.map((claimKey) => `${confession.npcKey}|${claimKey}`),
+    ),
+  ]);
+  for (const row of registry.disclosureTierTable) {
+    if (!templatedPairs.has(`${row.npcKey}|${row.claimKey}`)) {
+      add(
+        "disclosure_tier_untemplated",
+        `${row.npcKey}: ${row.claimKey} (${row.tier})`,
+      );
+    }
+  }
+
+  for (const confession of registry.confessionTemplates) {
+    if (!npcKeys.has(confession.npcKey)) add("template_npc", confession.templateKey);
+    for (const claimKey of confession.claimKeys) {
+      if (!claimKeys.has(claimKey)) add("template_claim", confession.templateKey);
+      if (!authorizedPairs.has(`${confession.npcKey}|${claimKey}`)) {
+        add(
+          "template_unauthorized_claim",
+          `${confession.templateKey}: ${confession.npcKey} has no authored tier for ${claimKey}`,
+        );
+      }
+    }
+    checkPlaceholders(confession.text, confession.templateKey, add);
+  }
+
+  for (const outcome of registry.outcomeTemplates) {
+    if (!npcKeys.has(outcome.npcKey)) add("template_npc", outcome.templateKey);
+    checkPlaceholders(outcome.text, outcome.templateKey, add);
+  }
+
+  for (const denial of registry.denialTemplates) {
+    if (!npcKeys.has(denial.npcKey)) add("template_npc", denial.templateKey);
+    if (!KNOWN_GATE_RESULTS.has(denial.gateResult)) {
+      add("template_gate_result", `${denial.templateKey}: ${denial.gateResult}`);
+    }
+    checkPlaceholders(denial.text, denial.templateKey, add);
+  }
+
+  for (const line of registry.fallbackLines) {
+    if (!npcKeys.has(line.npcKey))
+      add("fallback_npc", `${line.npcKey}/${line.actionKind}`);
+    if (!KNOWN_GATE_RESULTS.has(line.gateResult)) {
+      add(
+        "fallback_gate_result",
+        `${line.npcKey}/${line.actionKind}: ${line.gateResult}`,
+      );
+    }
+    checkPlaceholders(line.text, `fallback:${line.npcKey}/${line.actionKind}`, add);
+  }
 }

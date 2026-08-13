@@ -15,6 +15,24 @@ import {
   type AuthoredClaimRelation,
 } from "./claims.js";
 import {
+  ALL_FALLBACK_LINES,
+  CONFESSION_TEMPLATES,
+  DENIAL_TEMPLATES,
+  DISCLOSURE_TEMPLATES,
+  DISCLOSURE_TIER_TABLE,
+  NPC_DIALOGUE_PROFILES,
+  OUTCOME_TEMPLATES,
+  REQUESTED_ITEM_BINDINGS,
+  type ConfessionTemplate,
+  type DenialTemplate,
+  type DisclosureTemplate,
+  type DisclosureTierBinding,
+  type FallbackLine,
+  type NpcDialogueProfile,
+  type OutcomeTemplate,
+  type RequestedItemBinding,
+} from "./dialogue/index.js";
+import {
   CHARACTERS,
   CONTACT_EDGES,
   ITEMS,
@@ -80,6 +98,14 @@ export interface ContentRegistry {
   readonly promiseTerms: typeof PROMISE_TERMS;
   readonly lockedLocationMessage: string;
   readonly evidenceGateLockedMessage: string;
+  readonly npcDialogueProfiles: readonly NpcDialogueProfile[];
+  readonly requestedItemBindings: readonly RequestedItemBinding[];
+  readonly disclosureTierTable: readonly DisclosureTierBinding[];
+  readonly disclosureTemplates: readonly DisclosureTemplate[];
+  readonly confessionTemplates: readonly ConfessionTemplate[];
+  readonly outcomeTemplates: readonly OutcomeTemplate[];
+  readonly denialTemplates: readonly DenialTemplate[];
+  readonly fallbackLines: readonly FallbackLine[];
 }
 
 export const BELL_MYSTERY_V1: ContentRegistry = Object.freeze({
@@ -108,6 +134,14 @@ export const BELL_MYSTERY_V1: ContentRegistry = Object.freeze({
   promiseTerms: PROMISE_TERMS,
   lockedLocationMessage: LOCKED_LOCATION_MESSAGE,
   evidenceGateLockedMessage: EVIDENCE_GATE_LOCKED_MESSAGE,
+  npcDialogueProfiles: NPC_DIALOGUE_PROFILES,
+  requestedItemBindings: REQUESTED_ITEM_BINDINGS,
+  disclosureTierTable: DISCLOSURE_TIER_TABLE,
+  disclosureTemplates: DISCLOSURE_TEMPLATES,
+  confessionTemplates: CONFESSION_TEMPLATES,
+  outcomeTemplates: OUTCOME_TEMPLATES,
+  denialTemplates: DENIAL_TEMPLATES,
+  fallbackLines: ALL_FALLBACK_LINES,
 });
 
 const REGISTRIES: ReadonlyMap<string, ContentRegistry> = new Map([
