@@ -94,6 +94,14 @@ export default tseslint.config(
     },
   },
   {
+    // Opt-in live-suite tests (`D4-U`) print their own skip reason to the
+    // terminal, the same as `scripts/vitest-database-setup.mjs` already does
+    // for the database suite — a genuine operator-facing message, not a
+    // debug leftover the general `no-console` rule exists to catch.
+    files: ["**/*.live.test.ts"],
+    rules: { "no-console": "off" },
+  },
+  {
     // Repository tooling runs directly on Node without a TypeScript program.
     files: ["**/*.{js,mjs,cjs}"],
     extends: [tseslint.configs.disableTypeChecked],

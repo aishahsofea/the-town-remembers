@@ -25,7 +25,11 @@ import type {
   RouteTemplate,
   UNMATCHED_ROUTE_TEMPLATE,
 } from "@the-town-remembers/http-contracts";
-import type { CostMode, PricingModelKey } from "@the-town-remembers/model-runtime";
+import type {
+  CostMode,
+  PricingModelKey,
+  WarmupPairResult,
+} from "@the-town-remembers/model-runtime";
 
 export type LoggableRouteTemplate = RouteTemplate | typeof UNMATCHED_ROUTE_TEMPLATE;
 
@@ -139,6 +143,16 @@ export interface ModelRunRecordedLogEvent {
   readonly estimatedCostMicroUsd: number;
 }
 
+/** One `(model role, schema)` warmup pair's outcome (`P4-06`) — never persisted to `agent_runs`, since prewarm writes no database row at all. */
+export interface WarmupResultLogEvent {
+  readonly event: "warmup_result";
+  readonly modelRole: WarmupPairResult["modelRole"];
+  readonly schema: WarmupPairResult["schema"];
+  readonly outcome: WarmupPairResult["outcome"];
+  readonly latencyMs: number;
+  readonly estimatedCostMicroUsd: number;
+}
+
 /**
  * The four `metrics.ts` (`P3-18`) event kinds. Defined here, not in
  * `metrics.ts`, so `metrics.ts` can import both the types and `logEvent`
@@ -192,6 +206,15 @@ export interface ModelCostSettlementMetricLogEvent {
   readonly clamped: boolean;
 }
 
+export interface WarmupResultMetricLogEvent {
+  readonly event: "metric_warmup_result";
+  readonly modelRole: WarmupPairResult["modelRole"];
+  readonly schema: WarmupPairResult["schema"];
+  readonly outcome: WarmupPairResult["outcome"];
+  readonly latencyMs: number;
+  readonly estimatedCostMicroUsd: number;
+}
+
 export type GameServerLogEvent =
   | UnexpectedErrorLogEvent
   | ActionLifecycleLogEvent
@@ -199,13 +222,15 @@ export type GameServerLogEvent =
   | ModelCostAdmissionLogEvent
   | ModelCostSettlementLogEvent
   | ModelRunRecordedLogEvent
+  | WarmupResultLogEvent
   | HttpLatencyMetricLogEvent
   | ActionProcessingMetricLogEvent
   | RateLimitMetricLogEvent
   | ActionProcessingExhaustedMetricLogEvent
   | ModelCostAdmissionMetricLogEvent
   | ModelRunMetricLogEvent
-  | ModelCostSettlementMetricLogEvent;
+  | ModelCostSettlementMetricLogEvent
+  | WarmupResultMetricLogEvent;
 
 /**
  * Writes exactly one JSON object per line directly to stdout, matching

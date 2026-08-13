@@ -26,7 +26,11 @@ import {
   type RateLimitBucketKind,
 } from "@the-town-remembers/database";
 import type { ActionKind } from "@the-town-remembers/http-contracts";
-import { COST_MODES, type CostMode } from "@the-town-remembers/model-runtime";
+import {
+  COST_MODES,
+  type CostMode,
+  type WarmupPairResult,
+} from "@the-town-remembers/model-runtime";
 
 import { logEvent, type LoggableRouteTemplate } from "./events.js";
 
@@ -123,4 +127,21 @@ export function recordModelCostSettlement(params: {
 }): void {
   assertMember(RESERVATION_TERMINAL_STATUSES, params.status, "status");
   logEvent({ event: "metric_model_cost_settlement", ...params });
+}
+
+const WARMUP_MODEL_ROLES = ["haiku", "sonnet"] as const;
+const WARMUP_OUTCOMES = ["success", "failure"] as const;
+
+/** One `(model role, schema)` warmup pair's outcome, aggregatable into a success rate and a latency/cost distribution per pair. */
+export function recordWarmupResult(result: WarmupPairResult): void {
+  assertMember(WARMUP_MODEL_ROLES, result.modelRole, "modelRole");
+  assertMember(WARMUP_OUTCOMES, result.outcome, "outcome");
+  logEvent({
+    event: "metric_warmup_result",
+    modelRole: result.modelRole,
+    schema: result.schema,
+    outcome: result.outcome,
+    latencyMs: result.latencyMs,
+    estimatedCostMicroUsd: result.estimatedCostMicroUsd,
+  });
 }
