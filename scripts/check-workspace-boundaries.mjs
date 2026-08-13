@@ -189,6 +189,19 @@ export const EXPECTED_PACKAGES = Object.freeze([
     allowedDependencies: [],
   },
   {
+    path: "packages/model-runtime",
+    name: MODEL_RUNTIME,
+    kind: "library",
+    exports: STANDARD_EXPORTS,
+    allowedDependencies: [
+      CONTENT,
+      MODEL_CONTRACTS,
+      RULES,
+      RUNTIME_CONFIG,
+      SERIALIZATION,
+    ],
+  },
+  {
     path: "packages/browser-config",
     name: BROWSER_CONFIG,
     kind: "library",

@@ -12,6 +12,9 @@
       "path": "./packages/serialization"
     },
     {
+      "path": "./packages/model-runtime"
+    },
+    {
       "path": "./packages/browser-config"
     },
     {

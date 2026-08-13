@@ -1,0 +1,21 @@
+{
+  "name": "@the-town-remembers/model-runtime",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@the-town-remembers/content": "workspace:*",
+    "@the-town-remembers/model-contracts": "workspace:*",
+    "@the-town-remembers/rules": "workspace:*",
+    "@the-town-remembers/runtime-config": "workspace:*",
+    "@the-town-remembers/serialization": "workspace:*",
+    "zod": "^4.4.3"
+  }
+}

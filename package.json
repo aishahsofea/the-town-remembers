@@ -31,6 +31,7 @@
     "test:contracts": "vitest run --project contracts",
     "test:db": "vitest run --project database",
     "test:e2e": "playwright test",
+    "test:model": "vitest run --project model-runtime",
     "test:rules": "vitest run --project rules",
     "test:tooling": "node --test scripts/*.test.mjs",
     "test:watch": "vitest",

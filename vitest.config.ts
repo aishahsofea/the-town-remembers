@@ -40,6 +40,13 @@ export default defineConfig({
       },
       {
         test: {
+          name: "model-runtime",
+          environment: "node",
+          include: ["packages/model-runtime/src/**/*.test.ts"],
+        },
+      },
+      {
+        test: {
           name: "database",
           environment: "node",
           globalSetup: ["./scripts/vitest-database-setup.mjs"],

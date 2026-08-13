@@ -290,6 +290,27 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
 
+  packages/model-runtime:
+    dependencies:
+      '@the-town-remembers/content':
+        specifier: workspace:*
+        version: link:../content
+      '@the-town-remembers/model-contracts':
+        specifier: workspace:*
+        version: link:../model-contracts
+      '@the-town-remembers/rules':
+        specifier: workspace:*
+        version: link:../rules
+      '@the-town-remembers/runtime-config':
+        specifier: workspace:*
+        version: link:../runtime-config
+      '@the-town-remembers/serialization':
+        specifier: workspace:*
+        version: link:../serialization
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+
   packages/rules:
     dependencies:
       '@the-town-remembers/content':
