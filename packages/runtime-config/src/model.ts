@@ -25,7 +25,7 @@ export {
   type ConfigurationCategory,
   type ConfigurationIssue,
 } from "./shared.js";
-export { MODEL_DEADLINES } from "./reliability.js";
+export { MODEL_DEADLINES, MODEL_RETRIES } from "./reliability.js";
 
 const FLAG_VALUES = ["0", "1"] as const;
 

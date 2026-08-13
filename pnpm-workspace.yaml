@@ -6,3 +6,6 @@ packages:
 nodeVersion: 24.18.0
 engineStrict: true
 pmOnFail: error
+minimumReleaseAgeExclude:
+  - "@aws-sdk/client-bedrock-runtime@3.1109.0"
+  - "@aws-sdk/token-providers@3.1109.0"

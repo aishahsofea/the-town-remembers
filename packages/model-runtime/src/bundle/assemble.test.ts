@@ -317,14 +317,15 @@ describe("assembleDialogueContext", () => {
   });
 });
 
-describe("package boundary (P4-02 acceptance 1)", () => {
-  it("depends on exactly the five workspace packages plus zod, never database/pg/aws-sdk", () => {
+describe("package boundary (P4-02 acceptance 1, updated by D4-D/P4-04)", () => {
+  it("depends on exactly the five workspace packages, zod, and the one accepted AWS SDK client — never database/pg/another aws-sdk package", () => {
     const manifestPath = fileURLToPath(new URL("../../package.json", import.meta.url));
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
       dependencies?: Record<string, string>;
     };
     const dependencyNames = Object.keys(manifest.dependencies ?? {}).toSorted();
     expect(dependencyNames).toStrictEqual([
+      "@aws-sdk/client-bedrock-runtime",
       "@the-town-remembers/content",
       "@the-town-remembers/model-contracts",
       "@the-town-remembers/rules",
@@ -334,7 +335,9 @@ describe("package boundary (P4-02 acceptance 1)", () => {
     ]);
     expect(dependencyNames).not.toContain("@the-town-remembers/database");
     expect(dependencyNames).not.toContain("pg");
-    expect(dependencyNames.some((name) => name.startsWith("@aws-sdk/"))).toBe(false);
+    expect(
+      dependencyNames.filter((name) => name.startsWith("@aws-sdk/")),
+    ).toStrictEqual(["@aws-sdk/client-bedrock-runtime"]);
   });
 });
 

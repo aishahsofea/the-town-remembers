@@ -11,6 +11,7 @@
     }
   },
   "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.1109.0",
     "@the-town-remembers/content": "workspace:*",
     "@the-town-remembers/model-contracts": "workspace:*",
     "@the-town-remembers/rules": "workspace:*",
