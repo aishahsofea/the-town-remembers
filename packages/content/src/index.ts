@@ -3,6 +3,7 @@ export * from "./claim-key.js";
 export * from "./claim-matrix.js";
 export * from "./entities.js";
 export * from "./claims.js";
+export * from "./dialogue/index.js";
 export * from "./evidence.js";
 export * from "./presentation.js";
 export * from "./seed.js";

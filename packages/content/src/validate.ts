@@ -56,6 +56,28 @@ export function validateContent(registry: ContentRegistry): readonly ContentIssu
     for (const key of duplicates(keys)) add("duplicate_key", `${label}: ${key}`);
   }
 
+  // --- Aliases (D4-J) -------------------------------------------------------
+  //
+  // Aliases are already NFKC-normalized and case-folded by the time they
+  // reach here (content/entities.ts#normalizeAliases); this only checks that
+  // no two different entities claim the same normalized alias, which would
+  // make claim normalization's canonical_entities ambiguous.
+
+  const aliasOwners = new Map<string, string>();
+  for (const entity of registry.storyEntities) {
+    for (const alias of entity.aliases) {
+      const owner = aliasOwners.get(alias);
+      if (owner !== undefined && owner !== entity.entityKey) {
+        add(
+          "alias_collision",
+          `"${alias}" is claimed by both ${owner} and ${entity.entityKey}`,
+        );
+      } else {
+        aliasOwners.set(alias, entity.entityKey);
+      }
+    }
+  }
+
   // --- Claims -------------------------------------------------------------
 
   const normalizedKeys = new Map<string, string>();
