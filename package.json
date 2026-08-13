@@ -21,6 +21,7 @@
     "db:types": "node scripts/db-types.mjs",
     "db:up": "node scripts/cockroach.mjs start",
     "dev": "node scripts/dev.mjs",
+    "embed:seed": "node scripts/embed-seed.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",

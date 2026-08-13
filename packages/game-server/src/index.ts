@@ -25,3 +25,4 @@ export * from "./application/join.js";
 export * from "./application/player-view/build.js";
 export * from "./application/player-view/etag.js";
 export * from "./application/commands/prewarm.js";
+export * from "./application/commands/embed-seed.js";
