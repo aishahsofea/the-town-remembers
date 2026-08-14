@@ -23,7 +23,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { startOperationDeadline } from "../../deadline.js";
 import { claimAction } from "../../../persistence/actions.js";
-import { rateScopeKey } from "../../../persistence/rate-limits.js";
 import { actionRequestHash } from "../../../security/fingerprint.js";
 import type { ExecuteModelActionParams } from "../model-executor.js";
 import { executeModelAction } from "../model-executor.js";
@@ -62,6 +61,27 @@ describe.skipIf(!shouldRunDatabaseTests())("tell end to end", () => {
     readonly normalizedKey: string;
   }
 
+  /**
+   * `insertDraft` is called more than once for the same `townId` whenever a
+   * test tells the identical claim twice (the same subject/object entity
+   * keys), so it must not blindly re-insert — `uq_story_entities__entity_key`
+   * scopes uniqueness to `(town_id, entity_key)`. Reusing the existing row
+   * is also the semantically correct behavior: retelling the same claim
+   * means the same "Corin Hale" and "The Lantern Inn", not a second one.
+   */
+  async function findOrInsertStoryEntity(
+    pool: Pool,
+    townId: string,
+    options: { readonly entityType: string; readonly entityKey: string },
+  ): Promise<string> {
+    const existing = await pool.query<{ readonly id: string }>(
+      `SELECT id FROM public.story_entities WHERE town_id = $1 AND entity_key = $2`,
+      [townId, options.entityKey],
+    );
+    if (existing.rows[0]) return existing.rows[0].id;
+    return insertStoryEntity(pool, townId, options);
+  }
+
   async function insertSetupAction(pool: Pool, townId: string, playerId: string) {
     const npcId = await insertNpc(pool, townId);
     const claim = await claimAction(pool, {
@@ -81,10 +101,11 @@ describe.skipIf(!shouldRunDatabaseTests())("tell end to end", () => {
       now: () => new Date(),
       deadlineAt: Date.now() + 20_000,
       requestId: "req_tell_e2e_setup",
-      modelRateLimit: {
-        playerScopeKey: rateScopeKey("player", townId, playerId),
-        townScopeKey: rateScopeKey("town", townId, townId),
-      },
+      // No `modelRateLimit`: this is fixture scaffolding for a fake, already-
+      // completed `normalize_claim` row, not a real claim under test — it
+      // must not spend the player's actual `model_action` burst, which a
+      // test exercising two real `tell`s (each a genuine model-backed
+      // claim) needs headroom for.
     });
     if (claim.outcome !== "claimed") throw new Error("setup action was not claimed");
     // Finished immediately with a raw update — `claim_drafts.normalization_action_id`
@@ -136,11 +157,11 @@ describe.skipIf(!shouldRunDatabaseTests())("tell end to end", () => {
       );
     }
 
-    const subjectEntityId = await insertStoryEntity(pool, townId, {
+    const subjectEntityId = await findOrInsertStoryEntity(pool, townId, {
       entityType: "character",
       entityKey: "corin_hale",
     });
-    const objectEntityId = await insertStoryEntity(pool, townId, {
+    const objectEntityId = await findOrInsertStoryEntity(pool, townId, {
       entityType: "location",
       entityKey: "lantern_inn",
     });
