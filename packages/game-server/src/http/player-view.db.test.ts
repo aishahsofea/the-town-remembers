@@ -646,7 +646,9 @@ describe.skipIf(!shouldRunDatabaseTests())("player-view", () => {
       config,
     );
     const disabledView = PlayerViewSchema.parse(parseBody(disabled.response.body));
-    const disabledEncounter = disabledView.encounters.find((e) => e.npc.id === corinNpcId);
+    const disabledEncounter = disabledView.encounters.find(
+      (e) => e.npc.id === corinNpcId,
+    );
     expect(disabledEncounter?.availableActionKinds).toStrictEqual([]);
 
     const mutationsConfig: RouterConfig = { ...config, enableNpcMutations: true };
@@ -656,7 +658,9 @@ describe.skipIf(!shouldRunDatabaseTests())("player-view", () => {
       mutationsConfig,
     );
     const enabledView = PlayerViewSchema.parse(parseBody(enabled.response.body));
-    const enabledEncounter = enabledView.encounters.find((e) => e.npc.id === corinNpcId);
+    const enabledEncounter = enabledView.encounters.find(
+      (e) => e.npc.id === corinNpcId,
+    );
     expect(enabledEncounter?.availableActionKinds).toStrictEqual([
       "ask",
       "normalize_claim",
@@ -800,7 +804,9 @@ describe.skipIf(!shouldRunDatabaseTests())("player-view", () => {
       speaker: { id: nessaNpcId, actorType: "npc", displayName: "Nessa Reed" },
     });
     expect(entry && "allegedSource" in entry).toBe(false);
-    expect(entry && "provenancePath" in entry ? entry.provenancePath : []).toStrictEqual([
+    expect(
+      entry && "provenancePath" in entry ? entry.provenancePath : [],
+    ).toStrictEqual([
       { id: player.playerId, actorType: "player", displayName: "Board Watcher" },
       { id: maraNpcId, actorType: "npc", displayName: "Mara Venn" },
       { id: nessaNpcId, actorType: "npc", displayName: "Nessa Reed" },
@@ -836,7 +842,15 @@ describe.skipIf(!shouldRunDatabaseTests())("player-view", () => {
          (town_id, id, entry_kind, contributed_by_player_id, source_event_id,
           claim_id, transmission_id, verification_status, created_at)
        VALUES ($1, $2, 'hearsay', $3, $4, $5, $6, 'attributed_hearsay', $7)`,
-      [townId, entryId, player.playerId, eventId, larkDamagedBellClaimId, transmissionId, new Date()],
+      [
+        townId,
+        entryId,
+        player.playerId,
+        eventId,
+        larkDamagedBellClaimId,
+        transmissionId,
+        new Date(),
+      ],
     );
 
     const { response } = await routeRequest(
@@ -853,9 +867,9 @@ describe.skipIf(!shouldRunDatabaseTests())("player-view", () => {
       speaker: { id: nessaNpcId, actorType: "npc", displayName: "Nessa Reed" },
       allegedSource: { id: maraNpcId, actorType: "npc", displayName: "Mara Venn" },
     });
-    expect(entry && "provenancePath" in entry ? entry.provenancePath : []).toStrictEqual([
-      { id: nessaNpcId, actorType: "npc", displayName: "Nessa Reed" },
-    ]);
+    expect(
+      entry && "provenancePath" in entry ? entry.provenancePath : [],
+    ).toStrictEqual([{ id: nessaNpcId, actorType: "npc", displayName: "Nessa Reed" }]);
   }, 30_000);
 
   it("reconstructs one complete accepted interaction through the inspection views, ordinal and provenance root intact", async () => {
@@ -951,7 +965,9 @@ describe.skipIf(!shouldRunDatabaseTests())("player-view", () => {
       },
     ]);
 
-    expect(await readInspectedInteraction(db().pool, townId, randomUUID())).toBeUndefined();
+    expect(
+      await readInspectedInteraction(db().pool, townId, randomUUID()),
+    ).toBeUndefined();
   }, 30_000);
 
   it("returns undefined for a town or player row that does not exist", async () => {

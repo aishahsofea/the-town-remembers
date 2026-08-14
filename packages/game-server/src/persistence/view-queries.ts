@@ -469,9 +469,17 @@ export interface BoardClaimEntryRow {
   readonly contributedByDisplayName: string;
   readonly claim: ActivePromiseClaimSubjectRow;
   readonly transmissionId: string;
-  readonly speaker: { readonly id: string; readonly actorType: "player" | "npc"; readonly displayName: string };
+  readonly speaker: {
+    readonly id: string;
+    readonly actorType: "player" | "npc";
+    readonly displayName: string;
+  };
   readonly allegedSource:
-    | { readonly id: string; readonly actorType: "player" | "npc"; readonly displayName: string }
+    | {
+        readonly id: string;
+        readonly actorType: "player" | "npc";
+        readonly displayName: string;
+      }
     | undefined;
 }
 

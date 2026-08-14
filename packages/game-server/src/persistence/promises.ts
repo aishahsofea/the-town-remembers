@@ -100,7 +100,9 @@ export async function readActivePromiseForItem(
     [townId, itemId],
   );
   const row = result.rows[0];
-  return row === undefined ? undefined : { promiseId: row.id, promiseNpcId: row.npc_id };
+  return row === undefined
+    ? undefined
+    : { promiseId: row.id, promiseNpcId: row.npc_id };
 }
 
 /** Projects rows onto `rules/world/promises.ts#PromiseKey` for `hasActivePromise`. */

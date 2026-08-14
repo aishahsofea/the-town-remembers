@@ -89,7 +89,8 @@ describe.skipIf(!shouldRunDatabaseTests())("POST /actions — accept_promise", (
       selectDialogue(params) {
         return Promise.resolve({
           npcId: params.assembled.trustedContext.npc_profile.npc_id,
-          text: params.assembled.trustedContext.approved_renderings[0]?.text ?? "I see.",
+          text:
+            params.assembled.trustedContext.approved_renderings[0]?.text ?? "I see.",
           responseMode: "selected" as const,
           expressedDisclosures: [],
         });
@@ -263,7 +264,8 @@ describe.skipIf(!shouldRunDatabaseTests())("POST /actions — accept_promise", (
     const { response } = await acceptPromise(player, "not-a-real-offer-id");
     const body = CompletedActionResponseSchema.parse(parseBody(response.body));
     expect(body.outcome).toBe("denied");
-    if (body.outcome === "denied") expect(body.result.reasonCode).toBe("PROMISE_OFFER_INVALID");
+    if (body.outcome === "denied")
+      expect(body.result.reasonCode).toBe("PROMISE_OFFER_INVALID");
   });
 
   it("denies an out-of-range ordinal on an otherwise real source action", async () => {
@@ -275,7 +277,8 @@ describe.skipIf(!shouldRunDatabaseTests())("POST /actions — accept_promise", (
     const { response } = await acceptPromise(player, outOfRange);
     const body = CompletedActionResponseSchema.parse(parseBody(response.body));
     expect(body.outcome).toBe("denied");
-    if (body.outcome === "denied") expect(body.result.reasonCode).toBe("PROMISE_OFFER_INVALID");
+    if (body.outcome === "denied")
+      expect(body.result.reasonCode).toBe("PROMISE_OFFER_INVALID");
   });
 
   it("accepts Nessa's chapel-key offer, transferring custody and creating the promise atomically", async () => {
@@ -311,7 +314,9 @@ describe.skipIf(!shouldRunDatabaseTests())("POST /actions — accept_promise", (
     const player = await joinPlayer();
     const offerId = await requestKeyOffer(player);
     const first = await acceptPromise(player, offerId, randomUUID());
-    const firstBody = CompletedActionResponseSchema.parse(parseBody(first.response.body));
+    const firstBody = CompletedActionResponseSchema.parse(
+      parseBody(first.response.body),
+    );
     expect(firstBody.outcome).toBe("applied");
 
     // Re-accepting the identical already-consumed offer (a different
@@ -325,7 +330,9 @@ describe.skipIf(!shouldRunDatabaseTests())("POST /actions — accept_promise", (
     // (npc, item) impossible regardless of which application-level check
     // catches it first.
     const second = await acceptPromise(player, offerId, randomUUID());
-    const secondBody = CompletedActionResponseSchema.parse(parseBody(second.response.body));
+    const secondBody = CompletedActionResponseSchema.parse(
+      parseBody(second.response.body),
+    );
     expect(secondBody.outcome).toBe("denied");
     if (secondBody.outcome === "denied") {
       expect(["PROMISE_OFFER_INVALID", "PROMISE_ALREADY_ACTIVE"]).toContain(

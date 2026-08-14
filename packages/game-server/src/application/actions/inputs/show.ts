@@ -165,8 +165,17 @@ async function computeRelationshipConsequence(
   shownClueIds: readonly string[],
   appliedClueIds: ReadonlySet<string>,
 ): Promise<RelationshipConsequence> {
-  const existingKeysRaw = await readRelationshipChangeKeys(pool, townId, npc.npcId, playerId);
-  const existingKeys = relationshipContributionKeys(existingKeysRaw, npc.npcId, playerId);
+  const existingKeysRaw = await readRelationshipChangeKeys(
+    pool,
+    townId,
+    npc.npcId,
+    playerId,
+  );
+  const existingKeys = relationshipContributionKeys(
+    existingKeysRaw,
+    npc.npcId,
+    playerId,
+  );
   const priorLieClaimIds = new Set(
     existingKeysRaw
       .filter((row) => row.reasonKind === "lie_established" && row.claimId !== null)
@@ -174,7 +183,9 @@ async function computeRelationshipConsequence(
   );
 
   const negativeClaimIds = [
-    ...new Set(newLinks.filter((link) => link.signedWeight < 0).map((link) => link.claimId)),
+    ...new Set(
+      newLinks.filter((link) => link.signedWeight < 0).map((link) => link.claimId),
+    ),
   ].toSorted();
   const negativeLinkClueByClaimId = new Map(
     newLinks
@@ -203,7 +214,10 @@ async function computeRelationshipConsequence(
       priorLieEstablishedForThisPlayerNpcClaim: priorLieClaimIds.has(claimId),
     });
     if (caught) {
-      caughtLieClaims.push({ claimId, rootTransmissionId: confirmation.transmissionId });
+      caughtLieClaims.push({
+        claimId,
+        rootTransmissionId: confirmation.transmissionId,
+      });
     }
   }
 
@@ -211,7 +225,13 @@ async function computeRelationshipConsequence(
     const sourceReversals = await Promise.all(
       caughtLieClaims.map(async ({ claimId }) => {
         const [activeContributions, activeSources] = await Promise.all([
-          readActiveContributionsForReversal(pool, townId, npc.npcId, claimId, playerId),
+          readActiveContributionsForReversal(
+            pool,
+            townId,
+            npc.npcId,
+            claimId,
+            playerId,
+          ),
           readActiveTestimonySources(pool, townId, npc.npcId, claimId),
         ]);
         const priorIndependentSourceCount = new Set(activeSources).size;
@@ -243,7 +263,9 @@ async function computeRelationshipConsequence(
   // interaction this loader does not yet resolve — a known, narrow gap, not
   // an oversight, left for a future pass if it proves to matter in practice.
   const positiveClaimIds = [
-    ...new Set(newLinks.filter((link) => link.signedWeight >= 0).map((link) => link.claimId)),
+    ...new Set(
+      newLinks.filter((link) => link.signedWeight >= 0).map((link) => link.claimId),
+    ),
   ].toSorted();
   const verifiedTestimonyClaimIds: string[] = [];
   if (positiveClaimIds.length > 0) {
@@ -281,23 +303,25 @@ async function computeRelationshipConsequence(
       }),
     ),
   );
-  const reasons: ShowRelationshipReason[] = verifiedTestimonyClaimIds.flatMap((claimId) => {
-    const link = newLinks.find((entry) => entry.claimId === claimId);
-    const rootTransmissionId = rootTransmissionByClaimId.get(claimId);
-    // Both lookups are guaranteed by construction (this claim came from
-    // `newLinks`, and `readActiveTestimonySources` just confirmed an active
-    // player-testimony row exists) — the guard is defense in depth, not an
-    // expected path.
-    if (link === undefined || rootTransmissionId === undefined) return [];
-    return [
-      {
-        reasonKind: "verified_testimony" as const,
-        claimId,
-        clueId: link.clueId,
-        sourceRootTransmissionId: rootTransmissionId,
-      },
-    ];
-  });
+  const reasons: ShowRelationshipReason[] = verifiedTestimonyClaimIds.flatMap(
+    (claimId) => {
+      const link = newLinks.find((entry) => entry.claimId === claimId);
+      const rootTransmissionId = rootTransmissionByClaimId.get(claimId);
+      // Both lookups are guaranteed by construction (this claim came from
+      // `newLinks`, and `readActiveTestimonySources` just confirmed an active
+      // player-testimony row exists) — the guard is defense in depth, not an
+      // expected path.
+      if (link === undefined || rootTransmissionId === undefined) return [];
+      return [
+        {
+          reasonKind: "verified_testimony" as const,
+          claimId,
+          clueId: link.clueId,
+          sourceRootTransmissionId: rootTransmissionId,
+        },
+      ];
+    },
+  );
 
   // Gated on `appliedClueIds` (does this clue have any authored effect at
   // all) rather than `newLinks` (did *this* Show add a not-yet-recorded
@@ -343,7 +367,9 @@ async function loadAuthorizedShowInputs(
           };
         })()
       : await (async () => {
-          const custody = await readItemCustody(pool, context.townId, [evidenceRef.itemId]);
+          const custody = await readItemCustody(pool, context.townId, [
+            evidenceRef.itemId,
+          ]);
           const revealedClueId = await readClueForRevealedItem(
             pool,
             context.townId,
@@ -359,16 +385,21 @@ async function loadAuthorizedShowInputs(
   const { clueDiscoveredInTown, itemCurrentlyHeldByPlayer, shownClueIds } =
     evidenceAuthorization;
 
-  const [clueClaimEffects, clueRows, alreadyRecordedEvidence, relationship, grantedCapabilities] =
-    await Promise.all([
-      readClueClaimEffects(pool, context.townId, shownClueIds),
-      readCluesByIds(pool, context.townId, shownClueIds),
-      readAlreadyRecordedEvidence(pool, context.townId, npc.npcId, shownClueIds),
-      readRelationshipScores(pool, context.townId, npc.npcId, context.playerId),
-      npc.characterKey === CORIN_NPC_KEY
-        ? readGrantedCapabilities(pool, context.townId, context.playerId)
-        : Promise.resolve([]),
-    ]);
+  const [
+    clueClaimEffects,
+    clueRows,
+    alreadyRecordedEvidence,
+    relationship,
+    grantedCapabilities,
+  ] = await Promise.all([
+    readClueClaimEffects(pool, context.townId, shownClueIds),
+    readCluesByIds(pool, context.townId, shownClueIds),
+    readAlreadyRecordedEvidence(pool, context.townId, npc.npcId, shownClueIds),
+    readRelationshipScores(pool, context.townId, npc.npcId, context.playerId),
+    npc.characterKey === CORIN_NPC_KEY
+      ? readGrantedCapabilities(pool, context.townId, context.playerId)
+      : Promise.resolve([]),
+  ]);
 
   const structuredEffectPlan = planShowStructuredEffect(shownClueIds, clueClaimEffects);
   const appliedClueIds = new Set(structuredEffectPlan.appliedClueIds);
@@ -397,7 +428,12 @@ async function loadAuthorizedShowInputs(
       ...sourceReversals.map((reversal) => reversal.claimId),
     ]),
   ];
-  const beliefRows = await readNpcBeliefs(pool, context.townId, npc.npcId, affectedClaimIds);
+  const beliefRows = await readNpcBeliefs(
+    pool,
+    context.townId,
+    npc.npcId,
+    affectedClaimIds,
+  );
   const claimBeliefs: ShowClaimBeliefState[] = affectedClaimIds.map((claimId) => {
     const row = beliefRows.get(claimId);
     return row === undefined
@@ -476,8 +512,7 @@ export async function resolveShowTarget(
 
 const SHOW_DENIAL_MESSAGES: Partial<Record<ReasonCode, string>> = {
   NPC_NOT_PRESENT: "That person is not here to be shown anything.",
-  EVIDENCE_NOT_AUTHORIZED:
-    "You do not have that evidence available to show right now.",
+  EVIDENCE_NOT_AUTHORIZED: "You do not have that evidence available to show right now.",
 };
 
 export function createShowActionHandler(
@@ -559,7 +594,9 @@ export function createShowActionHandler(
       // "none"` for the player, matching the belief effects `planShow`
       // itself actually emitted.
       const alreadyRecordedKeys = new Set(
-        inputs.alreadyRecordedEvidence.map((entry) => `${entry.claimId}:${entry.clueId}`),
+        inputs.alreadyRecordedEvidence.map(
+          (entry) => `${entry.claimId}:${entry.clueId}`,
+        ),
       );
       const newClueClaimEffects = inputs.clueClaimEffects.filter(
         (link) => !alreadyRecordedKeys.has(`${link.claimId}:${link.clueId}`),

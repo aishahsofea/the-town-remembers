@@ -23,7 +23,9 @@ export interface PromiseOffersProps {
 }
 
 export function PromiseOffers({ offers, action, onAccepted }: PromiseOffersProps) {
-  const [acceptingOfferId, setAcceptingOfferId] = useState<string | undefined>(undefined);
+  const [acceptingOfferId, setAcceptingOfferId] = useState<string | undefined>(
+    undefined,
+  );
   const awaitingRef = useRef(false);
 
   useEffect(() => {

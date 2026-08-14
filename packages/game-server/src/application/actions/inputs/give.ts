@@ -70,7 +70,11 @@ export interface GiveLoadedInputs {
   readonly npcAcceptsItem: boolean;
   readonly itemRevision: number;
   readonly relationshipReasons: readonly "requested_item_given"[];
-  readonly relationship: { trustScore: number; suspicionScore: number; revision: number };
+  readonly relationship: {
+    trustScore: number;
+    suspicionScore: number;
+    revision: number;
+  };
   readonly promiseResolution: GivePromiseResolution | undefined;
   readonly promiseNpc: NpcSnapshot | undefined;
   readonly loadedAt: Date;
@@ -152,7 +156,12 @@ async function loadAuthorizedGiveInputs(
   let promiseNpc: NpcSnapshot | undefined;
   if (npcAcceptsItem && activePromise !== undefined) {
     const [promiseNpcRelationship, resolvedPromiseNpc] = await Promise.all([
-      readRelationshipScores(pool, context.townId, activePromise.promiseNpcId, context.playerId),
+      readRelationshipScores(
+        pool,
+        context.townId,
+        activePromise.promiseNpcId,
+        context.playerId,
+      ),
       readNpcSnapshot(pool, context.townId, activePromise.promiseNpcId),
     ]);
     promiseNpc = resolvedPromiseNpc;
@@ -321,7 +330,10 @@ export function createGiveActionHandler(
       if (selection === undefined) throw internalError();
       return {
         itemId: inputs.itemId,
-        custody: inputs.itemHeldByPlayer && inputs.npcAcceptsItem ? "transferred" : "unchanged",
+        custody:
+          inputs.itemHeldByPlayer && inputs.npcAcceptsItem
+            ? "transferred"
+            : "unchanged",
         dialogue: {
           npcId: selection.npcId,
           text: selection.text,

@@ -149,7 +149,9 @@ export function ResultCard({ result }: ResultCardProps) {
     const give = result.result as ActionResultByKind["give"];
     return (
       <div className="result-card">
-        <p>{give.custody === "transferred" ? "It changes hands." : "It stays with you."}</p>
+        <p>
+          {give.custody === "transferred" ? "It changes hands." : "It stays with you."}
+        </p>
         <NpcDialogueResult dialogue={give.dialogue} />
       </div>
     );

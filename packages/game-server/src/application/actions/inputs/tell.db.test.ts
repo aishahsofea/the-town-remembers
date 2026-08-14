@@ -229,9 +229,10 @@ describe.skipIf(!shouldRunDatabaseTests())("tell end to end", () => {
     const draftRow = await db().pool.query<{
       readonly subject_entity_id: string;
       readonly object_entity_id: string;
-    }>(`SELECT subject_entity_id, object_entity_id FROM public.claim_drafts WHERE id = $1`, [
-      draftId,
-    ]);
+    }>(
+      `SELECT subject_entity_id, object_entity_id FROM public.claim_drafts WHERE id = $1`,
+      [draftId],
+    );
     return {
       townId,
       playerId,
@@ -279,7 +280,9 @@ describe.skipIf(!shouldRunDatabaseTests())("tell end to end", () => {
 
   it("commits the claim, transmission, episode, evidence, belief, and draft confirmation atomically", async () => {
     const fixture = await fixtureWithDraft(`test:tell:${randomUUID()}`);
-    const outcome = await executeModelAction(tellParams(fixture, fallbackDependencies()));
+    const outcome = await executeModelAction(
+      tellParams(fixture, fallbackDependencies()),
+    );
 
     expect(outcome.kind).toBe("executed");
     if (outcome.kind !== "executed") throw new Error("unreachable");
@@ -364,7 +367,10 @@ describe.skipIf(!shouldRunDatabaseTests())("tell end to end", () => {
       },
     ]);
 
-    const belief = await db().pool.query<{ readonly score: number; readonly label: string }>(
+    const belief = await db().pool.query<{
+      readonly score: number;
+      readonly label: string;
+    }>(
       `SELECT score, label FROM public.npc_beliefs
         WHERE town_id = $1 AND npc_id = $2 AND claim_id = $3`,
       [fixture.townId, fixture.npcId, claimId],
@@ -392,7 +398,9 @@ describe.skipIf(!shouldRunDatabaseTests())("tell end to end", () => {
   it("adds no second evidence row when the same player tells the same claim again, but still confirms the second draft", async () => {
     const normalizedKey = `test:tell:${randomUUID()}`;
     const first = await fixtureWithDraft(normalizedKey);
-    const firstOutcome = await executeModelAction(tellParams(first, fallbackDependencies()));
+    const firstOutcome = await executeModelAction(
+      tellParams(first, fallbackDependencies()),
+    );
     expect(firstOutcome.kind).toBe("executed");
 
     const townId = first.townId;
@@ -440,7 +448,9 @@ describe.skipIf(!shouldRunDatabaseTests())("tell end to end", () => {
     const fixture = await fixtureWithDraft(`test:tell:${randomUUID()}`, {
       expiresAt: new Date(Date.now() - 60_000),
     });
-    const outcome = await executeModelAction(tellParams(fixture, fallbackDependencies()));
+    const outcome = await executeModelAction(
+      tellParams(fixture, fallbackDependencies()),
+    );
 
     expect(outcome.kind).toBe("executed");
     if (outcome.kind !== "executed") throw new Error("unreachable");

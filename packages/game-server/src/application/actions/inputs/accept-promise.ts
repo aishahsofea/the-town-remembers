@@ -102,7 +102,8 @@ async function resolveOffer(
     readNpcSnapshot(pool, townId, offer.npcId),
     readActiveVisitLocation(pool, townId, playerId),
   ]);
-  if (npc === undefined || !isCoLocated(visit, npc) || visit === undefined) return undefined;
+  if (npc === undefined || !isCoLocated(visit, npc) || visit === undefined)
+    return undefined;
 
   const displayNameResult = await pool.query<{ readonly display_name: string }>(
     `SELECT display_name FROM public.actors WHERE town_id = $1 AND id = $2`,
@@ -111,7 +112,10 @@ async function resolveOffer(
   const npcDisplayName = displayNameResult.rows[0]?.display_name ?? "";
 
   const gateState = await loadPromiseGateState(pool, townId, playerId, npc);
-  const hasActivePromiseAlready = hasActivePromise(gateState.activePromises, promiseKeyFor(offer));
+  const hasActivePromiseAlready = hasActivePromise(
+    gateState.activePromises,
+    promiseKeyFor(offer),
+  );
   const revalidated = await reValidatePromiseOffer(pool, townId, offer, gateState);
 
   return {
@@ -191,7 +195,10 @@ export function createAcceptPromiseActionHandler(
       }
       const itemTransfer: AcceptPromiseItemTransfer | undefined =
         resolved.kind === "return_item" && resolved.subject.kind === "item"
-          ? { itemId: resolved.subject.itemId, itemRevision: resolved.itemRevision ?? 0 }
+          ? {
+              itemId: resolved.subject.itemId,
+              itemRevision: resolved.itemRevision ?? 0,
+            }
           : undefined;
       return planAcceptPromise({
         offerIsValid: resolved.gateMet,
@@ -310,7 +317,8 @@ export function createAcceptPromiseActionHandler(
       } satisfies ActionResultByKind["accept_promise"];
     },
     reasonMessage: (code) =>
-      ACCEPT_PROMISE_DENIAL_MESSAGES[code] ?? "That promise cannot be accepted right now.",
+      ACCEPT_PROMISE_DENIAL_MESSAGES[code] ??
+      "That promise cannot be accepted right now.",
     resolveVisitId: (inputs) => inputs.resolved?.visitId ?? null,
     eventMetadata: (inputs) => ({
       actorId: inputs.playerId,

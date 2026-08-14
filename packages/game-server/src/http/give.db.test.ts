@@ -208,7 +208,8 @@ describe.skipIf(!shouldRunDatabaseTests())("POST /actions — give", () => {
     const { response } = await give(player, nessaId, randomUUID());
     const body = CompletedActionResponseSchema.parse(parseBody(response.body));
     expect(body.outcome).toBe("denied");
-    if (body.outcome === "denied") expect(body.result.reasonCode).toBe("NPC_NOT_PRESENT");
+    if (body.outcome === "denied")
+      expect(body.result.reasonCode).toBe("NPC_NOT_PRESENT");
   });
 
   it("denies Give when the player does not hold the item", async () => {
@@ -397,11 +398,15 @@ describe.skipIf(!shouldRunDatabaseTests())("POST /actions — give", () => {
     const revisionBefore = before.rows[0]!.revision;
 
     const first = await give(giver, corinId, sealId, randomUUID());
-    const firstBody = CompletedActionResponseSchema.parse(parseBody(first.response.body));
+    const firstBody = CompletedActionResponseSchema.parse(
+      parseBody(first.response.body),
+    );
     expect(firstBody.outcome).toBe("applied");
 
     const second = await give(giver, corinId, sealId, randomUUID());
-    const secondBody = CompletedActionResponseSchema.parse(parseBody(second.response.body));
+    const secondBody = CompletedActionResponseSchema.parse(
+      parseBody(second.response.body),
+    );
     expect(secondBody.outcome).toBe("denied");
     if (secondBody.outcome === "denied") {
       expect(secondBody.result.reasonCode).toBe("ITEM_NOT_HELD");

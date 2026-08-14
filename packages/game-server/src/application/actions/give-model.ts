@@ -237,7 +237,9 @@ async function selectDialogue(
   dependencies: ProductionGiveDependenciesParams,
   params: GiveDialogueSelectionParams,
 ): Promise<GiveDialogueSelection> {
-  const requestedRole = resolveDialogueModelRole(dependencies.modelConfig.reducedCostOverride);
+  const requestedRole = resolveDialogueModelRole(
+    dependencies.modelConfig.reducedCostOverride,
+  );
   const reserved = await reserveChatCall(
     dependencies,
     params,
@@ -311,7 +313,13 @@ async function selectDialogue(
       validationErrorCode: validationCode(failure),
     });
   } else {
-    await recordFailedChatCall(dependencies, params, reserved, "dialogue_selection", latencyMs);
+    await recordFailedChatCall(
+      dependencies,
+      params,
+      reserved,
+      "dialogue_selection",
+      latencyMs,
+    );
     if (
       (outcome.kind !== "parse_failure" && outcome.kind !== "schema_failure") ||
       rejectedRaw.length === 0
@@ -354,7 +362,11 @@ async function selectDialogue(
       temperature: INFERENCE_SETTINGS.structuredRepair.temperature,
       maxTokens: INFERENCE_SETTINGS.npcDialogue.maximumOutputTokens,
       abortSignal: AbortSignal.timeout(
-        boundedTimeoutMs(params.deadlineAt, MODEL_DEADLINES.haikuDialogueRepairMs, repairNow),
+        boundedTimeoutMs(
+          params.deadlineAt,
+          MODEL_DEADLINES.haikuDialogueRepairMs,
+          repairNow,
+        ),
       ),
       worstCaseMs: MODEL_DEADLINES.haikuDialogueRepairMs,
     },

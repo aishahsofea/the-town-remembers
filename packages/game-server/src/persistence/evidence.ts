@@ -161,7 +161,10 @@ export async function readPlayerClueDiscoveredAt(
   clueIds: readonly string[],
 ): Promise<ReadonlyMap<string, Date>> {
   if (clueIds.length === 0) return new Map();
-  const result = await pool.query<{ readonly clue_id: string; readonly created_at: Date }>(
+  const result = await pool.query<{
+    readonly clue_id: string;
+    readonly created_at: Date;
+  }>(
     `SELECT clue_id, MIN(created_at) AS created_at FROM public.clue_discoveries
       WHERE town_id = $1 AND player_id = $2 AND clue_id = ANY($3)
       GROUP BY clue_id`,
@@ -218,7 +221,9 @@ export async function readActivePlayerTestimonyRootTransmission(
   claimId: string,
   sourceActorId: string,
 ): Promise<string | undefined> {
-  const result = await pool.query<{ readonly source_root_transmission_id: string | null }>(
+  const result = await pool.query<{
+    readonly source_root_transmission_id: string | null;
+  }>(
     `SELECT be.source_root_transmission_id
        FROM public.belief_evidence be
       WHERE be.town_id = $1 AND be.npc_id = $2 AND be.claim_id = $3
@@ -253,7 +258,10 @@ export async function readActiveContributionsForReversal(
   claimId: string,
   sourceActorId: string,
 ): Promise<readonly ReversalCandidateRow[]> {
-  const result = await pool.query<{ readonly id: string; readonly signed_weight: number }>(
+  const result = await pool.query<{
+    readonly id: string;
+    readonly signed_weight: number;
+  }>(
     `SELECT be.id, be.signed_weight
        FROM public.belief_evidence be
        LEFT JOIN public.belief_evidence primary_row
@@ -267,5 +275,8 @@ export async function readActiveContributionsForReversal(
         )`,
     [townId, npcId, claimId, sourceActorId],
   );
-  return result.rows.map((row) => ({ evidenceId: row.id, signedWeight: row.signed_weight }));
+  return result.rows.map((row) => ({
+    evidenceId: row.id,
+    signedWeight: row.signed_weight,
+  }));
 }

@@ -41,7 +41,9 @@ function exchangeStorageKey(view: PlayerView, npcId: string): string | undefined
   return `ttr:encounter-exchange:${view.town.id}:${view.player.id}:${visit.visitId}:${npcId}`;
 }
 
-function readStoredExchange(key: string | undefined): CompletedActionResponse | undefined {
+function readStoredExchange(
+  key: string | undefined,
+): CompletedActionResponse | undefined {
   if (!key) return undefined;
   const raw = window.sessionStorage.getItem(key);
   if (!raw) return undefined;
@@ -53,12 +55,18 @@ function readStoredExchange(key: string | undefined): CompletedActionResponse | 
 }
 
 /** Only `ask`/`tell`/`show`/`give` carry offers, and only on a non-denied outcome. */
-function offersFrom(result: CompletedActionResponse | undefined): readonly PromiseOfferView[] {
+function offersFrom(
+  result: CompletedActionResponse | undefined,
+): readonly PromiseOfferView[] {
   if (!result || result.outcome === "denied") return [];
-  if (result.kind === "ask") return (result.result as ActionResultByKind["ask"]).promiseOffers;
-  if (result.kind === "tell") return (result.result as ActionResultByKind["tell"]).promiseOffers;
-  if (result.kind === "show") return (result.result as ActionResultByKind["show"]).promiseOffers;
-  if (result.kind === "give") return (result.result as ActionResultByKind["give"]).promiseOffers;
+  if (result.kind === "ask")
+    return (result.result as ActionResultByKind["ask"]).promiseOffers;
+  if (result.kind === "tell")
+    return (result.result as ActionResultByKind["tell"]).promiseOffers;
+  if (result.kind === "show")
+    return (result.result as ActionResultByKind["show"]).promiseOffers;
+  if (result.kind === "give")
+    return (result.result as ActionResultByKind["give"]).promiseOffers;
   return [];
 }
 
@@ -149,7 +157,11 @@ export function Encounter({ view, action, npcId }: EncounterProps) {
   function submitGive() {
     if (!giveSelection || !encounter) return;
     awaitingKindRef.current = "give";
-    void action.submit({ kind: "give", npcId: encounter.npc.id, itemId: giveSelection.itemId });
+    void action.submit({
+      kind: "give",
+      npcId: encounter.npc.id,
+      itemId: giveSelection.itemId,
+    });
   }
 
   const canAskKind = encounter.availableActionKinds.includes("ask");
@@ -187,12 +199,20 @@ export function Encounter({ view, action, npcId }: EncounterProps) {
         {latestExchange ? <ResultCard result={latestExchange} /> : null}
       </section>
 
-      <PromiseOffers offers={offers} action={action} onAccepted={recordOfferAcceptance} />
+      <PromiseOffers
+        offers={offers}
+        action={action}
+        onAccepted={recordOfferAcceptance}
+      />
 
       {composerMode === "none" ? (
         <nav aria-label={`Actions with ${encounter.npc.displayName}`}>
           {canAskKind ? (
-            <button type="button" disabled={disabled} onClick={() => setComposerMode("ask")}>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => setComposerMode("ask")}
+            >
               Ask {encounter.npc.displayName}
             </button>
           ) : null}
@@ -206,12 +226,20 @@ export function Encounter({ view, action, npcId }: EncounterProps) {
             </button>
           ) : null}
           {canShowKind ? (
-            <button type="button" disabled={disabled} onClick={() => setComposerMode("show")}>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => setComposerMode("show")}
+            >
               Show {encounter.npc.displayName}
             </button>
           ) : null}
           {canGiveKind ? (
-            <button type="button" disabled={disabled} onClick={() => setComposerMode("give")}>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => setComposerMode("give")}
+            >
               Give {encounter.npc.displayName}
             </button>
           ) : null}
@@ -323,7 +351,11 @@ export function Encounter({ view, action, npcId }: EncounterProps) {
                   ))}
                 </fieldset>
               ) : null}
-              <button type="button" disabled={disabled} onClick={() => setComposerMode("none")}>
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => setComposerMode("none")}
+              >
                 Cancel
               </button>
             </>
@@ -363,7 +395,10 @@ export function Encounter({ view, action, npcId }: EncounterProps) {
                       type="button"
                       disabled={disabled}
                       onClick={() =>
-                        setGiveSelection({ itemId: item.itemId, label: item.displayName })
+                        setGiveSelection({
+                          itemId: item.itemId,
+                          label: item.displayName,
+                        })
                       }
                     >
                       {item.displayName}
@@ -371,7 +406,11 @@ export function Encounter({ view, action, npcId }: EncounterProps) {
                   ))}
                 </fieldset>
               ) : null}
-              <button type="button" disabled={disabled} onClick={() => setComposerMode("none")}>
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => setComposerMode("none")}
+              >
                 Cancel
               </button>
             </>

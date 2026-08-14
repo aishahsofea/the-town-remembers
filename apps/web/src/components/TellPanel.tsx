@@ -177,7 +177,9 @@ export function TellPanel({
     <section aria-label={`Tell ${npc.displayName}`} className="tell-panel">
       {phase === "composing" ? (
         <>
-          <label htmlFor="tell-composer">What do you want to tell {npc.displayName}?</label>
+          <label htmlFor="tell-composer">
+            What do you want to tell {npc.displayName}?
+          </label>
           <textarea
             id="tell-composer"
             value={rawText}
@@ -244,7 +246,11 @@ export function TellPanel({
           </p>
           <p>This may change beliefs and may be repeated by others.</p>
 
-          <button type="button" onClick={handleEditStatement} disabled={phase === "telling"}>
+          <button
+            type="button"
+            onClick={handleEditStatement}
+            disabled={phase === "telling"}
+          >
             Edit statement
           </button>
           {expired ? (

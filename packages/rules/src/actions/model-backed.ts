@@ -125,7 +125,8 @@ export function planTell(inputs: TellInputs): ActionPlanResult {
   const trace = makeTrace("actions.tell");
   if (!inputs.claimDraftExists) return deniedResult("CLAIM_DRAFT_NOT_FOUND", trace, {});
   if (inputs.claimDraftExpired) return deniedResult("CLAIM_DRAFT_EXPIRED", trace, {});
-  if (inputs.claimDraftWrongNpc) return deniedResult("CLAIM_DRAFT_WRONG_NPC", trace, {});
+  if (inputs.claimDraftWrongNpc)
+    return deniedResult("CLAIM_DRAFT_WRONG_NPC", trace, {});
   if (inputs.claimDraftAlreadyConfirmed) {
     return deniedResult("CLAIM_DRAFT_ALREADY_CONFIRMED", trace, {});
   }
@@ -359,7 +360,10 @@ export function planShow(inputs: ShowInputs): ActionPlanResult {
           rule_version: RULES_REGISTRY.rulesVersion,
         },
       });
-      contributions.push({ claimId: reversal.claimId, delta: -contribution.signedWeight });
+      contributions.push({
+        claimId: reversal.claimId,
+        delta: -contribution.signedWeight,
+      });
     }
     // `causalEventId` on the returned plan entry is never read below — this
     // planner builds the `belief_evidence` row itself and lets
@@ -486,7 +490,8 @@ export function planShow(inputs: ShowInputs): ActionPlanResult {
 
   const grant = inputs.capabilityGrant;
   if (grant !== undefined && !grant.alreadyGranted) {
-    const postActionTrust = relationshipAggregate?.trustScore ?? inputs.relationship.trustScore;
+    const postActionTrust =
+      relationshipAggregate?.trustScore ?? inputs.relationship.trustScore;
     const postActionSuspicion =
       relationshipAggregate?.suspicionScore ?? inputs.relationship.suspicionScore;
     if (
@@ -723,7 +728,8 @@ export function planAcceptPromise(inputs: AcceptPromiseInputs): ActionPlanResult
         npc_id: inputs.npcId,
         player_id: inputs.playerId,
         kind: inputs.kind,
-        protected_claim_id: inputs.kind === "keep_secret" ? inputs.protectedClaimId : null,
+        protected_claim_id:
+          inputs.kind === "keep_secret" ? inputs.protectedClaimId : null,
         item_id: inputs.kind === "return_item" ? inputs.itemTransfer?.itemId : null,
         status: "active",
         terms_version: inputs.termsVersion,

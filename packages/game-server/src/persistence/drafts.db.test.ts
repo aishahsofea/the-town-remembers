@@ -160,9 +160,15 @@ describe.skipIf(!shouldRunDatabaseTests())(
         entityKey: "corin_hale",
       });
       const npcId = await insertNpc(pool, townId, { characterEntityId: characterId });
-      const locationId = await insertStoryEntity(pool, townId, { entityType: "location" });
-      const subjectId = await insertStoryEntity(pool, townId, { entityType: "character" });
-      const objectId = await insertStoryEntity(pool, townId, { entityType: "location" });
+      const locationId = await insertStoryEntity(pool, townId, {
+        entityType: "location",
+      });
+      const subjectId = await insertStoryEntity(pool, townId, {
+        entityType: "character",
+      });
+      const objectId = await insertStoryEntity(pool, townId, {
+        entityType: "location",
+      });
       const playerId = await insertPlayer(pool, townId);
       const otherPlayerId = await insertPlayer(pool, townId);
 

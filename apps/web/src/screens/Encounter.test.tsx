@@ -87,7 +87,9 @@ function completedAsk(text: string, responseMode: string, actionId = "action-ask
 
 function mountEncounter() {
   return render(
-    <Shell match={{ name: "encounter", params: { townId: "town-1", npcId: NPC.id } }} />,
+    <Shell
+      match={{ name: "encounter", params: { townId: "town-1", npcId: NPC.id } }}
+    />,
   );
 }
 
@@ -104,7 +106,9 @@ describe("Encounter — scene anchor and gated controls (P4-18 acceptance 1, 3)"
       if (url.includes("/player-view")) {
         return Promise.resolve(
           jsonResponse(
-            playerViewBody({ encounters: [encounterView({ availableActionKinds: ["ask"] })] }),
+            playerViewBody({
+              encounters: [encounterView({ availableActionKinds: ["ask"] })],
+            }),
           ),
         );
       }
@@ -133,7 +137,9 @@ describe("Encounter — Ask composer (P4-18 acceptance 2)", () => {
       }
       if (init?.method === "POST" && url.includes("/actions")) {
         postCount += 1;
-        return Promise.resolve(jsonResponse(completedAsk("Where were you?", "selected")));
+        return Promise.resolve(
+          jsonResponse(completedAsk("Where were you?", "selected")),
+        );
       }
       throw new Error(`unexpected fetch: ${url}`);
     });
@@ -194,7 +200,9 @@ describe("Encounter — exchange survives refresh for the current visit (P4-18 a
         return Promise.resolve(jsonResponse(playerViewBody()));
       }
       if (init?.method === "POST" && url.includes("/actions")) {
-        return Promise.resolve(jsonResponse(completedAsk("Remembered reply.", "selected")));
+        return Promise.resolve(
+          jsonResponse(completedAsk("Remembered reply.", "selected")),
+        );
       }
       throw new Error(`unexpected fetch: ${url}`);
     });
@@ -254,7 +262,9 @@ describe("Encounter — Tell interpretation (P4-19)", () => {
 
     mountEncounter();
     fireEvent.click(await screen.findByRole("button", { name: "Tell Nessa Reed" }));
-    const textarea = await screen.findByLabelText("What do you want to tell Nessa Reed?");
+    const textarea = await screen.findByLabelText(
+      "What do you want to tell Nessa Reed?",
+    );
     fireEvent.change(textarea, { target: { value: "Too much at once." } });
     fireEvent.click(screen.getByRole("button", { name: "Interpret claim" }));
 
@@ -282,13 +292,17 @@ describe("Encounter — Tell interpretation (P4-19)", () => {
 
     mountEncounter();
     fireEvent.click(await screen.findByRole("button", { name: "Tell Nessa Reed" }));
-    const textarea = await screen.findByLabelText("What do you want to tell Nessa Reed?");
+    const textarea = await screen.findByLabelText(
+      "What do you want to tell Nessa Reed?",
+    );
     fireEvent.change(textarea, {
       target: { value: "The bell is hidden in Reed's Garden." },
     });
     fireEvent.click(screen.getByRole("button", { name: "Interpret claim" }));
 
-    const dialog = await screen.findByRole("dialog", { name: "Is this what you mean?" });
+    const dialog = await screen.findByRole("dialog", {
+      name: "Is this what you mean?",
+    });
     expect(dialog.textContent).toContain("The bell is hidden in Reed's Garden.");
     expect(dialog.textContent).toContain("The festival bell is at Reed's Garden.");
     expect(dialog.textContent).toContain("Recorded source: You");
@@ -326,11 +340,15 @@ describe("Encounter — Tell interpretation (P4-19)", () => {
 
     mountEncounter();
     fireEvent.click(await screen.findByRole("button", { name: "Tell Nessa Reed" }));
-    const textarea = await screen.findByLabelText("What do you want to tell Nessa Reed?");
+    const textarea = await screen.findByLabelText(
+      "What do you want to tell Nessa Reed?",
+    );
     fireEvent.change(textarea, { target: { value: "Corin said the bell is hidden." } });
     fireEvent.click(screen.getByRole("button", { name: "Interpret claim" }));
 
-    const dialog = await screen.findByRole("dialog", { name: "Is this what you mean?" });
+    const dialog = await screen.findByRole("dialog", {
+      name: "Is this what you mean?",
+    });
     expect(dialog.textContent).toContain("Alleged source: Corin Hale");
     expect(dialog.textContent).not.toContain("Recorded source: You");
   });
@@ -353,11 +371,15 @@ describe("Encounter — Tell interpretation (P4-19)", () => {
 
     mountEncounter();
     fireEvent.click(await screen.findByRole("button", { name: "Tell Nessa Reed" }));
-    const textarea = await screen.findByLabelText("What do you want to tell Nessa Reed?");
+    const textarea = await screen.findByLabelText(
+      "What do you want to tell Nessa Reed?",
+    );
     fireEvent.change(textarea, { target: { value: "The bell is hidden." } });
     fireEvent.click(screen.getByRole("button", { name: "Interpret claim" }));
 
-    const dialog = await screen.findByRole("dialog", { name: "Is this what you mean?" });
+    const dialog = await screen.findByRole("dialog", {
+      name: "Is this what you mean?",
+    });
     expect(dialog.textContent).toContain("Interpretation expired");
     expect(screen.queryByRole("button", { name: "Tell Nessa Reed" })).toBeNull();
     expect(screen.getByRole("button", { name: "Interpret again" })).toBeTruthy();
@@ -373,7 +395,8 @@ describe("Encounter — Tell interpretation (P4-19)", () => {
       if (init?.method === "POST" && url.includes("/actions")) {
         const body = JSON.parse(init.body as string) as { kind: string };
         postedKinds.push(body.kind);
-        if (body.kind === "normalize_claim") return Promise.resolve(jsonResponse(draftedResult()));
+        if (body.kind === "normalize_claim")
+          return Promise.resolve(jsonResponse(draftedResult()));
         return Promise.resolve(
           jsonResponse({
             actionId: "action-tell",
@@ -382,7 +405,10 @@ describe("Encounter — Tell interpretation (P4-19)", () => {
             outcome: "applied",
             result: {
               claimDraftId: "draft-1",
-              claim: { claimId: "claim-1", text: "The festival bell is at Reed's Garden." },
+              claim: {
+                claimId: "claim-1",
+                text: "The festival bell is at Reed's Garden.",
+              },
               dialogue: { npcId: NPC.id, text: "Noted.", responseMode: "selected" },
               promiseOffers: [],
             },
@@ -394,7 +420,9 @@ describe("Encounter — Tell interpretation (P4-19)", () => {
 
     mountEncounter();
     fireEvent.click(await screen.findByRole("button", { name: "Tell Nessa Reed" }));
-    const textarea = await screen.findByLabelText("What do you want to tell Nessa Reed?");
+    const textarea = await screen.findByLabelText(
+      "What do you want to tell Nessa Reed?",
+    );
     fireEvent.change(textarea, {
       target: { value: "The bell is hidden in Reed's Garden." },
     });
@@ -424,19 +452,32 @@ describe("Encounter — Show picker (P4-20 acceptance 1)", () => {
                   clueId: "clue-1",
                   title: "Muddy cart ruts",
                   description: "Deep ruts near the gate.",
-                  firstContributor: { id: "p1", actorType: "player", displayName: "Aishah Sofea" },
-                  contributors: [{ id: "p1", actorType: "player", displayName: "Aishah Sofea" }],
+                  firstContributor: {
+                    id: "p1",
+                    actorType: "player",
+                    displayName: "Aishah Sofea",
+                  },
+                  contributors: [
+                    { id: "p1", actorType: "player", displayName: "Aishah Sofea" },
+                  ],
                 },
               ],
               inventory: [
-                { itemId: "item-1", displayName: "Rusty key", description: "An old key." },
+                {
+                  itemId: "item-1",
+                  displayName: "Rusty key",
+                  description: "An old key.",
+                },
               ],
             }),
           ),
         );
       }
       if (init?.method === "POST" && url.includes("/actions")) {
-        postedBody = JSON.parse(init.body as string) as { kind: string; evidenceRef?: unknown };
+        postedBody = JSON.parse(init.body as string) as {
+          kind: string;
+          evidenceRef?: unknown;
+        };
         return Promise.resolve(
           jsonResponse({
             actionId: "action-show",
@@ -480,7 +521,9 @@ describe("Encounter — Show picker (P4-20 acceptance 1)", () => {
       if (url.includes("/player-view")) {
         return Promise.resolve(
           jsonResponse(
-            playerViewBody({ encounters: [encounterView({ availableActionKinds: ["show"] })] }),
+            playerViewBody({
+              encounters: [encounterView({ availableActionKinds: ["show"] })],
+            }),
           ),
         );
       }
@@ -504,14 +547,21 @@ describe("Encounter — Give picker and custody-change confirmation (P4-20 accep
             playerViewBody({
               encounters: [encounterView({ availableActionKinds: ["give"] })],
               inventory: [
-                { itemId: "item-1", displayName: "Chapel key", description: "A brass key." },
+                {
+                  itemId: "item-1",
+                  displayName: "Chapel key",
+                  description: "A brass key.",
+                },
               ],
             }),
           ),
         );
       }
       if (init?.method === "POST" && url.includes("/actions")) {
-        postedBody = JSON.parse(init.body as string) as { kind: string; itemId?: string };
+        postedBody = JSON.parse(init.body as string) as {
+          kind: string;
+          itemId?: string;
+        };
         return Promise.resolve(
           jsonResponse({
             actionId: "action-give",
@@ -552,7 +602,11 @@ describe("Encounter — Give picker and custody-change confirmation (P4-20 accep
             playerViewBody({
               encounters: [encounterView({ availableActionKinds: ["give"] })],
               inventory: [
-                { itemId: "item-1", displayName: "Chapel key", description: "A brass key." },
+                {
+                  itemId: "item-1",
+                  displayName: "Chapel key",
+                  description: "A brass key.",
+                },
               ],
             }),
           ),
@@ -585,7 +639,11 @@ describe("Encounter — promise offers (P4-20 acceptance 2)", () => {
       status: "completed",
       outcome: "applied",
       result: {
-        dialogue: { npcId: NPC.id, text: "Take it, if you promise to return it.", responseMode: "selected" },
+        dialogue: {
+          npcId: NPC.id,
+          text: "Take it, if you promise to return it.",
+          responseMode: "selected",
+        },
         promiseOffers: [
           {
             offerId: "offer-1",
@@ -610,7 +668,10 @@ describe("Encounter — promise offers (P4-20 acceptance 2)", () => {
         return Promise.resolve(jsonResponse(playerViewBody()));
       }
       if (init?.method === "POST" && url.includes("/actions")) {
-        const body = JSON.parse(init.body as string) as { kind: string; offerId?: string };
+        const body = JSON.parse(init.body as string) as {
+          kind: string;
+          offerId?: string;
+        };
         postedKinds.push(body.kind);
         if (body.kind === "ask") return Promise.resolve(jsonResponse(askWithOffer()));
         return Promise.resolve(
@@ -645,7 +706,9 @@ describe("Encounter — promise offers (P4-20 acceptance 2)", () => {
     await screen.findByText("Promise to return the chapel key.");
     fireEvent.click(screen.getByRole("button", { name: "Accept" }));
 
-    await screen.findByText("Promise to return the chapel key.", { selector: "article p" });
+    await screen.findByText("Promise to return the chapel key.", {
+      selector: "article p",
+    });
     expect(postedKinds).toEqual(["ask", "accept_promise"]);
   });
 
@@ -698,7 +761,11 @@ describe("Encounter — simultaneous-item conflict (P4-20 acceptance 3)", () => 
             playerViewBody({
               encounters: [encounterView({ availableActionKinds: ["give"] })],
               inventory: [
-                { itemId: "item-1", displayName: "Chapel key", description: "A brass key." },
+                {
+                  itemId: "item-1",
+                  displayName: "Chapel key",
+                  description: "A brass key.",
+                },
               ],
             }),
           ),
@@ -759,6 +826,9 @@ describe("Encounter — narrow viewport (P4-20 acceptance 4)", () => {
     expect(await screen.findByRole("button", { name: "Show Nessa Reed" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Give Nessa Reed" })).toBeTruthy();
 
-    Object.defineProperty(window, "innerWidth", { configurable: true, value: originalWidth });
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: originalWidth,
+    });
   });
 });

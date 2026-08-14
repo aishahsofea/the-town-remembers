@@ -88,7 +88,9 @@ function toAcceptPromiseSelection(
   };
 }
 
-function fallbackSelection(params: AcceptPromiseDialogueSelectionParams): AcceptPromiseDialogueSelection {
+function fallbackSelection(
+  params: AcceptPromiseDialogueSelectionParams,
+): AcceptPromiseDialogueSelection {
   const gateResult = params.assembled.trustedContext.dialogue_directive.gate_result;
   // A plan only ever reaches this seam once the offer's gate already
   // passed (docs/009 "Successful mechanical outcomes use exact
@@ -99,7 +101,9 @@ function fallbackSelection(params: AcceptPromiseDialogueSelectionParams): Accept
     responseKind: "answer",
     gateResult,
     requiredOutcomeIds: [
-      params.promiseKind === "return_item" ? "chapel_key_lent" : "keep_secret_promise_accepted",
+      params.promiseKind === "return_item"
+        ? "chapel_key_lent"
+        : "keep_secret_promise_accepted",
     ],
   });
   return {
@@ -242,7 +246,9 @@ async function selectDialogue(
   dependencies: ProductionAcceptPromiseDependenciesParams,
   params: AcceptPromiseDialogueSelectionParams,
 ): Promise<AcceptPromiseDialogueSelection> {
-  const requestedRole = resolveDialogueModelRole(dependencies.modelConfig.reducedCostOverride);
+  const requestedRole = resolveDialogueModelRole(
+    dependencies.modelConfig.reducedCostOverride,
+  );
   const reserved = await reserveChatCall(
     dependencies,
     params,
@@ -316,7 +322,13 @@ async function selectDialogue(
       validationErrorCode: validationCode(failure),
     });
   } else {
-    await recordFailedChatCall(dependencies, params, reserved, "dialogue_selection", latencyMs);
+    await recordFailedChatCall(
+      dependencies,
+      params,
+      reserved,
+      "dialogue_selection",
+      latencyMs,
+    );
     if (
       (outcome.kind !== "parse_failure" && outcome.kind !== "schema_failure") ||
       rejectedRaw.length === 0
@@ -359,7 +371,11 @@ async function selectDialogue(
       temperature: INFERENCE_SETTINGS.structuredRepair.temperature,
       maxTokens: INFERENCE_SETTINGS.npcDialogue.maximumOutputTokens,
       abortSignal: AbortSignal.timeout(
-        boundedTimeoutMs(params.deadlineAt, MODEL_DEADLINES.haikuDialogueRepairMs, repairNow),
+        boundedTimeoutMs(
+          params.deadlineAt,
+          MODEL_DEADLINES.haikuDialogueRepairMs,
+          repairNow,
+        ),
       ),
       worstCaseMs: MODEL_DEADLINES.haikuDialogueRepairMs,
     },

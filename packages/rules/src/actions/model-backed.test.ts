@@ -527,7 +527,8 @@ describe("planShow", () => {
         (effect) =>
           effect.kind === "insert" &&
           effect.table === "belief_evidence" &&
-          (effect.row as Record<string, unknown>)["evidence_kind"] === "source_reversal",
+          (effect.row as Record<string, unknown>)["evidence_kind"] ===
+            "source_reversal",
       );
       expect(reversalInsert).toMatchObject({
         row: {
@@ -546,7 +547,11 @@ describe("planShow", () => {
       );
       // 2 sources -> +15, 1 source -> +0: the delta is -15.
       expect(corroborationInsert).toMatchObject({
-        row: { claim_id: "claim-1", evidence_kind: "corroboration", signed_weight: -15 },
+        row: {
+          claim_id: "claim-1",
+          evidence_kind: "corroboration",
+          signed_weight: -15,
+        },
       });
       const beliefChange = result.effects.find(
         (effect) =>
@@ -586,7 +591,8 @@ describe("planShow", () => {
           (effect) =>
             effect.kind === "insert" &&
             effect.table === "belief_evidence" &&
-            (effect.row as Record<string, unknown>)["evidence_kind"] === "corroboration",
+            (effect.row as Record<string, unknown>)["evidence_kind"] ===
+              "corroboration",
         ),
       ).toBe(false);
     }
@@ -660,7 +666,8 @@ describe("planShow", () => {
       if (isExternalSelectionRequired(result)) {
         expect(
           result.effects.some(
-            (effect) => effect.kind === "insert" && effect.table === "player_capabilities",
+            (effect) =>
+              effect.kind === "insert" && effect.table === "player_capabilities",
           ),
         ).toBe(false);
       }
@@ -773,13 +780,17 @@ describe("planGive", () => {
       );
       expect(promiseChange).toMatchObject({
         key: { id: "promise-1", status: "active" },
-        change: { status: "fulfilled", resolved_event_id: { $planRef: "give-promise-event" } },
+        change: {
+          status: "fulfilled",
+          resolved_event_id: { $planRef: "give-promise-event" },
+        },
       });
       const relationshipInsert = result.effects.find(
         (effect) =>
           effect.kind === "insert" &&
           effect.table === "relationship_changes" &&
-          (effect.row as Record<string, unknown>)["reason_kind"] === "promise_fulfilled",
+          (effect.row as Record<string, unknown>)["reason_kind"] ===
+            "promise_fulfilled",
       );
       expect(relationshipInsert).toMatchObject({
         row: { npc_id: "npc-1", player_id: "player-1", promise_id: "promise-1" },
@@ -835,7 +846,9 @@ describe("planGive", () => {
     });
     if (isExternalSelectionRequired(result)) {
       expect(
-        result.effects.some((effect) => "table" in effect && effect.table === "promises"),
+        result.effects.some(
+          (effect) => "table" in effect && effect.table === "promises",
+        ),
       ).toBe(false);
     }
   });

@@ -48,7 +48,12 @@ export async function retrieveSavedPromiseOffer(
   const decoded = decodePromiseOffer(offerId);
   if (decoded === undefined) return undefined;
 
-  const action = await readActionForPlayer(pool, townId, playerId, decoded.sourceActionId);
+  const action = await readActionForPlayer(
+    pool,
+    townId,
+    playerId,
+    decoded.sourceActionId,
+  );
   if (action === undefined || action.status !== "completed") return undefined;
 
   const parsed = CompletedActionResponseSchema.safeParse(action.responsePayload);

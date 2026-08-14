@@ -82,10 +82,12 @@ describe.skipIf(!shouldRunDatabaseTests())("POST /actions — show", () => {
       if (key === "nessa_reed") nessaId = row.id;
     }
 
-    const inspectables = await database.pool.query<{ id: string; inspectable_key: string }>(
-      `SELECT id, inspectable_key FROM public.inspectables WHERE town_id = $1`,
-      [townId],
-    );
+    const inspectables = await database.pool.query<{
+      id: string;
+      inspectable_key: string;
+    }>(`SELECT id, inspectable_key FROM public.inspectables WHERE town_id = $1`, [
+      townId,
+    ]);
     const inspectableByKey = new Map(
       inspectables.rows.map((row) => [row.inspectable_key, row.id]),
     );
@@ -212,7 +214,8 @@ describe.skipIf(!shouldRunDatabaseTests())("POST /actions — show", () => {
     });
     const body = CompletedActionResponseSchema.parse(parseBody(response.body));
     expect(body.outcome).toBe("denied");
-    if (body.outcome === "denied") expect(body.result.reasonCode).toBe("NPC_NOT_PRESENT");
+    if (body.outcome === "denied")
+      expect(body.result.reasonCode).toBe("NPC_NOT_PRESENT");
   });
 
   it("denies an item Show when the player does not hold the item", async () => {

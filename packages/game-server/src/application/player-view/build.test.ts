@@ -435,7 +435,9 @@ describe("testimony and hearsay board entries", () => {
     });
 
     expect(view.caseBoard).toHaveLength(2);
-    const testimony = view.caseBoard.find((entry) => entry.entryId === "entry_testimony");
+    const testimony = view.caseBoard.find(
+      (entry) => entry.entryId === "entry_testimony",
+    );
     expect(testimony).toMatchObject({
       entryKind: "testimony",
       verificationStatus: "attributed_testimony",

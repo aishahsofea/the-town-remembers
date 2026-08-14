@@ -57,8 +57,12 @@ describe.skipIf(!shouldRunDatabaseTests())("evidence persistence", () => {
   }
 
   async function insertClaim(pool: Pool, townId: string, normalizedKey: string) {
-    const characterId = await insertStoryEntity(pool, townId, { entityType: "character" });
-    const locationId = await insertStoryEntity(pool, townId, { entityType: "location" });
+    const characterId = await insertStoryEntity(pool, townId, {
+      entityType: "character",
+    });
+    const locationId = await insertStoryEntity(pool, townId, {
+      entityType: "location",
+    });
     const id = randomUUID();
     await pool.query(
       `INSERT INTO public.claims
@@ -79,7 +83,9 @@ describe.skipIf(!shouldRunDatabaseTests())("evidence persistence", () => {
     requiredForResolution: boolean,
     linkedItemEntityId?: string,
   ): Promise<{ inspectableId: string; clueId: string }> {
-    const locationId = await insertStoryEntity(pool, townId, { entityType: "location" });
+    const locationId = await insertStoryEntity(pool, townId, {
+      entityType: "location",
+    });
     const inspectableId = randomUUID();
     await pool.query(
       `INSERT INTO public.inspectables
@@ -103,7 +109,14 @@ describe.skipIf(!shouldRunDatabaseTests())("evidence persistence", () => {
          (town_id, id, inspectable_id, clue_key, clue_kind, content_key,
           required_for_resolution, created_at)
        VALUES ($1, $2, $3, $4, 'physical_trace', $5, $6, now())`,
-      [townId, clueId, inspectableId, clueKey, `clue.${clueKey}`, requiredForResolution],
+      [
+        townId,
+        clueId,
+        inspectableId,
+        clueKey,
+        `clue.${clueKey}`,
+        requiredForResolution,
+      ],
     );
     return { inspectableId, clueId };
   }
@@ -119,7 +132,13 @@ describe.skipIf(!shouldRunDatabaseTests())("evidence persistence", () => {
       `INSERT INTO public.clue_claim_effects
          (town_id, clue_id, claim_id, effect_kind, signed_weight, rule_version, created_at)
        VALUES ($1, $2, $3, $4, $5, 'test', now())`,
-      [townId, clueId, claimId, signedWeight >= 0 ? "supports" : "contradicts", signedWeight],
+      [
+        townId,
+        clueId,
+        claimId,
+        signedWeight >= 0 ? "supports" : "contradicts",
+        signedWeight,
+      ],
     );
   }
 
@@ -127,7 +146,12 @@ describe.skipIf(!shouldRunDatabaseTests())("evidence persistence", () => {
     const pool = db().pool;
     const townId = await insertTown(pool);
     const claimId = await insertClaim(pool, townId, "claim:effects");
-    const { clueId } = await insertInspectableWithClue(pool, townId, "clue:effects", true);
+    const { clueId } = await insertInspectableWithClue(
+      pool,
+      townId,
+      "clue:effects",
+      true,
+    );
     await insertClueClaimEffect(pool, townId, clueId, claimId, 70);
 
     const clues = await readCluesByIds(pool, townId, [clueId]);
@@ -168,7 +192,12 @@ describe.skipIf(!shouldRunDatabaseTests())("evidence persistence", () => {
     const townId = await insertTown(pool);
     const npcId = await insertNpc(pool, townId);
     const claimId = await insertClaim(pool, townId, "claim:already-recorded");
-    const { clueId } = await insertInspectableWithClue(pool, townId, "clue:recorded", false);
+    const { clueId } = await insertInspectableWithClue(
+      pool,
+      townId,
+      "clue:recorded",
+      false,
+    );
     const eventId = await insertWorldEvent(pool, townId);
     await pool.query(
       `INSERT INTO public.belief_evidence
@@ -195,12 +224,20 @@ describe.skipIf(!shouldRunDatabaseTests())("evidence persistence", () => {
           source_root_transmission_id, evidence_kind, signed_weight, trust_snapshot,
           hop_count, independent_source_actor_id, rule_version, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $6, 'player_testimony', 40, 0, 0, $7, 'test', now())`,
-      [townId, randomUUID(), npcId, claimId, eventId, transmissionId, testimonyPlayerId],
+      [
+        townId,
+        randomUUID(),
+        npcId,
+        claimId,
+        eventId,
+        transmissionId,
+        testimonyPlayerId,
+      ],
     );
 
-    expect(await readAlreadyRecordedEvidence(pool, townId, npcId, [clueId])).toStrictEqual([
-      { claimId, clueId },
-    ]);
+    expect(
+      await readAlreadyRecordedEvidence(pool, townId, npcId, [clueId]),
+    ).toStrictEqual([{ claimId, clueId }]);
   });
 
   it("reads the earliest original-assertion transmission per claim, excluding alleged hearsay", async () => {
@@ -253,9 +290,17 @@ describe.skipIf(!shouldRunDatabaseTests())("evidence persistence", () => {
     const townId = await insertTown(pool);
     const playerId = await insertPlayer(pool, townId);
     const otherPlayerId = await insertPlayer(pool, townId);
-    const { clueId } = await insertInspectableWithClue(pool, townId, "clue:discovered", false);
+    const { clueId } = await insertInspectableWithClue(
+      pool,
+      townId,
+      "clue:discovered",
+      false,
+    );
 
-    async function insertDiscovery(forPlayerId: string, offsetHours: number): Promise<void> {
+    async function insertDiscovery(
+      forPlayerId: string,
+      offsetHours: number,
+    ): Promise<void> {
       const eventId = await insertWorldEvent(pool, townId);
       await pool.query(
         `INSERT INTO public.clue_discoveries (town_id, id, clue_id, player_id, event_id, created_at)
@@ -334,7 +379,13 @@ describe.skipIf(!shouldRunDatabaseTests())("evidence persistence", () => {
     );
 
     expect(
-      await readActivePlayerTestimonyRootTransmission(pool, townId, npcId, claimId, playerId),
+      await readActivePlayerTestimonyRootTransmission(
+        pool,
+        townId,
+        npcId,
+        claimId,
+        playerId,
+      ),
     ).toBe(transmissionId);
 
     const reversalEventId = await insertWorldEvent(pool, townId);
@@ -346,7 +397,13 @@ describe.skipIf(!shouldRunDatabaseTests())("evidence persistence", () => {
       [townId, randomUUID(), npcId, claimId, reversalEventId, evidenceId],
     );
     expect(
-      await readActivePlayerTestimonyRootTransmission(pool, townId, npcId, claimId, playerId),
+      await readActivePlayerTestimonyRootTransmission(
+        pool,
+        townId,
+        npcId,
+        claimId,
+        playerId,
+      ),
     ).toBeUndefined();
   });
 
@@ -387,7 +444,12 @@ describe.skipIf(!shouldRunDatabaseTests())("evidence persistence", () => {
       [townId, mirrorId, npcId, claimId, eventId, primaryId],
     );
     // A physical clue contribution from someone else entirely must not appear.
-    const { clueId } = await insertInspectableWithClue(pool, townId, "clue:unrelated", false);
+    const { clueId } = await insertInspectableWithClue(
+      pool,
+      townId,
+      "clue:unrelated",
+      false,
+    );
     await pool.query(
       `INSERT INTO public.belief_evidence
          (town_id, id, npc_id, claim_id, event_id, clue_id, evidence_kind, signed_weight,

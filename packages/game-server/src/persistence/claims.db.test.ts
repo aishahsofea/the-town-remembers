@@ -50,8 +50,12 @@ describe.skipIf(!shouldRunDatabaseTests())("claims persistence", () => {
     townId: string,
     normalizedKey: string,
   ): Promise<string> {
-    const characterId = await insertStoryEntity(pool, townId, { entityType: "character" });
-    const locationId = await insertStoryEntity(pool, townId, { entityType: "location" });
+    const characterId = await insertStoryEntity(pool, townId, {
+      entityType: "character",
+    });
+    const locationId = await insertStoryEntity(pool, townId, {
+      entityType: "location",
+    });
     const id = randomUUID();
     await pool.query(
       `INSERT INTO public.claims
@@ -87,7 +91,15 @@ describe.skipIf(!shouldRunDatabaseTests())("claims persistence", () => {
           source_root_transmission_id, independent_source_actor_id,
           evidence_kind, signed_weight, trust_snapshot, hop_count, rule_version, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $6, $7, 'player_testimony', 40, 0, 0, 'test', now())`,
-      [townId, evidenceId, npcId, claimId, eventId, transmissionId, independentSourceActorId],
+      [
+        townId,
+        evidenceId,
+        npcId,
+        claimId,
+        eventId,
+        transmissionId,
+        independentSourceActorId,
+      ],
     );
     return evidenceId;
   }
@@ -148,10 +160,21 @@ describe.skipIf(!shouldRunDatabaseTests())("claims persistence", () => {
     const sourceA = await insertActor(pool, townId, { actorType: "player" });
     const sourceB = await insertActor(pool, townId, { actorType: "player" });
 
-    const evidenceA = await insertTestimonyEvidence(pool, townId, npcId, claimId, sourceA);
+    const evidenceA = await insertTestimonyEvidence(
+      pool,
+      townId,
+      npcId,
+      claimId,
+      sourceA,
+    );
     await insertTestimonyEvidence(pool, townId, npcId, claimId, sourceB);
 
-    const beforeReversal = await readActiveTestimonySources(pool, townId, npcId, claimId);
+    const beforeReversal = await readActiveTestimonySources(
+      pool,
+      townId,
+      npcId,
+      claimId,
+    );
     expect(new Set(beforeReversal)).toStrictEqual(new Set([sourceA, sourceB]));
 
     const reversalEventId = await insertWorldEvent(pool, townId);
@@ -163,7 +186,12 @@ describe.skipIf(!shouldRunDatabaseTests())("claims persistence", () => {
       [townId, randomUUID(), npcId, claimId, reversalEventId, evidenceA],
     );
 
-    const afterReversal = await readActiveTestimonySources(pool, townId, npcId, claimId);
+    const afterReversal = await readActiveTestimonySources(
+      pool,
+      townId,
+      npcId,
+      claimId,
+    );
     expect(afterReversal).toStrictEqual([sourceB]);
   });
 });

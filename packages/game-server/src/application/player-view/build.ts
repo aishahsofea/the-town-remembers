@@ -154,7 +154,10 @@ export async function buildPlayerView(
   const clueContentByKey = new Map(content.clues.map((clue) => [clue.clueKey, clue]));
   const npcContentByKey = new Map(content.npcs.map((npc) => [npc.npcKey, npc]));
   const promiseSummaryByTermsVersion = new Map<string, string>(
-    Object.values(content.promiseTerms).map((terms) => [terms.termsVersion, terms.summary]),
+    Object.values(content.promiseTerms).map((terms) => [
+      terms.termsVersion,
+      terms.summary,
+    ]),
   );
 
   const visit: PlayerView["player"]["visit"] =
@@ -226,18 +229,22 @@ export async function buildPlayerView(
           actorType: "player" as const,
           displayName: entry.contributedByDisplayName,
         },
-        claim: { claimId: entry.claim.claimId, text: claimTextFor(content, entry.claim) },
+        claim: {
+          claimId: entry.claim.claimId,
+          text: claimTextFor(content, entry.claim),
+        },
         speaker: entry.speaker,
         ...(entry.allegedSource === undefined
           ? {}
           : { allegedSource: entry.allegedSource }),
-        provenancePath: buildProvenancePath(entry.transmissionId, provenanceLinksById).map(
-          (actor) => ({
-            id: actor.actorId,
-            actorType: actor.actorType,
-            displayName: required(actorDisplayNameById.get(actor.actorId)),
-          }),
-        ),
+        provenancePath: buildProvenancePath(
+          entry.transmissionId,
+          provenanceLinksById,
+        ).map((actor) => ({
+          id: actor.actorId,
+          actorType: actor.actorType,
+          displayName: required(actorDisplayNameById.get(actor.actorId)),
+        })),
       };
       return {
         entryId: entry.entryId,
@@ -245,8 +252,16 @@ export async function buildPlayerView(
         createdAt: entry.createdAt,
         view:
           entry.entryKind === "testimony"
-            ? { entryKind: "testimony" as const, verificationStatus: verificationStatusFor("testimony"), ...attribution }
-            : { entryKind: "hearsay" as const, verificationStatus: verificationStatusFor("hearsay"), ...attribution },
+            ? {
+                entryKind: "testimony" as const,
+                verificationStatus: verificationStatusFor("testimony"),
+                ...attribution,
+              }
+            : {
+                entryKind: "hearsay" as const,
+                verificationStatus: verificationStatusFor("hearsay"),
+                ...attribution,
+              },
       };
     },
   );
@@ -255,8 +270,8 @@ export async function buildPlayerView(
     ...claimBoard,
   ];
 
-  const activePromises: PlayerViewProjectionInputs["activePromises"] = activePromiseRows.map(
-    (row) => ({
+  const activePromises: PlayerViewProjectionInputs["activePromises"] =
+    activePromiseRows.map((row) => ({
       promiseId: row.promiseId,
       acceptedAt: row.createdAt,
       view: {
@@ -265,15 +280,18 @@ export async function buildPlayerView(
         summary: required(promiseSummaryByTermsVersion.get(row.termsVersion)),
         subject:
           row.claim !== undefined
-            ? { kind: "claim", claimId: row.claim.claimId, text: claimTextFor(content, row.claim) }
+            ? {
+                kind: "claim",
+                claimId: row.claim.claimId,
+                text: claimTextFor(content, row.claim),
+              }
             : {
                 kind: "item",
                 itemId: required(row.item).itemId,
                 displayName: required(row.item).displayName,
               },
       },
-    }),
-  );
+    }));
 
   const [characterEntities, motiveEntities]: [
     readonly StoryEntityRow[],
