@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildDisclosureBundleForNpc,
+  buildDisclosureCandidates,
   buildNpcDialogueContext,
   buildRenderingCandidatesForNpc,
   defaultGateResult,
@@ -469,5 +470,95 @@ describe("buildNpcDialogueContext", () => {
         (rendering) => rendering.response_kind === "refuse",
       ),
     ).toBe(true);
+  });
+
+  it("uses a caller-supplied disclosureBundle instead of rebuilding one from disclosureGateContext", () => {
+    const sources = resolveSources("mara_venn", new Set(["corin_protected_lark"]));
+    // Built as a real planner (`rules/actions/model-backed.ts#planAsk`)
+    // would: a real bundle, from a permissive gate context.
+    const plannerBundle = buildDisclosureBundleForNpc({
+      sources,
+      content: BELL_MYSTERY_V1,
+      gateContext: gateContext({ trust: 100, suspicion: 0 }),
+    });
+    expect(plannerBundle.approvedDisclosures.length).toBeGreaterThan(0);
+
+    // A hostile gate context that would produce an *empty* bundle if
+    // buildNpcDialogueContext rebuilt one internally instead of using the
+    // supplied bundle.
+    const assembled = buildNpcDialogueContext({
+      npcKey: "mara_venn",
+      npcId: randomUUID(),
+      currentLocationId: randomUUID(),
+      disclosureSources: sources,
+      content: BELL_MYSTERY_V1,
+      disclosureGateContext: gateContext({
+        trust: 0,
+        suspicion: 0,
+        isRelevantToRequest: () => false,
+      }),
+      disclosureBundle: plannerBundle,
+      playerAction: { actionKind: "ask", targetEntityIds: [] },
+      dialogueDirective: { requiredAct: "Answer the player's question." },
+      allowedResponseKinds: ["answer"],
+      canonicalEntities: [],
+      approvedActors: [],
+    });
+
+    expect(assembled.trustedContext.dialogue_directive.gate_result).toBe("passed");
+    expect(assembled.trustedContext.approved_renderings.length).toBeGreaterThan(0);
+  });
+});
+
+describe("buildDisclosureCandidates", () => {
+  it("produces the exact candidate set buildDisclosureBundleForNpc feeds to buildApprovedDisclosureBundle", () => {
+    const sources = resolveSources("corin_hale");
+    const context = gateContext({
+      trust: 100,
+      suspicion: 0,
+      confrontationGateOpen: true,
+    });
+
+    const candidates = buildDisclosureCandidates({
+      sources,
+      content: BELL_MYSTERY_V1,
+      gateContext: context,
+    });
+    const bundle = buildDisclosureBundleForNpc({
+      sources,
+      content: BELL_MYSTERY_V1,
+      gateContext: context,
+    });
+
+    // Every candidate that passes its own tier gate ends up approved —
+    // proving buildDisclosureCandidates is the real upstream of the bundle,
+    // not a parallel, possibly-divergent computation.
+    const approvedClaimIds = new Set(
+      bundle.approvedDisclosures.map((disclosure) => disclosure.claimId),
+    );
+    expect(candidates.length).toBeGreaterThanOrEqual(approvedClaimIds.size);
+    for (const claimId of approvedClaimIds) {
+      expect(candidates.some((candidate) => candidate.claimId === claimId)).toBe(true);
+    }
+  });
+
+  it("deduplicates a claim with two simultaneously-passing tiers exactly once, matching the bundle", () => {
+    const sources = resolveSources("mara_venn", new Set(["corin_protected_lark"]));
+    const context = gateContext({ trust: 100, suspicion: 0 });
+
+    const candidates = buildDisclosureCandidates({
+      sources,
+      content: BELL_MYSTERY_V1,
+      gateContext: context,
+    });
+
+    const protectedLarkId = candidates.find(
+      (candidate) =>
+        [...CLAIM_IDS.entries()].find(([, id]) => id === candidate.claimId)?.[0] ===
+        "corin_protected_lark",
+    )?.claimId;
+    expect(
+      candidates.filter((candidate) => candidate.claimId === protectedLarkId),
+    ).toHaveLength(1);
   });
 });

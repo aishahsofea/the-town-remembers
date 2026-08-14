@@ -224,6 +224,40 @@ function selectOnePassingTierPerClaim(
   return result;
 }
 
+export interface DisclosureCandidateParams {
+  readonly sources: readonly ResolvedDisclosureSource[];
+  readonly content: ContentRegistry;
+  readonly gateContext: DisclosureGateContext;
+}
+
+/**
+ * Resolves one NPC's authored disclosure sources into the
+ * `DisclosureCandidateInput[]` a `rules/actions/model-backed.ts` planner's
+ * `XInputs.disclosureCandidates` needs (e.g. `AskInputs extends
+ * DisclosureBundleInputs`) — the real production path: a model-backed
+ * action's own input loader (`P4-11`'s `ask`, etc.) calls this, then hands
+ * the result to `planAsk`/`planShow`/etc., which does its own authority
+ * checks (`npcPresent`, draft state, ...) *before* building the
+ * `ApprovedDisclosureBundle` a caller eventually gets back via
+ * `ExternalSelectionRequired.trustedContext`. The dedup step
+ * (`selectOnePassingTierPerClaim`) has to happen here, not only inside
+ * `buildDisclosureBundleForNpc` below — a duplicate-claim crash in
+ * `assembleDialogueContext` would happen identically whether the bundle
+ * was built by a real planner or by this module directly.
+ */
+export function buildDisclosureCandidates(
+  params: DisclosureCandidateParams,
+): readonly DisclosureCandidateInput[] {
+  const dedupedSources = selectOnePassingTierPerClaim(
+    params.sources,
+    params.content,
+    params.gateContext,
+  );
+  return dedupedSources.map((source) =>
+    buildCandidate(source, params.content, params.gateContext),
+  );
+}
+
 export interface BuildDisclosureBundleParams {
   readonly sources: readonly ResolvedDisclosureSource[];
   readonly content: ContentRegistry;
@@ -235,25 +269,31 @@ export interface BuildDisclosureBundleParams {
 }
 
 /**
- * Builds the `ApprovedDisclosureBundle` for one NPC from its authored
- * disclosure-tier rows — the mechanism that makes "Mara's bundle never
- * contains the chapel location" true by construction: Mara's own rows in
- * `DISCLOSURE_TIER_TABLE` never name a `final_truth` claim, so no gate
- * evaluation could ever approve one for her regardless of trust, belief, or
- * confrontation-gate state. The same holds for Nessa and the cart's load,
- * and for Corin's `final_truth` rows against the confrontation gate.
+ * Builds the `ApprovedDisclosureBundle` for one NPC directly from its
+ * authored disclosure-tier rows — the mechanism that makes "Mara's bundle
+ * never contains the chapel location" true by construction: Mara's own
+ * rows in `DISCLOSURE_TIER_TABLE` never name a `final_truth` claim, so no
+ * gate evaluation could ever approve one for her regardless of trust,
+ * belief, or confrontation-gate state. The same holds for Nessa and the
+ * cart's load, and for Corin's `final_truth` rows against the
+ * confrontation gate.
+ *
+ * **Not the real production path for a model-backed action** — a real
+ * `ask`/`show`/etc. goes through its `rules/actions/model-backed.ts`
+ * planner (via `buildDisclosureCandidates` above), whose own
+ * `ExternalSelectionRequired.trustedContext` is the authoritative bundle
+ * (it alone reflects the planner's own authority/gate denials). This
+ * function computes the mathematically identical bundle a planner would
+ * from the same candidates — kept as a direct, plannerless entry point for
+ * regression-testing the disclosure-tier/safety invariants themselves
+ * (see `context.test.ts`) and for `buildNpcDialogueContext`'s convenience
+ * overload below, not because production code should prefer it over a
+ * real planner's result.
  */
 export function buildDisclosureBundleForNpc(
   params: BuildDisclosureBundleParams,
 ): ApprovedDisclosureBundle {
-  const dedupedSources = selectOnePassingTierPerClaim(
-    params.sources,
-    params.content,
-    params.gateContext,
-  );
-  const candidates = dedupedSources.map((source) =>
-    buildCandidate(source, params.content, params.gateContext),
-  );
+  const candidates = buildDisclosureCandidates(params);
   return buildApprovedDisclosureBundle(
     candidates,
     params.requiredDisclosureIds ?? [],
@@ -606,6 +646,20 @@ export interface BuildNpcDialogueContextParams {
   readonly disclosureSources: readonly ResolvedDisclosureSource[];
   readonly content: ContentRegistry;
   readonly disclosureGateContext: DisclosureGateContext;
+  /**
+   * The real production path: a model-backed action's planner
+   * (`rules/actions/model-backed.ts#planAsk` etc.) already built this
+   * bundle from `buildDisclosureCandidates`'s output as part of its own
+   * authority/gate checks — pass its `ExternalSelectionRequired.trustedContext`
+   * straight through rather than letting this function rebuild an
+   * equivalent bundle from `disclosureSources` a second time. Omit only
+   * when there is no real planner in the loop (a direct test, or a future
+   * action with no `rules` planner of its own), in which case this
+   * function falls back to `buildDisclosureBundleForNpc` using
+   * `disclosureSources`/`content`/`disclosureGateContext` and the four
+   * bundle-limit fields below.
+   */
+  readonly disclosureBundle?: ApprovedDisclosureBundle;
   readonly requiredDisclosureIds?: readonly string[];
   readonly approvedOutcomes?: readonly ApprovedOutcome[];
   readonly requiredOutcomeIds?: readonly string[];
@@ -638,23 +692,25 @@ export interface BuildNpcDialogueContextParams {
 export function buildNpcDialogueContext(
   params: BuildNpcDialogueContextParams,
 ): AssembledDialogueContext {
-  const bundle = buildDisclosureBundleForNpc({
-    sources: params.disclosureSources,
-    content: params.content,
-    gateContext: params.disclosureGateContext,
-    ...(params.requiredDisclosureIds === undefined
-      ? {}
-      : { requiredDisclosureIds: params.requiredDisclosureIds }),
-    ...(params.approvedOutcomes === undefined
-      ? {}
-      : { approvedOutcomes: params.approvedOutcomes }),
-    ...(params.requiredOutcomeIds === undefined
-      ? {}
-      : { requiredOutcomeIds: params.requiredOutcomeIds }),
-    ...(params.approvedEpisodes === undefined
-      ? {}
-      : { approvedEpisodes: params.approvedEpisodes }),
-  });
+  const bundle =
+    params.disclosureBundle ??
+    buildDisclosureBundleForNpc({
+      sources: params.disclosureSources,
+      content: params.content,
+      gateContext: params.disclosureGateContext,
+      ...(params.requiredDisclosureIds === undefined
+        ? {}
+        : { requiredDisclosureIds: params.requiredDisclosureIds }),
+      ...(params.approvedOutcomes === undefined
+        ? {}
+        : { approvedOutcomes: params.approvedOutcomes }),
+      ...(params.requiredOutcomeIds === undefined
+        ? {}
+        : { requiredOutcomeIds: params.requiredOutcomeIds }),
+      ...(params.approvedEpisodes === undefined
+        ? {}
+        : { approvedEpisodes: params.approvedEpisodes }),
+    });
 
   const gateResult = params.dialogueDirective.gateResult ?? defaultGateResult(bundle);
 
