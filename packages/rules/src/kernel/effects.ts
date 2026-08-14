@@ -14,15 +14,19 @@
  * name. {@link InsertEffect.ref} names such an insert; {@link PlanRef} is the
  * placeholder any later effect's `row`/`change` may use in place of a real id
  * to point back at it. `commitEffectPlan` resolves every `PlanRef` in plan
- * order and fails loudly on an unknown or forward reference — this package
- * only defines the shape, not the resolver.
+ * order and fails loudly on an unknown or forward reference. An insert may
+ * also reference its own handle when the database row must name its own
+ * generated id (for example an originating claim transmission's
+ * `root_transmission_id`) — this package only defines the shape, not the
+ * resolver.
  */
 
 import type { EventType } from "@the-town-remembers/database/domains";
 
 /**
- * A plan-local placeholder for another insert effect's not-yet-allocated id,
- * used in place of a real id inside a later effect's `row` or `change`.
+ * A plan-local placeholder for an insert effect's not-yet-allocated id, used
+ * in place of a real id inside that insert's own `row` or a later effect's
+ * `row`/`change`.
  * Never persisted and never derived from a database id — resolved to the
  * real id by `commitEffectPlan` before any statement runs.
  */
@@ -43,7 +47,7 @@ export interface InsertEffect<TTable extends string = string, TRow = unknown> {
   readonly kind: "insert";
   readonly table: TTable;
   readonly row: TRow;
-  /** Plan-local handle a later effect in the same plan may reference via `{ $planRef: ref }`. */
+  /** Plan-local handle this insert or a later effect may reference via `{ $planRef: ref }`. */
   readonly ref?: string;
 }
 

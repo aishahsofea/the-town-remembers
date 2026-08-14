@@ -554,6 +554,102 @@ describe.skipIf(!shouldRunDatabaseTests())("commitEffectPlan", () => {
   });
 
   describe("PlanRef resolution (D4-F)", () => {
+    it("resolves an insert's self-reference to that row's generated id", async () => {
+      const fixture = await fixtureTownPlayerAndAction();
+      const npcId = await insertNpc(db().pool, fixture.townId);
+      const subjectId = await insertStoryEntity(db().pool, fixture.townId, {
+        entityType: "character",
+      });
+      const claimId = randomUUID();
+      await db().pool.query(
+        `INSERT INTO public.claims
+           (town_id, id, subject_entity_id, subject_entity_type, predicate,
+            object_entity_id, object_entity_type, polarity, context_key,
+            normalized_key, created_at)
+         VALUES ($1, $2, $3, 'character', 'was_at', $4, 'location', 'positive',
+                 'festival_night', $5, now())`,
+        [fixture.townId, claimId, subjectId, fixture.locationId, `claim:${claimId}`],
+      );
+      const sourceEventId = randomUUID();
+      await db().pool.query(
+        `UPDATE public.towns SET last_event_sequence = 1 WHERE id = $1`,
+        [fixture.townId],
+      );
+      await db().pool.query(
+        `INSERT INTO public.world_events
+           (town_id, id, sequence_no, event_type, ambient_eligible, occurred_at,
+            origin_kind, effect_index, effect_key, payload, created_at)
+         VALUES ($1, $2, 1, 'authored_observation', false, now(), 'system_seed',
+                 0, $3, '{}', now())`,
+        [fixture.townId, sourceEventId, `test:${sourceEventId}`],
+      );
+      const sourceEpisodeId = randomUUID();
+      await db().pool.query(
+        `INSERT INTO public.episodes
+           (town_id, id, npc_id, event_id, episode_kind, summary, importance,
+            occurred_at, embedding_status, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, 'direct_observation', 'Observed it.', 50,
+                 now(), 'pending', now(), now())`,
+        [fixture.townId, sourceEpisodeId, npcId, sourceEventId],
+      );
+
+      const result = await runSerializable(
+        db().pool,
+        { deadlineAt: Date.now() + 5_000 },
+        (transaction) =>
+          commitEffectPlan({
+            transaction,
+            townId: fixture.townId,
+            playerId: fixture.playerId,
+            actionId: fixture.actionId,
+            idempotencyKey: fixture.idempotencyKey,
+            effects: [
+              {
+                kind: "event_origin",
+                eventType: "npc_interaction",
+                effectIndex: 0,
+              },
+              {
+                kind: "insert",
+                table: "claim_transmissions",
+                ref: "root-transmission",
+                row: {
+                  claim_id: claimId,
+                  speaker_actor_id: npcId,
+                  recipient_actor_id: fixture.playerId,
+                  recipient_actor_type: "player",
+                  parent_transmission_id: null,
+                  parent_is_eligible: null,
+                  root_transmission_id: { $planRef: "root-transmission" },
+                  source_episode_id: sourceEpisodeId,
+                  alleged_source_actor_id: null,
+                  source_kind: "direct_observation",
+                  hop_count: 0,
+                  interaction_id: null,
+                  ordinal: 0,
+                },
+              },
+            ],
+            now: new Date(),
+          }),
+      );
+      expect(result.outcome).toBe("committed");
+
+      const transmission = await db().pool.query<{
+        readonly id: string;
+        readonly root_transmission_id: string;
+      }>(
+        `SELECT id, root_transmission_id
+           FROM public.claim_transmissions
+          WHERE town_id = $1 AND event_id IN (
+            SELECT id FROM public.world_events
+             WHERE town_id = $1 AND player_action_id = $2
+          )`,
+        [fixture.townId, fixture.actionId],
+      );
+      expect(transmission.rows[0]?.root_transmission_id).toBe(transmission.rows[0]?.id);
+    });
+
     it("resolves a PlanRef in two later inserts to the earlier insert's real id", async () => {
       const fixture = await fixtureTownPlayerAndAction();
       const npcId = await insertNpc(db().pool, fixture.townId);

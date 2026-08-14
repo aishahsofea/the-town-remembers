@@ -11,6 +11,45 @@ import type {
 } from "@the-town-remembers/database/domains";
 import type { Pool } from "pg";
 
+export interface TransmissionProvenanceRow {
+  readonly transmissionId: string;
+  readonly rootTransmissionId: string;
+  readonly hopCount: number;
+}
+
+/**
+ * Resolves repeatable parent transmissions to their already-materialized root
+ * and hop. A terminal hop-4 row is deliberately absent: it cannot legally be
+ * the parent of a new transmission.
+ */
+export async function readTransmissionProvenance(
+  pool: Pool,
+  townId: string,
+  transmissionIds: readonly string[],
+): Promise<ReadonlyMap<string, TransmissionProvenanceRow>> {
+  if (transmissionIds.length === 0) return new Map();
+  const result = await pool.query<{
+    readonly id: string;
+    readonly root_transmission_id: string;
+    readonly hop_count: number;
+  }>(
+    `SELECT id, root_transmission_id, hop_count
+       FROM public.claim_transmissions
+      WHERE town_id = $1 AND id = ANY($2) AND parent_eligible = true`,
+    [townId, transmissionIds],
+  );
+  return new Map(
+    result.rows.map((row) => [
+      row.id,
+      {
+        transmissionId: row.id,
+        rootTransmissionId: row.root_transmission_id,
+        hopCount: row.hop_count,
+      },
+    ]),
+  );
+}
+
 export interface ReceivedTransmission {
   readonly transmissionId: string;
   readonly claimId: string;

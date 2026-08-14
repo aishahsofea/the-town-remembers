@@ -167,6 +167,29 @@ export const GENERIC_ACTION_FALLBACKS: readonly FallbackLine[] = Object.freeze([
  * source never wrote.
  */
 export const SITUATIONAL_DENIALS: readonly FallbackLine[] = Object.freeze([
+  ...(
+    [
+      [
+        "mara_venn",
+        "There is too much frightened talk already. Ask me about one thing at a time, and I will tell you what I can.",
+      ],
+      [
+        "corin_hale",
+        "State the question plainly. I will answer what the inquiry permits.",
+      ],
+      [
+        "nessa_reed",
+        "I will not guess. Ask for what I saw, what I heard, or what I concluded.",
+      ],
+    ] as const
+  ).map(([npcKey, text]): FallbackLine => ({
+    npcKey,
+    actionKind: "ask",
+    responseKind: "deflect",
+    gateResult: "no_disclosure_available",
+    outcomeIds: [],
+    text,
+  })),
   {
     npcKey: "nessa_reed",
     actionKind: "accept_promise",

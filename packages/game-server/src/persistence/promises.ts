@@ -14,6 +14,18 @@ export interface ActivePromiseRow {
   readonly itemId: string | null;
 }
 
+export interface AskPromiseOfferReadState {
+  readonly activePromises: readonly ActivePromiseRow[];
+  readonly oldChapelKey:
+    | {
+        readonly itemId: string;
+        readonly displayName: string;
+        readonly heldByActorId: string | null;
+      }
+    | undefined;
+  readonly larkDamagePreviouslyDisclosed: boolean;
+}
+
 /**
  * Active promises between one NPC and one player — at most one per
  * `(npc, player, kind, subject)` (`uq_promises__active_secret`/
@@ -54,4 +66,59 @@ export function toPromiseKeys(
     protectedClaimId: row.protectedClaimId,
     protectedItemId: row.itemId,
   }));
+}
+
+/**
+ * Minimal database state needed to derive Ask's authored promise offers.
+ * The offer itself is stored only in the completed action response; these
+ * reads merely prove the current gates while the model executor's town-
+ * revision guard protects the later atomic commit.
+ */
+export async function readAskPromiseOfferState(
+  pool: Pool,
+  townId: string,
+  npcId: string,
+  playerId: string,
+  larkDamageClaimId: string | undefined,
+): Promise<AskPromiseOfferReadState> {
+  const priorDisclosure =
+    larkDamageClaimId === undefined
+      ? Promise.resolve({ rows: [{ exists: false }] })
+      : pool.query<{ readonly exists: boolean }>(
+          `SELECT EXISTS (
+             SELECT 1 FROM public.claim_transmissions
+              WHERE town_id = $1 AND speaker_actor_id = $2
+                AND recipient_actor_id = $3 AND recipient_actor_type = 'player'
+                AND claim_id = $4
+           ) AS exists`,
+          [townId, npcId, playerId, larkDamageClaimId],
+        );
+  const [activePromises, keyResult, priorResult] = await Promise.all([
+    readActivePromises(pool, townId, npcId, playerId),
+    pool.query<{
+      readonly id: string;
+      readonly display_name: string;
+      readonly held_by_actor_id: string | null;
+    }>(
+      `SELECT i.id, se.display_name, i.held_by_actor_id
+         FROM public.items i
+         JOIN public.story_entities se ON se.town_id = i.town_id AND se.id = i.id
+        WHERE i.town_id = $1 AND se.entity_key = 'old_chapel_key'`,
+      [townId],
+    ),
+    priorDisclosure,
+  ]);
+  const key = keyResult.rows[0];
+  return {
+    activePromises,
+    oldChapelKey:
+      key === undefined
+        ? undefined
+        : {
+            itemId: key.id,
+            displayName: key.display_name,
+            heldByActorId: key.held_by_actor_id,
+          },
+    larkDamagePreviouslyDisclosed: priorResult.rows[0]?.exists ?? false,
+  };
 }

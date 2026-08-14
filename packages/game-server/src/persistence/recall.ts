@@ -32,6 +32,106 @@ export interface VectorCandidateRow {
   readonly distance: number;
 }
 
+export type RecallEpisodeKind =
+  | "direct_observation"
+  | "heard_claim"
+  | "player_interaction"
+  | "promise_consequence"
+  | "item_transfer"
+  | "world_consequence";
+
+export interface RecallEpisodeDetail {
+  readonly episodeId: string;
+  readonly episodeKind: RecallEpisodeKind;
+  readonly summary: string;
+  readonly importance: number;
+  readonly occurredAt: Date;
+  readonly claimIds: readonly string[];
+  readonly heardHopCount: number | null;
+  readonly isCommitmentOrGrievance: boolean;
+  readonly isInActiveContradiction: boolean;
+}
+
+/** Enriches the bounded candidate-id union for deterministic reranking. */
+export async function readRecallEpisodeDetails(
+  pool: Pool,
+  townId: string,
+  npcId: string,
+  playerId: string,
+  episodeIds: readonly string[],
+): Promise<readonly RecallEpisodeDetail[]> {
+  if (episodeIds.length === 0) return [];
+  const result = await pool.query<{
+    readonly id: string;
+    readonly episode_kind: RecallEpisodeKind;
+    readonly summary: string;
+    readonly importance: number;
+    readonly occurred_at: Date;
+    readonly claim_ids: readonly string[];
+    readonly heard_hop_count: number | null;
+    readonly is_commitment_or_grievance: boolean;
+    readonly is_in_active_contradiction: boolean;
+  }>(
+    `SELECT e.id, e.episode_kind, e.summary, e.importance, e.occurred_at,
+            COALESCE(
+              array_agg(DISTINCT er.claim_id) FILTER (WHERE er.claim_id IS NOT NULL),
+              ARRAY[]::UUID[]
+            ) AS claim_ids,
+            CASE WHEN e.episode_kind = 'heard_claim' THEN (
+              SELECT min(ct.hop_count)
+                FROM public.claim_transmissions ct
+               WHERE ct.town_id = e.town_id
+                 AND ct.event_id = e.event_id
+                 AND ct.recipient_actor_id = e.npc_id
+            ) ELSE NULL END AS heard_hop_count,
+            EXISTS (
+              SELECT 1 FROM public.promises p
+               WHERE p.town_id = e.town_id AND p.npc_id = e.npc_id
+                 AND p.player_id = $4
+                 AND (p.accepted_event_id = e.event_id OR p.resolved_event_id = e.event_id)
+            ) AS is_commitment_or_grievance,
+            EXISTS (
+              SELECT 1
+                FROM public.episode_references claim_ref
+                JOIN public.claim_relations relation
+                  ON relation.town_id = claim_ref.town_id
+                 AND relation.relation_kind = 'contradicts'
+                 AND (relation.claim_a_id = claim_ref.claim_id
+                   OR relation.claim_b_id = claim_ref.claim_id)
+                JOIN public.npc_beliefs belief_a
+                  ON belief_a.town_id = relation.town_id
+                 AND belief_a.npc_id = e.npc_id
+                 AND belief_a.claim_id = relation.claim_a_id
+                JOIN public.npc_beliefs belief_b
+                  ON belief_b.town_id = relation.town_id
+                 AND belief_b.npc_id = e.npc_id
+                 AND belief_b.claim_id = relation.claim_b_id
+               WHERE claim_ref.town_id = e.town_id
+                 AND claim_ref.episode_id = e.id
+                 AND claim_ref.reference_kind = 'claim'
+                 AND belief_a.score >= 20 AND belief_b.score >= 20
+            ) AS is_in_active_contradiction
+       FROM public.episodes e
+       LEFT JOIN public.episode_references er
+         ON er.town_id = e.town_id AND er.episode_id = e.id
+      WHERE e.town_id = $1 AND e.npc_id = $2 AND e.id = ANY($3)
+      GROUP BY e.town_id, e.id, e.npc_id, e.event_id, e.episode_kind,
+               e.summary, e.importance, e.occurred_at`,
+    [townId, npcId, episodeIds, playerId],
+  );
+  return result.rows.map((row) => ({
+    episodeId: row.id,
+    episodeKind: row.episode_kind,
+    summary: row.summary,
+    importance: row.importance,
+    occurredAt: row.occurred_at,
+    claimIds: row.claim_ids,
+    heardHopCount: row.heard_hop_count,
+    isCommitmentOrGrievance: row.is_commitment_or_grievance,
+    isInActiveContradiction: row.is_in_active_contradiction,
+  }));
+}
+
 /** The `<=> `→ `<->` index-aligned vector query, already scoped to `ready` embeddings only (`ck_episodes__embedding_consistency` makes a `ready` row with a null vector impossible regardless). */
 export async function readVectorCandidates(
   pool: Pool,

@@ -9,6 +9,8 @@ import type { Pool } from "pg";
 export interface NpcSnapshot {
   readonly npcId: string;
   readonly characterEntityId: string;
+  /** Frozen content identity (`mara_venn`, etc.), distinct from `profile_key`'s `npc.*` namespace. */
+  readonly characterKey: string;
   readonly locationEntityId: string;
   readonly profileKey: string;
   readonly profileVersion: string;
@@ -22,13 +24,17 @@ export async function readNpcSnapshot(
   const result = await pool.query<{
     readonly id: string;
     readonly character_entity_id: string;
+    readonly character_key: string;
     readonly location_entity_id: string;
     readonly profile_key: string;
     readonly profile_version: string;
   }>(
-    `SELECT id, character_entity_id, location_entity_id, profile_key, profile_version
-       FROM public.npcs
-      WHERE town_id = $1 AND id = $2`,
+    `SELECT n.id, n.character_entity_id, character.entity_key AS character_key,
+            n.location_entity_id, n.profile_key, n.profile_version
+       FROM public.npcs n
+       JOIN public.story_entities character
+         ON character.town_id = n.town_id AND character.id = n.character_entity_id
+      WHERE n.town_id = $1 AND n.id = $2`,
     [townId, npcId],
   );
   const row = result.rows[0];
@@ -36,6 +42,7 @@ export async function readNpcSnapshot(
   return {
     npcId: row.id,
     characterEntityId: row.character_entity_id,
+    characterKey: row.character_key,
     locationEntityId: row.location_entity_id,
     profileKey: row.profile_key,
     profileVersion: row.profile_version,

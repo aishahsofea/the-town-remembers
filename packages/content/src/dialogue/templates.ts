@@ -517,6 +517,30 @@ export interface DenialTemplate {
 
 export const DENIAL_TEMPLATES: readonly DenialTemplate[] = Object.freeze([
   {
+    templateKey: "mara_no_disclosure_1",
+    npcKey: "mara_venn",
+    gateResult: "no_disclosure_available",
+    responseKind: "deflect",
+    text: "There is too much frightened talk already. Ask me about one thing at a time, and I will tell you what I can.",
+    styleTags: ["guarded"],
+  },
+  {
+    templateKey: "corin_no_disclosure_1",
+    npcKey: "corin_hale",
+    gateResult: "no_disclosure_available",
+    responseKind: "deflect",
+    text: "State the question plainly. I will answer what the inquiry permits.",
+    styleTags: ["formal"],
+  },
+  {
+    templateKey: "nessa_no_disclosure_1",
+    npcKey: "nessa_reed",
+    gateResult: "no_disclosure_available",
+    responseKind: "deflect",
+    text: "I will not guess. Ask for what I saw, what I heard, or what I concluded.",
+    styleTags: ["exact"],
+  },
+  {
     templateKey: "nessa_denied_key_1",
     npcKey: "nessa_reed",
     gateResult: "denied_access",

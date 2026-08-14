@@ -38,7 +38,8 @@ export function createBedrockConverseClient(region: string): BedrockConverseClie
 export interface ConverseParams<TOutput> {
   /** Resolved model id or inference-profile ARN — deployment configuration, never chosen here. */
   readonly modelId: string;
-  readonly systemPrompt: string;
+  /** One ordinary prompt block, or the exact ordered target+overlay pair for repair. */
+  readonly systemPrompt: string | readonly string[];
   /** The exact serialized `{task_input_version, trusted_context, untrusted_*}` object. */
   readonly userMessageJson: string;
   readonly outputSchemaName: string;
@@ -62,7 +63,10 @@ function buildConverseCommand<TOutput>(
 ): ConverseCommand {
   return new ConverseCommand({
     modelId: params.modelId,
-    system: [{ text: params.systemPrompt }],
+    system: (typeof params.systemPrompt === "string"
+      ? [params.systemPrompt]
+      : params.systemPrompt
+    ).map((text) => ({ text })),
     messages: [{ role: "user", content: [{ text: params.userMessageJson }] }],
     inferenceConfig: {
       temperature: params.temperature,

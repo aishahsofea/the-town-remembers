@@ -97,6 +97,7 @@ describe.skipIf(!shouldRunDatabaseTests())("npc-state persistence", () => {
 
     const snapshot = await readNpcSnapshot(pool, townId, npcId);
     expect(snapshot?.npcId).toBe(npcId);
+    expect(snapshot?.characterKey).toBeTruthy();
 
     const missing = await readNpcSnapshot(pool, townId, randomUUID());
     expect(missing).toBeUndefined();

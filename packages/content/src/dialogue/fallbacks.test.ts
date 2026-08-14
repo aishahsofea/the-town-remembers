@@ -71,6 +71,20 @@ describe("situational denials", () => {
       }
     }
   });
+
+  it("gives every NPC a grounded no-disclosure deflection", () => {
+    for (const npcKey of NPC_KEYS) {
+      const line = SITUATIONAL_DENIALS.find(
+        (candidate) =>
+          candidate.npcKey === npcKey &&
+          candidate.actionKind === "ask" &&
+          candidate.gateResult === "no_disclosure_available",
+      );
+      expect(line?.responseKind).toBe("deflect");
+      expect(line?.outcomeIds).toStrictEqual([]);
+      expect(line?.text.length).toBeGreaterThan(0);
+    }
+  });
 });
 
 describe("outcome fallbacks", () => {

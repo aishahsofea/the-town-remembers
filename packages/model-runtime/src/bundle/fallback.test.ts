@@ -46,6 +46,19 @@ describe("resolveFallbackLine", () => {
     );
   });
 
+  it("finds an authored no-disclosure deflection", () => {
+    const resolved = resolveFallbackLine(BELL_MYSTERY_V1, {
+      npcKey: "corin_hale",
+      actionKind: "ask",
+      responseKind: "deflect",
+      gateResult: "no_disclosure_available",
+      requiredOutcomeIds: [],
+    });
+    expect(resolved.text).toBe(
+      "State the question plainly. I will answer what the inquiry permits.",
+    );
+  });
+
   it("only matches a line whose outcome set covers every required outcome", () => {
     const resolved = resolveFallbackLine(BELL_MYSTERY_V1, {
       npcKey: "nessa_reed",

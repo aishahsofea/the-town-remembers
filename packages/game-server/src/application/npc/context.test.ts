@@ -441,7 +441,11 @@ describe("buildNpcDialogueContext", () => {
     expect(assembled.trustedContext.dialogue_directive.gate_result).toBe(
       "no_disclosure_available",
     );
-    expect(assembled.trustedContext.approved_renderings).toHaveLength(0);
+    expect(assembled.trustedContext.approved_renderings).toHaveLength(1);
+    expect(assembled.trustedContext.approved_renderings[0]).toMatchObject({
+      response_kind: "deflect",
+      disclosure_ids: [],
+    });
   });
 
   it("honors a caller-supplied gate result over the derived default", () => {

@@ -63,10 +63,9 @@ export class RevisionConflictError extends Error {
 }
 
 /**
- * `D4-F`: raised for a `{ $planRef }` that names no earlier `InsertEffect.ref`
- * in the same plan — an unknown handle, or one declared later (a forward
- * reference, since a plan-local id does not exist until its own insert
- * effect runs). {@link validatePlanRefs} raises this before any statement
+ * `D4-F`: raised for a `{ $planRef }` that names neither its own insert nor
+ * an earlier `InsertEffect.ref` in the same plan — an unknown handle, or one
+ * declared later. {@link validatePlanRefs} raises this before any statement
  * executes; {@link resolveRecord} raises the identical error at apply time
  * as defense in depth, in case a future caller ever bypasses the pre-pass.
  */
@@ -108,8 +107,8 @@ function assertRecordResolvable(
 }
 
 /**
- * Validates every `PlanRef` in the plan resolves to an `InsertEffect.ref`
- * declared *earlier* in the same plan — run once, before `commitEffectPlan`
+ * Validates every `PlanRef` in the plan resolves to its own insert or an
+ * `InsertEffect.ref` declared earlier in the same plan — run once, before `commitEffectPlan`
  * issues its first statement, so an unknown or forward handle fails closed
  * rather than committing a partial plan and rolling back.
  */
@@ -117,11 +116,11 @@ function validatePlanRefs(effects: readonly EffectPlanEntry[]): void {
   const declaredRefs = new Set<string>();
   for (const effect of effects) {
     if (isInsertEffect(effect)) {
+      if (effect.ref !== undefined) declaredRefs.add(effect.ref);
       assertRecordResolvable(
         effect.row as Readonly<Record<string, unknown>>,
         declaredRefs,
       );
-      if (effect.ref !== undefined) declaredRefs.add(effect.ref);
     } else if (isConditionalStateChangeEffect(effect)) {
       assertRecordResolvable(
         effect.change as Readonly<Record<string, unknown>>,
@@ -159,6 +158,8 @@ function assertSafeIdentifier(identifier: string): void {
 const EVENT_FOREIGN_KEY_COLUMN: Readonly<Partial<Record<string, string>>> = {
   clue_discoveries: "event_id",
   case_board_entries: "source_event_id",
+  claim_transmissions: "event_id",
+  npc_interactions: "event_id",
   outbox: "source_event_id",
   // `episodes.event_id` (`P4-10`) — added ahead of any real planner using it,
   // for the same structural reason as the three above: NOT NULL, always this
@@ -320,11 +321,13 @@ async function applyInsert(
 ): Promise<string> {
   assertSafeIdentifier(effect.table);
 
+  const id = insertIds[effect.table] ?? randomUUID();
+  const resolvableRefs =
+    effect.ref === undefined ? idByRef : new Map(idByRef).set(effect.ref, id);
   const resolvedEffectRow = resolveRecord(
     effect.row as Readonly<Record<string, unknown>>,
-    idByRef,
+    resolvableRefs,
   );
-  const id = insertIds[effect.table] ?? randomUUID();
   const row: Record<string, unknown> = {
     ...tableInsertDefaults(effect.table, { playerId, actionId, now, revision }),
     ...resolvedEffectRow,
