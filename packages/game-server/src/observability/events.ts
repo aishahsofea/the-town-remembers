@@ -210,9 +210,23 @@ export interface ModelCostAdmissionMetricLogEvent {
 export interface ModelRunMetricLogEvent {
   readonly event: "metric_model_run";
   readonly purpose: AgentRunPurpose;
+  readonly model: PricingModelKey;
   readonly outcome: AgentRunOutcome;
   readonly latencyMs: number;
   readonly estimatedCostMicroUsd: number;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  /** The stable code a rejected/repaired attempt failed on, if any (`P4-22`: never the raw output). */
+  readonly validationErrorCode: string | null;
+}
+
+/** Recall candidates assembled for one dialogue call (`P4-23`) — counts only, never an episode id or its summary. */
+export interface RecallCandidatesMetricLogEvent {
+  readonly event: "metric_recall_candidates";
+  readonly vectorCandidateCount: number;
+  readonly anchorCandidateCount: number;
+  readonly rankedCandidateCount: number;
+  readonly embeddingAvailable: boolean;
 }
 
 export interface ModelCostSettlementMetricLogEvent {
@@ -245,7 +259,8 @@ export type GameServerLogEvent =
   | ModelCostAdmissionMetricLogEvent
   | ModelRunMetricLogEvent
   | ModelCostSettlementMetricLogEvent
-  | WarmupResultMetricLogEvent;
+  | WarmupResultMetricLogEvent
+  | RecallCandidatesMetricLogEvent;
 
 /**
  * Writes exactly one JSON object per line directly to stdout, matching

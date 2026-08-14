@@ -258,9 +258,13 @@ function logRunRecorded(params: AppendRunParams): void {
   });
   recordModelRun({
     purpose: params.purpose,
+    model: params.model,
     outcome: params.outcome,
     latencyMs: params.latencyMs,
     estimatedCostMicroUsd: params.estimatedCostMicroUsd,
+    inputTokens: params.usage.inputTokens,
+    outputTokens: params.usage.outputTokens,
+    validationErrorCode: params.validationErrorCode ?? null,
   });
 }
 

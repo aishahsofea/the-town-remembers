@@ -29,6 +29,7 @@ import type { ActionKind } from "@the-town-remembers/http-contracts";
 import {
   COST_MODES,
   type CostMode,
+  type PricingModelKey,
   type WarmupPairResult,
 } from "@the-town-remembers/model-runtime";
 
@@ -106,16 +107,46 @@ export function recordModelCostAdmission(params: {
   logEvent({ event: "metric_model_cost_admission", ...params });
 }
 
-/** One resolved model call, aggregatable into latency and cost distributions per purpose and outcome. */
+const MODEL_RUN_MODEL_KEYS: readonly PricingModelKey[] = ["haiku", "sonnet", "titan"];
+
+/**
+ * One resolved model call, aggregatable into latency, token, and cost
+ * distributions per purpose/model/outcome. `outcome` alone already carries
+ * `"repaired"` and `"fallback"` as distinct values (`AGENT_RUN_OUTCOMES`), so
+ * segmenting by outcome is segmenting by repair/fallback rate; the embedding
+ * purposes (`episode_embedding`/`query_embedding`) flow through this same
+ * function, so segmenting by purpose+outcome also covers an embedding
+ * failure rate — no separate embedding-specific metric exists (`P4-23`).
+ */
 export function recordModelRun(params: {
   readonly purpose: AgentRunPurpose;
+  readonly model: PricingModelKey;
   readonly outcome: AgentRunOutcome;
   readonly latencyMs: number;
   readonly estimatedCostMicroUsd: number;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  /** The stable code a rejected/repaired attempt failed on, if any — never the raw output (`P4-22`). */
+  readonly validationErrorCode: string | null;
 }): void {
   assertMember(AGENT_RUN_PURPOSES, params.purpose, "purpose");
+  assertMember(MODEL_RUN_MODEL_KEYS, params.model, "model");
   assertMember(AGENT_RUN_OUTCOMES, params.outcome, "outcome");
   logEvent({ event: "metric_model_run", ...params });
+}
+
+/**
+ * Recall candidates assembled for one dialogue call — how much of each
+ * source (vector similarity vs. structured anchor) contributed, and how
+ * many survived ranking. Counts only, never an episode id (`P4-23`).
+ */
+export function recordRecallCandidates(params: {
+  readonly vectorCandidateCount: number;
+  readonly anchorCandidateCount: number;
+  readonly rankedCandidateCount: number;
+  readonly embeddingAvailable: boolean;
+}): void {
+  logEvent({ event: "metric_recall_candidates", ...params });
 }
 
 const RESERVATION_TERMINAL_STATUSES = ["settled", "released"] as const;

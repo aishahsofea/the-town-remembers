@@ -28,6 +28,7 @@ import {
 import type { Pool } from "pg";
 
 import { internalError } from "../../../http/errors.js";
+import { recordRecallCandidates } from "../../../observability/metrics.js";
 import {
   readTransmissionProvenance,
   type TransmissionProvenanceRow,
@@ -224,6 +225,12 @@ async function loadAuthorizedAskInputs(
     candidates.filter((candidate) => anchorIds.has(candidate.episodeId)),
     { embeddingAvailable: embedding !== undefined, now: context.now },
   );
+  recordRecallCandidates({
+    vectorCandidateCount: vectorRows.length,
+    anchorCandidateCount: anchors.length,
+    rankedCandidateCount: ranked.length,
+    embeddingAvailable: embedding !== undefined,
+  });
   // Anchors keep recall operational when Titan is unavailable, but they do
   // not prove that this particular question is relevant to a claim. Only a
   // positive query-vector match may open the public relevance gate.
