@@ -11,6 +11,7 @@ import process from "node:process";
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from "aws-lambda";
 import {
   createProductionAskActionHandler,
+  createProductionGiveActionHandler,
   createProductionNormalizeClaimActionHandler,
   createProductionShowActionHandler,
   createProductionTellActionHandler,
@@ -54,6 +55,11 @@ function routerContext(): RouterContext {
               now,
             }),
             showActionHandler: createProductionShowActionHandler({
+              pool,
+              modelConfig: loadModelConfig(process.env),
+              now,
+            }),
+            giveActionHandler: createProductionGiveActionHandler({
               pool,
               modelConfig: loadModelConfig(process.env),
               now,

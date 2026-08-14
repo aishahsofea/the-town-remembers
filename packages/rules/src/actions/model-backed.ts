@@ -31,6 +31,7 @@ import {
   planShowStructuredEffect,
   type ClueClaimEffectLink,
 } from "../world/clues.js";
+import { returnItemTransferOutcome } from "../world/promises.js";
 import { type ActionPlanResult, dispatcherTrace as makeTrace } from "./dispatcher.js";
 import { relationshipStateChangeEffects } from "./relationship-effects.js";
 
@@ -517,6 +518,20 @@ export function planShow(inputs: ShowInputs): ActionPlanResult {
 
 // --- give -------------------------------------------------------------------------------------
 
+/**
+ * An active `return_item` promise this exact item resolves, present only
+ * when `itemId` matches its subject. `promiseNpcId` is the promise's own
+ * NPC (who it was accepted from) — fulfilled iff this Give's recipient is
+ * that same NPC, broken for any other recipient (docs/009 "Return the
+ * chapel key"), never for the transfer to fail: custody still moves either
+ * way, only the promise's terminal state differs.
+ */
+export interface GivePromiseResolution {
+  readonly promiseId: string;
+  readonly promiseNpcId: string;
+  readonly relationship: RelationshipScores;
+}
+
 export interface GiveActionInputs extends DisclosureBundleInputs {
   readonly npcPresent: boolean;
   readonly itemHeldByPlayer: boolean;
@@ -535,8 +550,7 @@ export interface GiveActionInputs extends DisclosureBundleInputs {
   readonly relationshipReasons: readonly "requested_item_given"[];
   /** The recipient NPC's current relationship scores with this player. */
   readonly relationship: RelationshipScores;
-  /** The pre-allocated id of the `item_transferred` event this plan creates. */
-  readonly itemTransferredEventId: string;
+  readonly promiseResolution?: GivePromiseResolution;
 }
 
 export function planGive(inputs: GiveActionInputs): ActionPlanResult {
@@ -549,7 +563,12 @@ export function planGive(inputs: GiveActionInputs): ActionPlanResult {
     npcAcceptsItem: inputs.npcAcceptsItem,
   });
   const effects: EffectPlanEntry[] = [
-    { kind: "event_origin", eventType: "item_transferred", effectIndex: 0 },
+    {
+      kind: "event_origin",
+      eventType: "item_transferred",
+      effectIndex: 0,
+      ref: "give-transfer",
+    },
   ];
   if (custody === "transferred") {
     effects.push({
@@ -576,23 +595,84 @@ export function planGive(inputs: GiveActionInputs): ActionPlanResult {
       },
     });
   }
-  effects.push(
-    ...relationshipStateChangeEffects(
-      [
-        {
+  if (inputs.relationshipReasons.length > 0) {
+    effects.push(
+      ...relationshipStateChangeEffects(
+        [
+          {
+            npcId: inputs.recipientActorId,
+            playerId: inputs.playerId,
+            ...inputs.relationship,
+          },
+        ],
+        inputs.relationshipReasons.map((reasonKind) => ({
           npcId: inputs.recipientActorId,
           playerId: inputs.playerId,
-          ...inputs.relationship,
+          reasonKind,
+        })),
+        { $planRef: "give-transfer" },
+      ),
+    );
+  }
+
+  const resolution = inputs.promiseResolution;
+  if (custody === "transferred" && resolution !== undefined) {
+    const transferOutcome = returnItemTransferOutcome(
+      resolution.promiseNpcId,
+      inputs.recipientActorId,
+    );
+    const reasonKind =
+      transferOutcome === "fulfilled"
+        ? ("promise_fulfilled" as const)
+        : ("promise_broken" as const);
+    const delta = relationshipDeltaFor(reasonKind);
+    effects.push(
+      {
+        kind: "event_origin",
+        eventType: reasonKind,
+        effectIndex: 1,
+        ref: "give-promise-event",
+        metadata: {
+          actorId: inputs.playerId,
+          targetActorId: resolution.promiseNpcId,
+          promiseId: resolution.promiseId,
         },
-      ],
-      inputs.relationshipReasons.map((reasonKind) => ({
-        npcId: inputs.recipientActorId,
-        playerId: inputs.playerId,
-        reasonKind,
-      })),
-      inputs.itemTransferredEventId,
-    ),
-  );
+      },
+      {
+        kind: "conditional_state_change",
+        table: "promises",
+        key: { id: resolution.promiseId, status: "active" },
+        change: {
+          status: reasonKind === "promise_fulfilled" ? "fulfilled" : "broken",
+          resolved_event_id: { $planRef: "give-promise-event" },
+        },
+      },
+      {
+        kind: "insert",
+        table: "relationship_changes",
+        row: {
+          npc_id: resolution.promiseNpcId,
+          player_id: inputs.playerId,
+          reason_kind: reasonKind,
+          rule_version: RULES_REGISTRY.rulesVersion,
+          promise_id: resolution.promiseId,
+          trust_delta: delta.trust,
+          suspicion_delta: delta.suspicion,
+        },
+      },
+      ...relationshipStateChangeEffects(
+        [
+          {
+            npcId: resolution.promiseNpcId,
+            playerId: inputs.playerId,
+            ...resolution.relationship,
+          },
+        ],
+        [{ npcId: resolution.promiseNpcId, playerId: inputs.playerId, reasonKind }],
+        { $planRef: "give-promise-event" },
+      ),
+    );
+  }
 
   return {
     kind: "external_selection_required",

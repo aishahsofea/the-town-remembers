@@ -60,8 +60,13 @@ import {
   resolveShowTarget,
   type ShowLoadedInputs,
 } from "../application/actions/inputs/show.js";
+import {
+  resolveGiveTarget,
+  type GiveLoadedInputs,
+} from "../application/actions/inputs/give.js";
 import type {
   AskDialogueSelection,
+  GiveDialogueSelection,
   ShowDialogueSelection,
   TellDialogueSelection,
 } from "@the-town-remembers/rules";
@@ -155,6 +160,12 @@ export interface RouterConfig {
     "show",
     ShowLoadedInputs,
     ShowDialogueSelection
+  >;
+  /** Present only when give is enabled; tests may inject a no-network handler. */
+  readonly giveActionHandler?: ModelActionHandler<
+    "give",
+    GiveLoadedInputs,
+    GiveDialogueSelection
   >;
 }
 
@@ -779,6 +790,24 @@ async function handleSubmitAction(context: RouteHandlerContext): Promise<HttpRes
       targetActorId: await resolveShowTarget(pool, townId, request.npcId),
       targetEntityId: null,
       requestPayload: { npcId: request.npcId, evidenceRef: request.evidenceRef },
+      handler,
+      now: context.config.now,
+      requestId: context.requestId,
+    });
+    response = respondToExecuteOutcome(townId, outcome);
+  } else if (request.kind === "give") {
+    const handler = context.config.giveActionHandler;
+    if (handler === undefined) throw internalError();
+    const outcome = await executeModelAction({
+      pool,
+      deadline,
+      townId,
+      playerId,
+      idempotencyKey,
+      actionKind: "give",
+      targetActorId: await resolveGiveTarget(pool, townId, request.npcId),
+      targetEntityId: null,
+      requestPayload: { npcId: request.npcId, itemId: request.itemId },
       handler,
       now: context.config.now,
       requestId: context.requestId,

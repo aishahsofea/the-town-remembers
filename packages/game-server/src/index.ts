@@ -34,4 +34,6 @@ export * from "./application/actions/inputs/tell.js";
 export * from "./application/actions/tell-model.js";
 export * from "./application/actions/inputs/show.js";
 export * from "./application/actions/show-model.js";
+export * from "./application/actions/inputs/give.js";
+export * from "./application/actions/give-model.js";
 export * from "./application/actions/model-executor.js";

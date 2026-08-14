@@ -674,7 +674,6 @@ describe("planGive", () => {
     itemRevision: 4,
     recipientActorId: "npc-1",
     playerId: "player-1",
-    itemTransferredEventId: "event-give-1",
     relationship: { trustScore: 20, suspicionScore: 10, revision: 6 },
     ...EMPTY_BUNDLE,
   };
@@ -732,7 +731,7 @@ describe("planGive", () => {
         change: {
           trust_score: 35,
           suspicion_score: 5,
-          updated_event_id: "event-give-1",
+          updated_event_id: { $planRef: "give-transfer" },
         },
       });
     }
@@ -749,6 +748,94 @@ describe("planGive", () => {
     if (isExternalSelectionRequired(result)) {
       expect(
         result.effects.some((effect) => effect.kind === "conditional_state_change"),
+      ).toBe(false);
+    }
+  });
+
+  it("fulfils the promise when the item returns to the promise's own NPC", () => {
+    const result = planGive({
+      npcPresent: true,
+      itemHeldByPlayer: true,
+      npcAcceptsItem: true,
+      relationshipReasons: [],
+      ...baseGiveInputs,
+      promiseResolution: {
+        promiseId: "promise-1",
+        promiseNpcId: "npc-1",
+        relationship: { trustScore: 0, suspicionScore: 0, revision: 2 },
+      },
+    });
+    expect(isExternalSelectionRequired(result)).toBe(true);
+    if (isExternalSelectionRequired(result)) {
+      const promiseChange = result.effects.find(
+        (effect) =>
+          effect.kind === "conditional_state_change" && effect.table === "promises",
+      );
+      expect(promiseChange).toMatchObject({
+        key: { id: "promise-1", status: "active" },
+        change: { status: "fulfilled", resolved_event_id: { $planRef: "give-promise-event" } },
+      });
+      const relationshipInsert = result.effects.find(
+        (effect) =>
+          effect.kind === "insert" &&
+          effect.table === "relationship_changes" &&
+          (effect.row as Record<string, unknown>)["reason_kind"] === "promise_fulfilled",
+      );
+      expect(relationshipInsert).toMatchObject({
+        row: { npc_id: "npc-1", player_id: "player-1", promise_id: "promise-1" },
+      });
+    }
+  });
+
+  it("breaks the promise when the item goes to a different NPC than promised", () => {
+    const result = planGive({
+      npcPresent: true,
+      itemHeldByPlayer: true,
+      npcAcceptsItem: true,
+      relationshipReasons: [],
+      ...baseGiveInputs,
+      recipientActorId: "npc-other",
+      promiseResolution: {
+        promiseId: "promise-1",
+        promiseNpcId: "npc-1",
+        relationship: { trustScore: 0, suspicionScore: 0, revision: 2 },
+      },
+    });
+    if (isExternalSelectionRequired(result)) {
+      const promiseChange = result.effects.find(
+        (effect) =>
+          effect.kind === "conditional_state_change" && effect.table === "promises",
+      );
+      expect(promiseChange).toMatchObject({ change: { status: "broken" } });
+      const relationshipInsert = result.effects.find(
+        (effect) =>
+          effect.kind === "insert" &&
+          effect.table === "relationship_changes" &&
+          (effect.row as Record<string, unknown>)["reason_kind"] === "promise_broken",
+      );
+      // The consequence attaches to the promise's own NPC (npc-1), never the
+      // actual recipient (npc-other) — the promise was made to Nessa, not
+      // whoever the key happened to end up with.
+      expect(relationshipInsert).toMatchObject({ row: { npc_id: "npc-1" } });
+    }
+  });
+
+  it("does not resolve the promise when custody did not actually transfer", () => {
+    const result = planGive({
+      npcPresent: true,
+      itemHeldByPlayer: true,
+      npcAcceptsItem: false,
+      relationshipReasons: [],
+      ...baseGiveInputs,
+      promiseResolution: {
+        promiseId: "promise-1",
+        promiseNpcId: "npc-1",
+        relationship: { trustScore: 0, suspicionScore: 0, revision: 2 },
+      },
+    });
+    if (isExternalSelectionRequired(result)) {
+      expect(
+        result.effects.some((effect) => "table" in effect && effect.table === "promises"),
       ).toBe(false);
     }
   });

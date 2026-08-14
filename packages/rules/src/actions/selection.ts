@@ -911,3 +911,146 @@ export function applyShowSelection(
   }
   return effects;
 }
+
+// --- give ---------------------------------------------------------------------------------
+
+export type GiveDialogueSelection = ValidatedDialogueResume;
+
+export interface ApplyGiveSelectionInputs {
+  readonly actionId: string;
+  readonly visitId: string;
+  readonly playerId: string;
+  readonly npcId: string;
+  readonly npcCharacterEntityId: string;
+  readonly locationEntityId: string;
+  readonly itemEntityId: string;
+  readonly occurredAt: Date;
+  readonly selection: GiveDialogueSelection;
+  readonly custodyTransferred: boolean;
+  /**
+   * Present only when custody transferred and a promise actually resolved
+   * this turn. `promiseNpcId` is the promise's own NPC, not necessarily
+   * `npcId` — breaking the promise by giving the item to a *different* NPC
+   * still records the consequence for the NPC the promise was made to.
+   */
+  readonly promiseResolution?: {
+    readonly outcome: "fulfilled" | "broken";
+    readonly promiseNpcId: string;
+    readonly promiseNpcCharacterEntityId: string;
+  };
+}
+
+function giveInteractionSummary(text: string): string {
+  return `A visitor offered me an item. I said: ${text}`;
+}
+
+/**
+ * The dialogue turn's audit trail and recall memory — `planGive` already
+ * committed every causal effect (custody, relationship, promise
+ * resolution) before any model call. An item transfer and a promise
+ * resolution are recorded as two distinct episodes (`item_transfer` /
+ * `promise_consequence`) since Decision 008 gives them different importance
+ * floors; a declined item produces no episode at all — nothing happened
+ * for the NPC to remember.
+ */
+export function applyGiveSelection(
+  inputs: ApplyGiveSelectionInputs,
+): readonly EffectPlanEntry[] {
+  const effects: EffectPlanEntry[] = [
+    {
+      kind: "insert",
+      table: "npc_interactions",
+      row: {
+        player_action_id: inputs.actionId,
+        visit_id: inputs.visitId,
+        player_id: inputs.playerId,
+        npc_id: inputs.npcId,
+        input_kind: "give",
+        player_text: null,
+        npc_text: inputs.selection.text,
+        response_mode: inputs.selection.responseMode,
+      },
+    },
+  ];
+
+  if (!inputs.custodyTransferred) return effects;
+
+  effects.push(
+    {
+      kind: "insert",
+      table: "episodes",
+      ref: "give-transfer-episode",
+      row: {
+        npc_id: inputs.npcId,
+        episode_kind: "item_transfer",
+        summary: giveInteractionSummary(inputs.selection.text),
+        importance: importanceMinimumFor("unique_item_transfer"),
+        occurred_at: inputs.occurredAt,
+        embedding_status: "pending",
+        updated_at: inputs.occurredAt,
+      },
+    },
+    {
+      kind: "insert",
+      table: "episode_references",
+      row: {
+        episode_id: { $planRef: "give-transfer-episode" },
+        reference_kind: "participant",
+        entity_id: inputs.npcCharacterEntityId,
+      },
+    },
+    {
+      kind: "insert",
+      table: "episode_references",
+      row: {
+        episode_id: { $planRef: "give-transfer-episode" },
+        reference_kind: "location",
+        entity_id: inputs.locationEntityId,
+      },
+    },
+    {
+      kind: "insert",
+      table: "episode_references",
+      row: {
+        episode_id: { $planRef: "give-transfer-episode" },
+        reference_kind: "item",
+        entity_id: inputs.itemEntityId,
+      },
+    },
+  );
+
+  const promiseResolution = inputs.promiseResolution;
+  if (promiseResolution !== undefined) {
+    effects.push(
+      {
+        kind: "insert",
+        table: "episodes",
+        ref: "give-promise-episode",
+        row: {
+          npc_id: promiseResolution.promiseNpcId,
+          episode_kind: "promise_consequence",
+          summary: giveInteractionSummary(inputs.selection.text),
+          importance: importanceMinimumFor(
+            promiseResolution.outcome === "fulfilled"
+              ? "fulfilled_promise"
+              : "broken_promise",
+          ),
+          occurred_at: inputs.occurredAt,
+          embedding_status: "pending",
+          updated_at: inputs.occurredAt,
+        },
+      },
+      {
+        kind: "insert",
+        table: "episode_references",
+        row: {
+          episode_id: { $planRef: "give-promise-episode" },
+          reference_kind: "participant",
+          entity_id: promiseResolution.promiseNpcCharacterEntityId,
+        },
+      },
+    );
+  }
+
+  return effects;
+}

@@ -82,6 +82,27 @@ export async function readActivePromises(
   }));
 }
 
+export interface ActiveItemPromiseRow {
+  readonly promiseId: string;
+  /** The promise's own NPC — who it was accepted from, not necessarily who a later Give's recipient is. */
+  readonly promiseNpcId: string;
+}
+
+/** The active `return_item` promise this exact item is the subject of, if any — Give's fulfil/break gate. */
+export async function readActivePromiseForItem(
+  pool: Pool,
+  townId: string,
+  itemId: string,
+): Promise<ActiveItemPromiseRow | undefined> {
+  const result = await pool.query<{ readonly id: string; readonly npc_id: string }>(
+    `SELECT id, npc_id FROM public.promises
+      WHERE town_id = $1 AND item_id = $2 AND kind = 'return_item' AND status = 'active'`,
+    [townId, itemId],
+  );
+  const row = result.rows[0];
+  return row === undefined ? undefined : { promiseId: row.id, promiseNpcId: row.npc_id };
+}
+
 /** Projects rows onto `rules/world/promises.ts#PromiseKey` for `hasActivePromise`. */
 export function toPromiseKeys(
   npcId: string,

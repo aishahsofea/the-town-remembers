@@ -12,6 +12,7 @@ import process from "node:process";
 
 import {
   createProductionAskActionHandler,
+  createProductionGiveActionHandler,
   createProductionNormalizeClaimActionHandler,
   createProductionShowActionHandler,
   createProductionTellActionHandler,
@@ -118,6 +119,11 @@ export async function main(): Promise<void> {
             now,
           }),
           showActionHandler: createProductionShowActionHandler({
+            pool,
+            modelConfig: loadModelConfig(process.env),
+            now,
+          }),
+          giveActionHandler: createProductionGiveActionHandler({
             pool,
             modelConfig: loadModelConfig(process.env),
             now,
