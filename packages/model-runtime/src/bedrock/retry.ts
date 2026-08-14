@@ -18,7 +18,7 @@ export {
 
 export interface RetryFitCheck extends ConverseFitCheck {
   /** Recomputed at retry time — the clock has moved since the first attempt. */
-  readonly retryNow: Date;
+  readonly retryNow: () => Date;
 }
 
 /**
@@ -37,7 +37,7 @@ export async function converseWithRetry<TOutput>(
   const first = await converse(client, params, fitCheck);
   if (first.kind !== "transport_failure" || !first.retryable) return first;
 
-  const retryFitCheck: ConverseFitCheck = { ...fitCheck, now: fitCheck.retryNow };
+  const retryFitCheck: ConverseFitCheck = { ...fitCheck, now: fitCheck.retryNow() };
   if (!fitsBeforeReserve(retryFitCheck)) {
     return { kind: "timeout", attempted: false };
   }

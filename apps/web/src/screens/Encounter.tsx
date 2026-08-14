@@ -89,8 +89,11 @@ export function Encounter({ view, action, npcId }: EncounterProps) {
   >(() => readStoredExchange(storageKey));
   const [tellReviewActive, setTellReviewActive] = useState(false);
   const awaitingKindRef = useRef<"ask" | "show" | "give" | undefined>(undefined);
+  const activeStorageKeyRef = useRef(storageKey);
 
   useEffect(() => {
+    if (activeStorageKeyRef.current === storageKey) return;
+    activeStorageKeyRef.current = storageKey;
     setLatestExchange(readStoredExchange(storageKey));
     setComposerMode("none");
     setTellReviewActive(false);

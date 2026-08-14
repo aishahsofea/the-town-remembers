@@ -19,8 +19,8 @@
  * must not run past.
  *
  * Each embedding call goes through the same cost ledger a player-facing
- * call would (`model-cost.ts#reserveModelCost`/`settleModelCost`/
- * `releaseModelCost`, `model-runs.ts#appendRun`) — backfill work is real
+ * call would (`model-cost.ts#reserveModelCost`,
+ * `model-runs.ts#appendRun`) — backfill work is real
  * spend, not exempt the way `prewarm.ts`'s four fixed warmup calls are.
  * Reservations are sourced by the episode's own causing `world_event_id`;
  * since more than one episode can share one event (a second NPC also
@@ -50,11 +50,7 @@ import {
   markEmbeddingReady,
   readPendingEmbeddings,
 } from "../../persistence/episodes.js";
-import {
-  releaseModelCost,
-  reserveModelCost,
-  settleModelCost,
-} from "../../persistence/model-cost.js";
+import { reserveModelCost } from "../../persistence/model-cost.js";
 import { appendRun } from "../../persistence/model-runs.js";
 
 const EMBEDDING_PROMPT_VERSION = "titan-embed-text-v2";
@@ -177,6 +173,7 @@ async function embedOneEpisode(params: {
     },
     {
       now: params.now,
+      retryNow: () => new Date(),
       applicationDeadlineAt: new Date(deadlineAt),
       worstCaseMs: params.callDeadlineMs,
       reserveMs: 0,
@@ -187,30 +184,29 @@ async function embedOneEpisode(params: {
   const latencyMs = Date.now() - params.now.getTime();
 
   if (outcome.kind !== "accepted") {
-    await appendRun(params.pool, reservationDeadlineAt, {
-      runId,
-      townId: params.townId,
-      worldEventId: params.worldEventId,
-      model: "titan",
-      inferenceProfile: params.modelId,
-      promptVersion: EMBEDDING_PROMPT_VERSION,
-      purpose: "episode_embedding",
-      usage: {
-        inputTokens: 0,
-        outputTokens: 0,
-        cacheReadTokens: 0,
-        cacheWriteTokens: 0,
-      },
-      latencyMs,
-      estimatedCostMicroUsd: 0,
-      outcome: "failed",
-      now: params.now,
-    });
-    await releaseModelCost(
+    await appendRun(
       params.pool,
       reservationDeadlineAt,
-      admitted.reservationId,
-      params.now,
+      {
+        runId,
+        townId: params.townId,
+        worldEventId: params.worldEventId,
+        model: "titan",
+        inferenceProfile: params.modelId,
+        promptVersion: EMBEDDING_PROMPT_VERSION,
+        purpose: "episode_embedding",
+        usage: {
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+        },
+        latencyMs,
+        estimatedCostMicroUsd: 0,
+        outcome: "failed",
+        now: params.now,
+      },
+      { kind: "released", reservationId: admitted.reservationId },
     );
     await markEmbeddingFailed(
       params.pool,
@@ -228,31 +224,34 @@ async function embedOneEpisode(params: {
     cacheReadTokens: 0,
     cacheWriteTokens: 0,
   });
-  await appendRun(params.pool, reservationDeadlineAt, {
-    runId,
-    townId: params.townId,
-    worldEventId: params.worldEventId,
-    model: "titan",
-    inferenceProfile: params.modelId,
-    promptVersion: EMBEDDING_PROMPT_VERSION,
-    purpose: "episode_embedding",
-    usage: {
-      inputTokens: outcome.inputTextTokenCount,
-      outputTokens: 0,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
+  await appendRun(
+    params.pool,
+    reservationDeadlineAt,
+    {
+      runId,
+      townId: params.townId,
+      worldEventId: params.worldEventId,
+      model: "titan",
+      inferenceProfile: params.modelId,
+      promptVersion: EMBEDDING_PROMPT_VERSION,
+      purpose: "episode_embedding",
+      usage: {
+        inputTokens: outcome.inputTextTokenCount,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      },
+      latencyMs,
+      estimatedCostMicroUsd: settledCostMicroUsd,
+      outcome: "accepted",
+      now: params.now,
     },
-    latencyMs,
-    estimatedCostMicroUsd: settledCostMicroUsd,
-    outcome: "accepted",
-    now: params.now,
-  });
-  await settleModelCost(params.pool, reservationDeadlineAt, {
-    reservationId: admitted.reservationId,
-    agentRunId: runId,
-    settledCostMicroUsd,
-    now: params.now,
-  });
+    {
+      kind: "settled",
+      reservationId: admitted.reservationId,
+      settledCostMicroUsd,
+    },
+  );
   await markEmbeddingReady(
     params.pool,
     reservationDeadlineAt,

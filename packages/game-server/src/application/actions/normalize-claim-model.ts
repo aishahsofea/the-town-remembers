@@ -46,7 +46,7 @@ import { MODEL_DEADLINES } from "@the-town-remembers/runtime-config/model";
 import type { ModelConfig } from "@the-town-remembers/runtime-config/model";
 import type { Pool } from "pg";
 
-import { reserveModelCost, settleModelCost } from "../../persistence/model-cost.js";
+import { reserveModelCost } from "../../persistence/model-cost.js";
 import { appendRun } from "../../persistence/model-runs.js";
 import {
   resolveAllegedSourceActorId,
@@ -258,7 +258,7 @@ async function normalizeClaim(
     },
     {
       now,
-      retryNow: (dependencies.now ?? (() => new Date()))(),
+      retryNow: dependencies.now ?? (() => new Date()),
       applicationDeadlineAt: new Date(params.deadlineAt),
       worstCaseMs: MODEL_DEADLINES.haikuNormalizationMs,
       reserveMs: 0,
@@ -277,30 +277,29 @@ async function normalizeClaim(
       const cost = settledMicroUsd(resolved.role, usage);
       const runId = randomUUID();
       const recordedAt = (dependencies.now ?? (() => new Date()))();
-      await appendRun(dependencies.pool, params.deadlineAt, {
-        runId,
-        townId: params.townId,
-        playerActionId: params.actionId,
-        model: resolved.role,
-        inferenceProfile: resolved.inferenceProfile,
-        purpose: "claim_normalization",
-        promptVersion: PROMPT_VERSIONS.claimNormalization,
-        promptSha256: promptHash(CLAIM_NORMALIZATION_PROMPT_V1_0_0),
-        taskInputVersion: TASK_INPUT_VERSIONS.claimNormalization,
-        outputSchemaVersion: OUTPUT_SCHEMA_NAMES.claimNormalization,
-        validationPolicyVersion: VALIDATION_POLICY_VERSIONS.claimNormalization,
-        usage,
-        latencyMs,
-        estimatedCostMicroUsd: cost,
-        outcome: "accepted",
-        now: recordedAt,
-      });
-      await settleModelCost(dependencies.pool, params.deadlineAt, {
-        reservationId,
-        agentRunId: runId,
-        settledCostMicroUsd: cost,
-        now: recordedAt,
-      });
+      await appendRun(
+        dependencies.pool,
+        params.deadlineAt,
+        {
+          runId,
+          townId: params.townId,
+          playerActionId: params.actionId,
+          model: resolved.role,
+          inferenceProfile: resolved.inferenceProfile,
+          purpose: "claim_normalization",
+          promptVersion: PROMPT_VERSIONS.claimNormalization,
+          promptSha256: promptHash(CLAIM_NORMALIZATION_PROMPT_V1_0_0),
+          taskInputVersion: TASK_INPUT_VERSIONS.claimNormalization,
+          outputSchemaVersion: OUTPUT_SCHEMA_NAMES.claimNormalization,
+          validationPolicyVersion: VALIDATION_POLICY_VERSIONS.claimNormalization,
+          usage,
+          latencyMs,
+          estimatedCostMicroUsd: cost,
+          outcome: "accepted",
+          now: recordedAt,
+        },
+        { kind: "settled", reservationId, settledCostMicroUsd: cost },
+      );
       return toSelection(dependencies.pool, params.townId, validation, "selected");
     }
     failure = validation;
@@ -315,7 +314,14 @@ async function normalizeClaim(
       validationCode(failure),
     );
   } else {
-    await recordFailed(dependencies, params, resolved, latencyMs);
+    await recordFailed(
+      dependencies,
+      params,
+      resolved,
+      reservationId,
+      latencyMs,
+      outcome.kind === "timeout" && !outcome.attempted,
+    );
     if (
       (outcome.kind !== "parse_failure" && outcome.kind !== "schema_failure") ||
       rejectedRaw.length === 0
@@ -379,7 +385,7 @@ async function normalizeClaim(
     },
     {
       now: repairNow,
-      retryNow: (dependencies.now ?? (() => new Date()))(),
+      retryNow: dependencies.now ?? (() => new Date()),
       applicationDeadlineAt: new Date(params.deadlineAt),
       worstCaseMs: MODEL_DEADLINES.haikuNormalizationMs,
       reserveMs: 0,
@@ -397,34 +403,37 @@ async function normalizeClaim(
       const cost = settledMicroUsd(repairResolved.role, usage);
       const runId = randomUUID();
       const recordedAt = (dependencies.now ?? (() => new Date()))();
-      await appendRun(dependencies.pool, params.deadlineAt, {
-        runId,
-        townId: params.townId,
-        playerActionId: params.actionId,
-        model: repairResolved.role,
-        inferenceProfile: repairResolved.inferenceProfile,
-        purpose: "structured_repair",
-        promptVersion: PROMPT_VERSIONS.structuredRepair,
-        targetPromptVersion: PROMPT_VERSIONS.claimNormalization,
-        promptSha256: repairPromptHash(
-          CLAIM_NORMALIZATION_PROMPT_V1_0_0,
-          STRUCTURED_REPAIR_OVERLAY_V1_0_0,
-        ),
-        taskInputVersion: TASK_INPUT_VERSIONS.structuredRepair,
-        outputSchemaVersion: OUTPUT_SCHEMA_NAMES.claimNormalization,
-        validationPolicyVersion: VALIDATION_POLICY_VERSIONS.claimNormalization,
-        usage,
-        latencyMs: repairLatencyMs,
-        estimatedCostMicroUsd: cost,
-        outcome: "repaired",
-        now: recordedAt,
-      });
-      await settleModelCost(dependencies.pool, params.deadlineAt, {
-        reservationId: repairReservationId,
-        agentRunId: runId,
-        settledCostMicroUsd: cost,
-        now: recordedAt,
-      });
+      await appendRun(
+        dependencies.pool,
+        params.deadlineAt,
+        {
+          runId,
+          townId: params.townId,
+          playerActionId: params.actionId,
+          model: repairResolved.role,
+          inferenceProfile: repairResolved.inferenceProfile,
+          purpose: "structured_repair",
+          promptVersion: PROMPT_VERSIONS.structuredRepair,
+          targetPromptVersion: PROMPT_VERSIONS.claimNormalization,
+          promptSha256: repairPromptHash(
+            CLAIM_NORMALIZATION_PROMPT_V1_0_0,
+            STRUCTURED_REPAIR_OVERLAY_V1_0_0,
+          ),
+          taskInputVersion: TASK_INPUT_VERSIONS.structuredRepair,
+          outputSchemaVersion: OUTPUT_SCHEMA_NAMES.claimNormalization,
+          validationPolicyVersion: VALIDATION_POLICY_VERSIONS.claimNormalization,
+          usage,
+          latencyMs: repairLatencyMs,
+          estimatedCostMicroUsd: cost,
+          outcome: "repaired",
+          now: recordedAt,
+        },
+        {
+          kind: "settled",
+          reservationId: repairReservationId,
+          settledCostMicroUsd: cost,
+        },
+      );
       return toSelection(dependencies.pool, params.townId, validation, "repaired");
     }
     await recordRejected(
@@ -442,7 +451,9 @@ async function normalizeClaim(
       dependencies,
       params,
       repairResolved,
+      repairReservationId,
       repairLatencyMs,
+      repairOutcome.kind === "timeout" && !repairOutcome.attempted,
       "structured_repair",
     );
   }
@@ -476,37 +487,46 @@ async function recordRejected(
     validationErrorCode,
     now,
   };
-  if (purpose === "claim_normalization") {
-    await appendRun(dependencies.pool, params.deadlineAt, {
-      ...common,
-      purpose,
-      promptVersion: PROMPT_VERSIONS.claimNormalization,
-      promptSha256: promptHash(CLAIM_NORMALIZATION_PROMPT_V1_0_0),
-      taskInputVersion: TASK_INPUT_VERSIONS.claimNormalization,
-      outputSchemaVersion: OUTPUT_SCHEMA_NAMES.claimNormalization,
-      validationPolicyVersion: VALIDATION_POLICY_VERSIONS.claimNormalization,
-    });
-  } else {
-    await appendRun(dependencies.pool, params.deadlineAt, {
-      ...common,
-      purpose,
-      promptVersion: PROMPT_VERSIONS.structuredRepair,
-      targetPromptVersion: PROMPT_VERSIONS.claimNormalization,
-      promptSha256: repairPromptHash(
-        CLAIM_NORMALIZATION_PROMPT_V1_0_0,
-        STRUCTURED_REPAIR_OVERLAY_V1_0_0,
-      ),
-      taskInputVersion: TASK_INPUT_VERSIONS.structuredRepair,
-      outputSchemaVersion: OUTPUT_SCHEMA_NAMES.claimNormalization,
-      validationPolicyVersion: VALIDATION_POLICY_VERSIONS.claimNormalization,
-    });
-  }
-  await settleModelCost(dependencies.pool, params.deadlineAt, {
+  const finalization = {
+    kind: "settled",
     reservationId,
-    agentRunId: runId,
     settledCostMicroUsd: cost,
-    now,
-  });
+  } as const;
+  if (purpose === "claim_normalization") {
+    await appendRun(
+      dependencies.pool,
+      params.deadlineAt,
+      {
+        ...common,
+        purpose,
+        promptVersion: PROMPT_VERSIONS.claimNormalization,
+        promptSha256: promptHash(CLAIM_NORMALIZATION_PROMPT_V1_0_0),
+        taskInputVersion: TASK_INPUT_VERSIONS.claimNormalization,
+        outputSchemaVersion: OUTPUT_SCHEMA_NAMES.claimNormalization,
+        validationPolicyVersion: VALIDATION_POLICY_VERSIONS.claimNormalization,
+      },
+      finalization,
+    );
+  } else {
+    await appendRun(
+      dependencies.pool,
+      params.deadlineAt,
+      {
+        ...common,
+        purpose,
+        promptVersion: PROMPT_VERSIONS.structuredRepair,
+        targetPromptVersion: PROMPT_VERSIONS.claimNormalization,
+        promptSha256: repairPromptHash(
+          CLAIM_NORMALIZATION_PROMPT_V1_0_0,
+          STRUCTURED_REPAIR_OVERLAY_V1_0_0,
+        ),
+        taskInputVersion: TASK_INPUT_VERSIONS.structuredRepair,
+        outputSchemaVersion: OUTPUT_SCHEMA_NAMES.claimNormalization,
+        validationPolicyVersion: VALIDATION_POLICY_VERSIONS.claimNormalization,
+      },
+      finalization,
+    );
+  }
 }
 
 /**
@@ -518,7 +538,9 @@ async function recordFailed(
   dependencies: ProductionNormalizeClaimDependenciesParams,
   params: NormalizeClaimSelectionParams,
   resolved: ResolvedModel,
+  reservationId: string,
   latencyMs: number,
+  provenNonCall: boolean,
   purpose: "claim_normalization" | "structured_repair" = "claim_normalization",
 ): Promise<void> {
   const now = (dependencies.now ?? (() => new Date()))();
@@ -536,29 +558,39 @@ async function recordFailed(
     now,
   };
   if (purpose === "claim_normalization") {
-    await appendRun(dependencies.pool, params.deadlineAt, {
-      ...common,
-      purpose,
-      promptVersion: PROMPT_VERSIONS.claimNormalization,
-      promptSha256: promptHash(CLAIM_NORMALIZATION_PROMPT_V1_0_0),
-      taskInputVersion: TASK_INPUT_VERSIONS.claimNormalization,
-      outputSchemaVersion: OUTPUT_SCHEMA_NAMES.claimNormalization,
-      validationPolicyVersion: VALIDATION_POLICY_VERSIONS.claimNormalization,
-    });
+    await appendRun(
+      dependencies.pool,
+      params.deadlineAt,
+      {
+        ...common,
+        purpose,
+        promptVersion: PROMPT_VERSIONS.claimNormalization,
+        promptSha256: promptHash(CLAIM_NORMALIZATION_PROMPT_V1_0_0),
+        taskInputVersion: TASK_INPUT_VERSIONS.claimNormalization,
+        outputSchemaVersion: OUTPUT_SCHEMA_NAMES.claimNormalization,
+        validationPolicyVersion: VALIDATION_POLICY_VERSIONS.claimNormalization,
+      },
+      provenNonCall ? { kind: "released", reservationId } : undefined,
+    );
   } else {
-    await appendRun(dependencies.pool, params.deadlineAt, {
-      ...common,
-      purpose,
-      promptVersion: PROMPT_VERSIONS.structuredRepair,
-      targetPromptVersion: PROMPT_VERSIONS.claimNormalization,
-      promptSha256: repairPromptHash(
-        CLAIM_NORMALIZATION_PROMPT_V1_0_0,
-        STRUCTURED_REPAIR_OVERLAY_V1_0_0,
-      ),
-      taskInputVersion: TASK_INPUT_VERSIONS.structuredRepair,
-      outputSchemaVersion: OUTPUT_SCHEMA_NAMES.claimNormalization,
-      validationPolicyVersion: VALIDATION_POLICY_VERSIONS.claimNormalization,
-    });
+    await appendRun(
+      dependencies.pool,
+      params.deadlineAt,
+      {
+        ...common,
+        purpose,
+        promptVersion: PROMPT_VERSIONS.structuredRepair,
+        targetPromptVersion: PROMPT_VERSIONS.claimNormalization,
+        promptSha256: repairPromptHash(
+          CLAIM_NORMALIZATION_PROMPT_V1_0_0,
+          STRUCTURED_REPAIR_OVERLAY_V1_0_0,
+        ),
+        taskInputVersion: TASK_INPUT_VERSIONS.structuredRepair,
+        outputSchemaVersion: OUTPUT_SCHEMA_NAMES.claimNormalization,
+        validationPolicyVersion: VALIDATION_POLICY_VERSIONS.claimNormalization,
+      },
+      provenNonCall ? { kind: "released", reservationId } : undefined,
+    );
   }
 }
 

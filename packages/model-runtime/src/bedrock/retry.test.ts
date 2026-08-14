@@ -78,7 +78,7 @@ const FIT_CHECK: RetryFitCheck = {
   applicationDeadlineAt: new Date("2026-08-13T12:00:24.000Z"),
   worstCaseMs: 6000,
   reserveMs: 4000,
-  retryNow: new Date("2026-08-13T12:00:07.000Z"),
+  retryNow: () => new Date("2026-08-13T12:00:07.000Z"),
 };
 
 describe("converseWithRetry", () => {
@@ -126,7 +126,7 @@ describe("converseWithRetry", () => {
     const { client, callCount } = fixtureClient([throttled(), successResponse()]);
     const noRoomForRetry: RetryFitCheck = {
       ...FIT_CHECK,
-      retryNow: new Date("2026-08-13T12:00:21.000Z"),
+      retryNow: () => new Date("2026-08-13T12:00:21.000Z"),
     };
     const outcome = await converseWithRetry(client, baseParams(), noRoomForRetry);
     expect(outcome).toStrictEqual({ kind: "timeout", attempted: false });

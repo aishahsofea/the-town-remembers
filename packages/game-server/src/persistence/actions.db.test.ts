@@ -160,6 +160,7 @@ describe.skipIf(!shouldRunDatabaseTests())("player_actions claim state machine",
     const first = await claimAction(db().pool, params);
     expect(first.outcome).toBe("claimed");
     if (first.outcome !== "claimed") throw new Error("unreachable");
+    expect(first.executionAttempt).toBe(0);
 
     const afterExpiry = new Date(claimedAt.getTime() + 40_000);
     const second = await claimAction(db().pool, { ...params, now: () => afterExpiry });
@@ -167,6 +168,7 @@ describe.skipIf(!shouldRunDatabaseTests())("player_actions claim state machine",
     if (second.outcome !== "claimed") throw new Error("unreachable");
     expect(second.actionId).toBe(first.actionId);
     expect(second.processingToken).not.toBe(first.processingToken);
+    expect(second.executionAttempt).toBe(1);
 
     await expect(
       completeAction(db().pool, Date.now() + 5_000, {
@@ -243,6 +245,7 @@ describe.skipIf(!shouldRunDatabaseTests())("player_actions claim state machine",
     const claimed = await claimAction(db().pool, params);
     expect(claimed.outcome).toBe("claimed");
     if (claimed.outcome !== "claimed") throw new Error("unreachable");
+    expect(claimed.executionAttempt).toBe(0);
 
     const savedPayload = {
       actionId: claimed.actionId,
@@ -343,6 +346,7 @@ describe.skipIf(!shouldRunDatabaseTests())("player_actions claim state machine",
     if (reclaimed.outcome === "claimed") {
       expect(reclaimed.actionId).toBe(claimed.actionId);
       expect(reclaimed.processingToken).not.toBe(claimed.processingToken);
+      expect(reclaimed.executionAttempt).toBe(1);
     }
 
     const row = await db().pool.query<{

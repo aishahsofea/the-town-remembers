@@ -16,10 +16,12 @@
  * read-aggregate-then-insert rather than a single guarded `UPDATE`, since a
  * reservation is a new row, not a mutation of one fixed-identity bucket row.
  *
- * `settleModelCost` and `releaseModelCost` each run in their own short
- * post-call transaction: the model call itself happens over the network,
- * between admission and settlement, so it cannot be inside either
- * transaction. Both are conditional `UPDATE`s scoped to `status = 'reserved'`
+ * `settleModelCost` and `releaseModelCost` can run in their own short
+ * post-call transaction, while `model-runs.ts#appendRun` uses their
+ * transaction-scoped helpers to finalize cost atomically with telemetry. The
+ * model call itself happens over the network, between admission and
+ * settlement, so it cannot be inside either transaction. Both are
+ * conditional `UPDATE`s scoped to `status = 'reserved'`
  * and are safe to call more than once with the same reservation id — a
  * result already committed under an earlier, connection-lost attempt is
  * read back and returned rather than re-applied
@@ -52,7 +54,7 @@ import {
   recordModelCostSettlement,
 } from "../observability/metrics.js";
 
-function logSettlement(
+export function logModelCostSettlement(
   reservationId: string,
   status: "settled" | "released",
   clamped: boolean,
@@ -321,7 +323,7 @@ export interface SettleModelCostResult {
   readonly clamped: boolean;
 }
 
-async function runSettle(
+export async function settleModelCostInTransaction(
   transaction: TransactionContext,
   params: SettleModelCostParams,
 ): Promise<SettleModelCostResult> {
@@ -373,10 +375,10 @@ export async function settleModelCost(
   params: SettleModelCostParams,
 ): Promise<SettleModelCostResult> {
   const result = await runSerializable(pool, { deadlineAt }, (transaction) =>
-    runSettle(transaction, params),
+    settleModelCostInTransaction(transaction, params),
   );
   if (result.outcome === "committed") {
-    logSettlement(params.reservationId, "settled", result.value.clamped);
+    logModelCostSettlement(params.reservationId, "settled", result.value.clamped);
     return result.value;
   }
 
@@ -388,7 +390,7 @@ export async function settleModelCost(
   if (state?.status === "settled" && state.agent_run_id === params.agentRunId) {
     const clampedMicroUsd = decimalStringToMicroUsd(state.actual_cost!);
     const clamped = clampedMicroUsd < params.settledCostMicroUsd;
-    logSettlement(params.reservationId, "settled", clamped);
+    logModelCostSettlement(params.reservationId, "settled", clamped);
     return { clamped };
   }
   throw new ModelCostReservationNotSettleableError(
@@ -397,7 +399,7 @@ export async function settleModelCost(
   );
 }
 
-async function runRelease(
+export async function releaseModelCostInTransaction(
   transaction: TransactionContext,
   reservationId: string,
   now: Date,
@@ -437,10 +439,10 @@ export async function releaseModelCost(
   now: Date,
 ): Promise<void> {
   const result = await runSerializable(pool, { deadlineAt }, (transaction) =>
-    runRelease(transaction, reservationId, now),
+    releaseModelCostInTransaction(transaction, reservationId, now),
   );
   if (result.outcome === "committed") {
-    logSettlement(reservationId, "released", false);
+    logModelCostSettlement(reservationId, "released", false);
     return;
   }
 
@@ -449,13 +451,44 @@ export async function releaseModelCost(
     reservationId,
   );
   if (state?.status === "released") {
-    logSettlement(reservationId, "released", false);
+    logModelCostSettlement(reservationId, "released", false);
     return;
   }
   throw new ModelCostReservationNotSettleableError(
     reservationId,
     'release outcome is ambiguous and the durable row is still "reserved" — retry later',
   );
+}
+
+export interface ReadModelCostFinalizationParams {
+  readonly kind: "settled" | "released";
+  readonly reservationId: string;
+  readonly agentRunId?: string;
+  readonly settledCostMicroUsd?: number;
+}
+
+/** Resolves an ambiguous combined agent-run/finalization commit from durable state. */
+export async function readModelCostFinalization(
+  pool: Pool,
+  params: ReadModelCostFinalizationParams,
+): Promise<SettleModelCostResult | undefined> {
+  const state = await readReservationState(
+    poolAsTransactionContext(pool),
+    params.reservationId,
+  );
+  if (params.kind === "released") {
+    return state?.status === "released" ? { clamped: false } : undefined;
+  }
+  if (
+    state?.status !== "settled" ||
+    params.agentRunId === undefined ||
+    state.agent_run_id !== params.agentRunId ||
+    params.settledCostMicroUsd === undefined
+  ) {
+    return undefined;
+  }
+  const clampedMicroUsd = decimalStringToMicroUsd(state.actual_cost!);
+  return { clamped: clampedMicroUsd < params.settledCostMicroUsd };
 }
 
 export interface MonthlyCostModeParams {

@@ -706,9 +706,7 @@ describe("Encounter — promise offers (P4-20 acceptance 2)", () => {
     await screen.findByText("Promise to return the chapel key.");
     fireEvent.click(screen.getByRole("button", { name: "Accept" }));
 
-    await screen.findByText("Promise to return the chapel key.", {
-      selector: "article p",
-    });
+    await screen.findByLabelText("Promise accepted");
     expect(postedKinds).toEqual(["ask", "accept_promise"]);
   });
 

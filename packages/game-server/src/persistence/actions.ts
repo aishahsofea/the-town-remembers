@@ -175,6 +175,8 @@ export type ClaimDecision =
       readonly outcome: "claimed";
       readonly actionId: string;
       readonly processingToken: string;
+      /** Zero-based durable execution ordinal, derived from attempt_count. */
+      readonly executionAttempt: number;
     }
   | {
       readonly outcome: "processing";
@@ -431,6 +433,7 @@ async function attemptOnce(
           outcome: "claimed",
           actionId,
           processingToken,
+          executionAttempt: 0,
         } as const satisfies SingleAttemptOutcome;
       }
       case "respondProcessing":
@@ -463,6 +466,7 @@ async function attemptOnce(
           outcome: "claimed",
           actionId: existing!.id,
           processingToken,
+          executionAttempt: existing!.attemptCount,
         } as const satisfies SingleAttemptOutcome;
       }
       case "takeover": {
@@ -479,6 +483,7 @@ async function attemptOnce(
           outcome: "claimed",
           actionId: existing!.id,
           processingToken,
+          executionAttempt: existing!.attemptCount,
         } as const satisfies SingleAttemptOutcome;
       }
       case "exhaust": {
@@ -504,6 +509,7 @@ async function attemptOnce(
           outcome: "claimed",
           actionId,
           processingToken,
+          executionAttempt: 0,
         } as const satisfies SingleAttemptOutcome;
       }
     }

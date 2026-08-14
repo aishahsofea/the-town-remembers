@@ -11,7 +11,12 @@ import {
 import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { appendRun, type AppendRunParams } from "./model-runs.js";
+import {
+  appendRun,
+  markActionRunsSuperseded,
+  type AppendRunParams,
+} from "./model-runs.js";
+import { reserveModelCost } from "./model-cost.js";
 
 describe.skipIf(!shouldRunDatabaseTests())("agent_runs telemetry", () => {
   let handle: DisposableDatabase | undefined;
@@ -102,6 +107,97 @@ describe.skipIf(!shouldRunDatabaseTests())("agent_runs telemetry", () => {
     );
   });
 
+  it("rolls back the run when its cost finalization cannot commit", async () => {
+    const { townId, playerActionId } = await fixtureTownAndPlayerAction(db().pool);
+    const runId = randomUUID();
+    const append = appendRun(
+      db().pool,
+      Date.now() + 20_000,
+      {
+        runId,
+        townId,
+        playerActionId,
+        model: "haiku",
+        inferenceProfile: "haiku-resolved-id",
+        promptVersion: "v1",
+        purpose: "claim_normalization",
+        promptSha256: VALID_SHA256,
+        taskInputVersion: "task-v1",
+        outputSchemaVersion: "schema-v1",
+        validationPolicyVersion: "policy-v1",
+        usage: VALID_USAGE,
+        latencyMs: 250,
+        estimatedCostMicroUsd: 1_234,
+        outcome: "accepted",
+        now: NOW,
+      },
+      {
+        kind: "settled",
+        reservationId: randomUUID(),
+        settledCostMicroUsd: 1_234,
+      },
+    );
+
+    await expect(append).rejects.toThrow();
+    expect(await readRun(runId)).toBeUndefined();
+  });
+
+  it("commits a run and its cost settlement together", async () => {
+    const { townId, playerActionId } = await fixtureTownAndPlayerAction(db().pool);
+    const reservationId = randomUUID();
+    const deadlineAt = Date.now() + 20_000;
+    const admission = await reserveModelCost(db().pool, deadlineAt, {
+      reservationId,
+      source: { kind: "player_action", townId, playerActionId },
+      attemptOrdinal: 0,
+      purpose: "claim_normalization",
+      model: "haiku",
+      inferenceProfile: "haiku-resolved-id",
+      priceVersion: "bedrock-prices/2026-08-01",
+      maximumCostMicroUsd: 10_000,
+      now: NOW,
+    });
+    expect(admission.admitted).toBe(true);
+
+    const runId = randomUUID();
+    await appendRun(
+      db().pool,
+      deadlineAt,
+      {
+        runId,
+        townId,
+        playerActionId,
+        model: "haiku",
+        inferenceProfile: "haiku-resolved-id",
+        promptVersion: "v1",
+        purpose: "claim_normalization",
+        promptSha256: VALID_SHA256,
+        taskInputVersion: "task-v1",
+        outputSchemaVersion: "schema-v1",
+        validationPolicyVersion: "policy-v1",
+        usage: VALID_USAGE,
+        latencyMs: 250,
+        estimatedCostMicroUsd: 1_234,
+        outcome: "accepted",
+        now: NOW,
+      },
+      { kind: "settled", reservationId, settledCostMicroUsd: 1_234 },
+    );
+
+    expect(await readRun(runId)).toBeDefined();
+    const reservation = await db().pool.query<{
+      readonly status: string;
+      readonly agent_run_id: string | null;
+    }>(
+      "SELECT status, agent_run_id FROM public.model_cost_reservations WHERE id = $1",
+      [reservationId],
+    );
+    expect(reservation.rows[0]).toMatchObject({
+      status: "settled",
+      agent_run_id: runId,
+    });
+  });
+
   it("writes target_prompt_version alongside the other three for structured_repair", async () => {
     const { townId, playerActionId } = await fixtureTownAndPlayerAction(db().pool);
     const runId = randomUUID();
@@ -130,6 +226,57 @@ describe.skipIf(!shouldRunDatabaseTests())("agent_runs telemetry", () => {
       purpose: "structured_repair",
       target_prompt_version: "dialogue-v1",
       outcome: "repaired",
+    });
+  });
+
+  it("marks accepted and repaired calls superseded after a revision loss", async () => {
+    const { townId, playerActionId } = await fixtureTownAndPlayerAction(db().pool);
+    const runs = [
+      { runId: randomUUID(), outcome: "accepted" as const },
+      { runId: randomUUID(), outcome: "repaired" as const },
+      { runId: randomUUID(), outcome: "rejected" as const },
+    ];
+    for (const run of runs) {
+      await appendRun(db().pool, Date.now() + 20_000, {
+        ...run,
+        townId,
+        playerActionId,
+        model: "haiku",
+        inferenceProfile: "haiku-resolved-id",
+        promptVersion: "v1",
+        purpose: "claim_normalization",
+        promptSha256: VALID_SHA256,
+        taskInputVersion: "task-v1",
+        outputSchemaVersion: "schema-v1",
+        validationPolicyVersion: "policy-v1",
+        usage: VALID_USAGE,
+        latencyMs: 250,
+        estimatedCostMicroUsd: 1_234,
+        now: NOW,
+      });
+    }
+
+    await markActionRunsSuperseded(
+      db().pool,
+      Date.now() + 20_000,
+      townId,
+      playerActionId,
+    );
+
+    const outcomes = await db().pool.query<{
+      readonly id: string;
+      readonly outcome: string;
+    }>(
+      `SELECT id, outcome FROM public.agent_runs
+        WHERE town_id = $1 AND player_action_id = $2`,
+      [townId, playerActionId],
+    );
+    expect(
+      Object.fromEntries(outcomes.rows.map((row) => [row.id, row.outcome])),
+    ).toEqual({
+      [runs[0]!.runId]: "superseded",
+      [runs[1]!.runId]: "superseded",
+      [runs[2]!.runId]: "rejected",
     });
   });
 

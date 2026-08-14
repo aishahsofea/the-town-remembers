@@ -61,6 +61,7 @@ function baseParams(overrides: Partial<EmbedTextParams> = {}): EmbedTextParams {
 
 const FITS = {
   now: new Date("2026-08-13T12:00:00.000Z"),
+  retryNow: () => new Date("2026-08-13T12:00:02.000Z"),
   applicationDeadlineAt: new Date("2026-08-13T12:00:24.000Z"),
   worstCaseMs: 1500,
   reserveMs: 4000,
@@ -251,6 +252,20 @@ describe("embedTextWithRetry", () => {
       retryable: false,
       errorName: "ValidationException",
     });
+  });
+
+  it("rechecks the clock and skips a retry that no longer fits", async () => {
+    const throttled = new Error("rate limited");
+    throttled.name = "ThrottlingException";
+    const { client, callCount } = fixtureClient([throttled]);
+
+    const outcome = await embedTextWithRetry(client, baseParams(), {
+      ...FITS,
+      retryNow: () => new Date("2026-08-13T12:00:23.000Z"),
+    });
+
+    expect(callCount()).toBe(1);
+    expect(outcome).toStrictEqual({ kind: "timeout", attempted: false });
   });
 
   it("does not retry a wrong_dimension or non_finite_value outcome", async () => {

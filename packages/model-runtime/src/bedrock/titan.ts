@@ -29,6 +29,7 @@ import {
 
 import { fitsBeforeReserve, type ConverseFitCheck } from "./deadline.js";
 import { classifyBedrockError } from "./error-classification.js";
+import type { RetryFitCheck } from "./retry.js";
 
 export const TITAN_EMBEDDING_DIMENSIONS = 256;
 
@@ -200,10 +201,13 @@ export async function embedText(
 export async function embedTextWithRetry(
   client: TitanEmbedClient,
   params: EmbedTextParams,
-  fitCheck: ConverseFitCheck,
+  fitCheck: RetryFitCheck,
 ): Promise<TitanEmbedOutcome> {
   const first = await embedText(client, params, fitCheck);
   if (first.kind !== "transport_failure" || !first.retryable) return first;
-  if (!fitsBeforeReserve(fitCheck)) return first;
-  return embedText(client, params, fitCheck);
+  const retryFitCheck: ConverseFitCheck = { ...fitCheck, now: fitCheck.retryNow() };
+  if (!fitsBeforeReserve(retryFitCheck)) {
+    return { kind: "timeout", attempted: false };
+  }
+  return embedText(client, params, retryFitCheck);
 }

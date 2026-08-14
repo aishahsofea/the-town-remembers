@@ -79,6 +79,7 @@ import {
   type StoredProblemBody,
 } from "../../persistence/actions.js";
 import { rateScopeKey } from "../../persistence/rate-limits.js";
+import { markActionRunsSuperseded } from "../../persistence/model-runs.js";
 import { actionRequestHash } from "../../security/fingerprint.js";
 import { commitEffectPlan, RevisionConflictError } from "./commit.js";
 import type { LoadInputsContext } from "./executor.js";
@@ -342,10 +343,12 @@ async function runClaimedModelAction<
   params: ExecuteModelActionParams<K, TInputs, TSelection>,
   actionId: string,
   processingToken: string,
+  executionAttempt: number,
 ): Promise<ExecuteModelActionOutcome<K>> {
   const startedAtMs = params.now().getTime();
 
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+  for (let revisionAttempt = 0; revisionAttempt < MAX_ATTEMPTS; revisionAttempt += 1) {
+    const attempt = executionAttempt * MAX_ATTEMPTS + revisionAttempt;
     const inputs = await params.handler.loadInputs(params.pool, {
       townId: params.townId,
       playerId: params.playerId,
@@ -404,6 +407,12 @@ async function runClaimedModelAction<
       const postModelRevision = await readTownRevision(params.pool, params.townId);
 
       if (postModelRevision !== preModelRevision) {
+        await markActionRunsSuperseded(
+          params.pool,
+          applicationDeadlineAt(params.deadline),
+          params.townId,
+          actionId,
+        );
         logEvent({
           event: "action_lifecycle",
           requestId: params.requestId,
@@ -482,6 +491,12 @@ async function runClaimedModelAction<
       // The final transaction's own guard caught a race the app-level
       // pre/post revision comparison missed — the identical reload-and-
       // rerun treatment as a `superseded` loss above.
+      await markActionRunsSuperseded(
+        params.pool,
+        applicationDeadlineAt(params.deadline),
+        params.townId,
+        actionId,
+      );
       logEvent({
         event: "action_lifecycle",
         requestId: params.requestId,
@@ -722,6 +737,11 @@ export async function executeModelAction<
         retryAfterSeconds: claim.retryAfterSeconds,
       };
     case "claimed":
-      return runClaimedModelAction(params, claim.actionId, claim.processingToken);
+      return runClaimedModelAction(
+        params,
+        claim.actionId,
+        claim.processingToken,
+        claim.executionAttempt,
+      );
   }
 }

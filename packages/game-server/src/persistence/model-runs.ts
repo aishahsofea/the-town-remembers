@@ -4,12 +4,15 @@
  * One call to {@link appendRun} per resolved model call attempt, written in
  * its own short transaction so a later, unrelated conflict elsewhere can
  * never erase incurred cost or hide a rejected attempt (migration 0008's own
- * header comment). The insert is `ON CONFLICT (town_id, id) DO NOTHING`: a
+ * header comment). When the call's cost is known, that transaction also
+ * settles or releases its reservation atomically. The insert is
+ * `ON CONFLICT (town_id, id) DO NOTHING`: a
  * caller-supplied, already-known `runId` (the natural choice is the
  * triggering `model_cost_reservations` row's own id, since Decision 004
  * reserves separately per attempt) makes a retried call — whether from an
  * ambiguous commit or an outer at-least-once retry — a safe no-op rather
- * than a unique-constraint violation.
+ * than a unique-constraint violation. A later revision loss may transition
+ * an accepted/repaired row to `superseded`; all other telemetry is immutable.
  *
  * `AppendRunParams` is a discriminated union on `purpose` so the
  * purpose-branched contract-version columns
@@ -31,6 +34,13 @@ import type { Pool } from "pg";
 
 import { logEvent } from "../observability/events.js";
 import { recordModelRun } from "../observability/metrics.js";
+import {
+  logModelCostSettlement,
+  readModelCostFinalization,
+  releaseModelCostInTransaction,
+  settleModelCostInTransaction,
+  type SettleModelCostResult,
+} from "./model-cost.js";
 
 export interface AgentRunTokenUsage {
   readonly inputTokens: number;
@@ -88,6 +98,14 @@ interface AppendRunStructuredParams extends AppendRunBaseParams {
 
 export type AppendRunParams =
   AppendRunEmbeddingParams | AppendRunRepairParams | AppendRunStructuredParams;
+
+export type AppendRunCostFinalization =
+  | {
+      readonly kind: "settled";
+      readonly reservationId: string;
+      readonly settledCostMicroUsd: number;
+    }
+  | { readonly kind: "released"; readonly reservationId: string };
 
 export class InvalidAgentRunError extends Error {
   constructor(message: string) {
@@ -272,23 +290,97 @@ export async function appendRun(
   pool: Pool,
   deadlineAt: number,
   params: AppendRunParams,
+  finalization?: AppendRunCostFinalization,
 ): Promise<void> {
   assertHasCausalSource(params);
   assertValidInferenceProfile(params);
   assertValidPromptSha256(params);
 
-  const result = await runSerializable(pool, { deadlineAt }, (transaction) =>
-    insertRun(transaction, params),
-  );
+  const result = await runSerializable(pool, { deadlineAt }, async (transaction) => {
+    await insertRun(transaction, params);
+    if (finalization === undefined) return undefined;
+    if (finalization.kind === "released") {
+      await releaseModelCostInTransaction(
+        transaction,
+        finalization.reservationId,
+        params.now,
+      );
+      return { clamped: false } satisfies SettleModelCostResult;
+    }
+    return settleModelCostInTransaction(transaction, {
+      reservationId: finalization.reservationId,
+      agentRunId: params.runId,
+      settledCostMicroUsd: finalization.settledCostMicroUsd,
+      now: params.now,
+    });
+  });
   if (result.outcome === "committed") {
     logRunRecorded(params);
+    if (finalization !== undefined) {
+      logModelCostSettlement(
+        finalization.reservationId,
+        finalization.kind,
+        result.value!.clamped,
+      );
+    }
     return;
   }
 
-  const landed = await readRunExists(pool, params.townId, params.runId);
-  if (landed) {
+  const [landed, finalized] = await Promise.all([
+    readRunExists(pool, params.townId, params.runId),
+    finalization === undefined
+      ? Promise.resolve(undefined)
+      : readModelCostFinalization(pool, {
+          kind: finalization.kind,
+          reservationId: finalization.reservationId,
+          ...(finalization.kind === "settled"
+            ? {
+                agentRunId: params.runId,
+                settledCostMicroUsd: finalization.settledCostMicroUsd,
+              }
+            : {}),
+        }),
+  ]);
+  if (landed && (finalization === undefined || finalized !== undefined)) {
     logRunRecorded(params);
+    if (finalization !== undefined) {
+      logModelCostSettlement(
+        finalization.reservationId,
+        finalization.kind,
+        finalized!.clamped,
+      );
+    }
     return;
   }
   throw new AgentRunPersistenceAmbiguousError(params.runId);
+}
+
+/** Marks every accepted/repaired invocation discarded by this action's revision loss. */
+export async function markActionRunsSuperseded(
+  pool: Pool,
+  deadlineAt: number,
+  townId: string,
+  playerActionId: string,
+): Promise<void> {
+  const update = async (transaction: TransactionContext): Promise<void> => {
+    await transaction.query(
+      `UPDATE public.agent_runs
+          SET outcome = 'superseded'
+        WHERE town_id = $1 AND player_action_id = $2
+          AND outcome IN ('accepted', 'repaired')`,
+      [townId, playerActionId],
+    );
+  };
+  const result = await runSerializable(pool, { deadlineAt }, update);
+  if (result.outcome === "committed") return;
+
+  const remaining = await pool.query<{ readonly count: string }>(
+    `SELECT count(*)::STRING AS count
+       FROM public.agent_runs
+      WHERE town_id = $1 AND player_action_id = $2
+        AND outcome IN ('accepted', 'repaired')`,
+    [townId, playerActionId],
+  );
+  if (remaining.rows[0]?.count === "0") return;
+  throw new AgentRunPersistenceAmbiguousError(playerActionId);
 }

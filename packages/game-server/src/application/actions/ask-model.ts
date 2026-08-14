@@ -42,11 +42,7 @@ import { MODEL_DEADLINES } from "@the-town-remembers/runtime-config/model";
 import type { AskDialogueSelection } from "@the-town-remembers/rules";
 import type { Pool } from "pg";
 
-import {
-  releaseModelCost,
-  reserveModelCost,
-  settleModelCost,
-} from "../../persistence/model-cost.js";
+import { releaseModelCost, reserveModelCost } from "../../persistence/model-cost.js";
 import { appendRun } from "../../persistence/model-runs.js";
 import {
   createAskActionHandler as createAskHandler,
@@ -165,6 +161,7 @@ async function embedQuery(
     },
     {
       now,
+      retryNow: dependencies.now ?? (() => new Date()),
       applicationDeadlineAt: new Date(params.deadlineAt),
       worstCaseMs: MODEL_DEADLINES.titanQueryEmbeddingMs,
       reserveMs: 0,
@@ -173,25 +170,24 @@ async function embedQuery(
   const runId = randomUUID();
   const recordedAt = (dependencies.now ?? (() => new Date()))();
   if (outcome.kind !== "accepted") {
-    await appendRun(dependencies.pool, params.deadlineAt, {
-      runId,
-      townId: params.townId,
-      playerActionId: params.actionId,
-      model: "titan",
-      inferenceProfile: dependencies.modelConfig.titanModelId,
-      promptVersion: EMBEDDING_PROMPT_VERSION,
-      purpose: "query_embedding",
-      usage: EMPTY_USAGE,
-      latencyMs: Math.max(0, Date.now() - startedAt),
-      estimatedCostMicroUsd: 0,
-      outcome: "failed",
-      now: recordedAt,
-    });
-    await releaseModelCost(
+    await appendRun(
       dependencies.pool,
       params.deadlineAt,
-      reservationId,
-      recordedAt,
+      {
+        runId,
+        townId: params.townId,
+        playerActionId: params.actionId,
+        model: "titan",
+        inferenceProfile: dependencies.modelConfig.titanModelId,
+        promptVersion: EMBEDDING_PROMPT_VERSION,
+        purpose: "query_embedding",
+        usage: EMPTY_USAGE,
+        latencyMs: Math.max(0, Date.now() - startedAt),
+        estimatedCostMicroUsd: 0,
+        outcome: "failed",
+        now: recordedAt,
+      },
+      { kind: "released", reservationId },
     );
     return undefined;
   }
@@ -203,26 +199,25 @@ async function embedQuery(
     cacheWriteTokens: 0,
   };
   const cost = settledMicroUsd("titan", usage);
-  await appendRun(dependencies.pool, params.deadlineAt, {
-    runId,
-    townId: params.townId,
-    playerActionId: params.actionId,
-    model: "titan",
-    inferenceProfile: dependencies.modelConfig.titanModelId,
-    promptVersion: EMBEDDING_PROMPT_VERSION,
-    purpose: "query_embedding",
-    usage,
-    latencyMs: Math.max(0, Date.now() - startedAt),
-    estimatedCostMicroUsd: cost,
-    outcome: "accepted",
-    now: recordedAt,
-  });
-  await settleModelCost(dependencies.pool, params.deadlineAt, {
-    reservationId,
-    agentRunId: runId,
-    settledCostMicroUsd: cost,
-    now: recordedAt,
-  });
+  await appendRun(
+    dependencies.pool,
+    params.deadlineAt,
+    {
+      runId,
+      townId: params.townId,
+      playerActionId: params.actionId,
+      model: "titan",
+      inferenceProfile: dependencies.modelConfig.titanModelId,
+      promptVersion: EMBEDDING_PROMPT_VERSION,
+      purpose: "query_embedding",
+      usage,
+      latencyMs: Math.max(0, Date.now() - startedAt),
+      estimatedCostMicroUsd: cost,
+      outcome: "accepted",
+      now: recordedAt,
+    },
+    { kind: "settled", reservationId, settledCostMicroUsd: cost },
+  );
   return asVector256(outcome.embedding);
 }
 
@@ -278,6 +273,7 @@ async function recordStructuredCall(params: {
   readonly validationErrorCode?: string;
   /** Ambiguous invocations keep consuming their reserved worst-case cost. */
   readonly preserveReservation?: boolean;
+  readonly releaseReservation?: boolean;
 }): Promise<void> {
   const runId = randomUUID();
   const usage = {
@@ -302,38 +298,49 @@ async function recordStructuredCall(params: {
       : { validationErrorCode: params.validationErrorCode }),
     now,
   } as const;
+  const finalization = params.preserveReservation
+    ? undefined
+    : params.releaseReservation
+      ? ({ kind: "released", reservationId: params.reserved.reservationId } as const)
+      : ({
+          kind: "settled",
+          reservationId: params.reserved.reservationId,
+          settledCostMicroUsd: cost,
+        } as const);
   if (params.purpose === "dialogue_selection") {
-    await appendRun(params.dependencies.pool, params.request.deadlineAt, {
-      ...common,
-      purpose: "dialogue_selection",
-      promptVersion: PROMPT_VERSIONS.npcDialogue,
-      promptSha256: promptHash(NPC_DIALOGUE_PROMPT_V1_0_0),
-      taskInputVersion: TASK_INPUT_VERSIONS.npcDialogue,
-      outputSchemaVersion: OUTPUT_SCHEMA_NAMES.npcDialogue,
-      validationPolicyVersion: VALIDATION_POLICY_VERSIONS.npcDialogue,
-    });
+    await appendRun(
+      params.dependencies.pool,
+      params.request.deadlineAt,
+      {
+        ...common,
+        purpose: "dialogue_selection",
+        promptVersion: PROMPT_VERSIONS.npcDialogue,
+        promptSha256: promptHash(NPC_DIALOGUE_PROMPT_V1_0_0),
+        taskInputVersion: TASK_INPUT_VERSIONS.npcDialogue,
+        outputSchemaVersion: OUTPUT_SCHEMA_NAMES.npcDialogue,
+        validationPolicyVersion: VALIDATION_POLICY_VERSIONS.npcDialogue,
+      },
+      finalization,
+    );
   } else {
-    await appendRun(params.dependencies.pool, params.request.deadlineAt, {
-      ...common,
-      purpose: "structured_repair",
-      promptVersion: PROMPT_VERSIONS.structuredRepair,
-      targetPromptVersion: PROMPT_VERSIONS.npcDialogue,
-      promptSha256: repairPromptHash(
-        NPC_DIALOGUE_PROMPT_V1_0_0,
-        STRUCTURED_REPAIR_OVERLAY_V1_0_0,
-      ),
-      taskInputVersion: TASK_INPUT_VERSIONS.structuredRepair,
-      outputSchemaVersion: OUTPUT_SCHEMA_NAMES.npcDialogue,
-      validationPolicyVersion: VALIDATION_POLICY_VERSIONS.npcDialogue,
-    });
-  }
-  if (!params.preserveReservation) {
-    await settleModelCost(params.dependencies.pool, params.request.deadlineAt, {
-      reservationId: params.reserved.reservationId,
-      agentRunId: runId,
-      settledCostMicroUsd: cost,
-      now,
-    });
+    await appendRun(
+      params.dependencies.pool,
+      params.request.deadlineAt,
+      {
+        ...common,
+        purpose: "structured_repair",
+        promptVersion: PROMPT_VERSIONS.structuredRepair,
+        targetPromptVersion: PROMPT_VERSIONS.npcDialogue,
+        promptSha256: repairPromptHash(
+          NPC_DIALOGUE_PROMPT_V1_0_0,
+          STRUCTURED_REPAIR_OVERLAY_V1_0_0,
+        ),
+        taskInputVersion: TASK_INPUT_VERSIONS.structuredRepair,
+        outputSchemaVersion: OUTPUT_SCHEMA_NAMES.npcDialogue,
+        validationPolicyVersion: VALIDATION_POLICY_VERSIONS.npcDialogue,
+      },
+      finalization,
+    );
   }
 }
 
@@ -343,6 +350,7 @@ async function recordFailedChatCall(
   reserved: ReservedChatCall,
   purpose: "dialogue_selection" | "structured_repair",
   latencyMs: number,
+  provenNonCall: boolean,
 ): Promise<void> {
   await recordStructuredCall({
     dependencies,
@@ -352,7 +360,8 @@ async function recordFailedChatCall(
     runOutcome: "failed",
     usage: { inputTokens: 0, outputTokens: 0 },
     latencyMs,
-    preserveReservation: true,
+    preserveReservation: !provenNonCall,
+    releaseReservation: provenNonCall,
   });
 }
 
@@ -397,7 +406,7 @@ async function selectDialogue(
     },
     {
       now,
-      retryNow: (dependencies.now ?? (() => new Date()))(),
+      retryNow: dependencies.now ?? (() => new Date()),
       applicationDeadlineAt: new Date(params.deadlineAt),
       worstCaseMs: MODEL_DEADLINES.sonnetDialogueMs,
       reserveMs: 0,
@@ -442,6 +451,7 @@ async function selectDialogue(
       reserved,
       "dialogue_selection",
       latencyMs,
+      outcome.kind === "timeout" && !outcome.attempted,
     );
     if (
       (outcome.kind !== "parse_failure" && outcome.kind !== "schema_failure") ||
@@ -500,7 +510,7 @@ async function selectDialogue(
     },
     {
       now: repairNow,
-      retryNow: (dependencies.now ?? (() => new Date()))(),
+      retryNow: dependencies.now ?? (() => new Date()),
       applicationDeadlineAt: new Date(params.deadlineAt),
       worstCaseMs: MODEL_DEADLINES.haikuDialogueRepairMs,
       reserveMs: 0,
@@ -541,6 +551,7 @@ async function selectDialogue(
       repairReserved,
       "structured_repair",
       repairLatencyMs,
+      repairOutcome.kind === "timeout" && !repairOutcome.attempted,
     );
   }
   return fallbackSelection(params);
