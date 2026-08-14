@@ -113,5 +113,40 @@ export function ResultCard({ result }: ResultCardProps) {
     );
   }
 
+  if (result.kind === "ask") {
+    const ask = result.result as ActionResultByKind["ask"];
+    return (
+      <div className="result-card">
+        <NpcDialogueResult dialogue={ask.dialogue} />
+      </div>
+    );
+  }
+
+  if (result.kind === "tell") {
+    const tell = result.result as ActionResultByKind["tell"];
+    return (
+      <div className="result-card">
+        <NpcDialogueResult dialogue={tell.dialogue} />
+      </div>
+    );
+  }
+
   return null;
+}
+
+/**
+ * `selected`, `repaired`, and `fallback` render byte-for-byte identically —
+ * `responseMode` is diagnostic metadata only, never a visual signal
+ * (Decision 011 §"5. NPC encounter").
+ */
+function NpcDialogueResult({
+  dialogue,
+}: {
+  readonly dialogue: ActionResultByKind["ask"]["dialogue"];
+}) {
+  return (
+    <article aria-label={`${dialogue.npcId}'s reply`}>
+      <p>{dialogue.text}</p>
+    </article>
+  );
 }
