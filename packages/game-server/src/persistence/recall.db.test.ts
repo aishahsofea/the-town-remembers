@@ -13,7 +13,11 @@ import {
 import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { readStructuredAnchorCandidates, readVectorCandidates } from "./recall.js";
+import {
+  readRecallEpisodeDetails,
+  readStructuredAnchorCandidates,
+  readVectorCandidates,
+} from "./recall.js";
 
 describe.skipIf(!shouldRunDatabaseTests())("recall persistence", () => {
   let handle: DisposableDatabase | undefined;
@@ -163,6 +167,55 @@ describe.skipIf(!shouldRunDatabaseTests())("recall persistence", () => {
       const results = await readVectorCandidates(db().pool, townId, npcId, query, 30);
       expect(results.map((row) => row.episodeId)).toStrictEqual([near, far]);
       expect(results[0]!.distance).toBeLessThan(results[1]!.distance);
+    });
+  });
+
+  describe("readRecallEpisodeDetails (P4-22 acceptance 2)", () => {
+    it("returns only the given town and npc's own episodes among the requested ids", async () => {
+      const { townId: townA, npcId: npcA } = await fixtureTownAndNpc();
+      const { townId: townB, npcId: npcB } = await fixtureTownAndNpc();
+      const npcC = await insertNpc(db().pool, townA);
+      const playerA = await insertPlayer(db().pool, townA);
+
+      const eventA = await insertWorldEvent(db().pool, townA);
+      const eventB = await insertWorldEvent(db().pool, townB);
+      const eventC = await insertWorldEvent(db().pool, townA);
+      const episodeA = await insertReadyEpisode(db().pool, townA, npcA, eventA);
+      const episodeB = await insertReadyEpisode(db().pool, townB, npcB, eventB);
+      const episodeC = await insertReadyEpisode(db().pool, townA, npcC, eventC);
+
+      const results = await readRecallEpisodeDetails(db().pool, townA, npcA, playerA, [
+        episodeA,
+        episodeB,
+        episodeC,
+      ]);
+      expect(results.map((row) => row.episodeId)).toStrictEqual([episodeA]);
+    });
+
+    it("another town's or another npc's real episode id draws the identical empty result a nonexistent id draws", async () => {
+      const { townId: townA, npcId: npcA } = await fixtureTownAndNpc();
+      const { townId: townB, npcId: npcB } = await fixtureTownAndNpc();
+      const playerA = await insertPlayer(db().pool, townA);
+      const eventB = await insertWorldEvent(db().pool, townB);
+      const otherTownEpisode = await insertReadyEpisode(db().pool, townB, npcB, eventB);
+      const nonexistentEpisode = randomUUID();
+
+      const forOtherTown = await readRecallEpisodeDetails(
+        db().pool,
+        townA,
+        npcA,
+        playerA,
+        [otherTownEpisode],
+      );
+      const forNonexistent = await readRecallEpisodeDetails(
+        db().pool,
+        townA,
+        npcA,
+        playerA,
+        [nonexistentEpisode],
+      );
+      expect(forOtherTown).toStrictEqual(forNonexistent);
+      expect(forOtherTown).toStrictEqual([]);
     });
   });
 
@@ -409,6 +462,24 @@ describe.skipIf(!shouldRunDatabaseTests())("recall persistence", () => {
       expect(anchors.filter((anchor) => anchor.episodeId === episodeId)).toHaveLength(
         1,
       );
+    });
+
+    it("never includes another town's or another npc's high-importance episode (P4-22 acceptance 2)", async () => {
+      const { townId: townA, npcId: npcA } = await fixtureTownAndNpc();
+      const { townId: townB, npcId: npcB } = await fixtureTownAndNpc();
+      const npcC = await insertNpc(db().pool, townA);
+
+      const eventA = await insertWorldEvent(db().pool, townA);
+      const eventB = await insertWorldEvent(db().pool, townB);
+      const eventC = await insertWorldEvent(db().pool, townA);
+      await insertReadyEpisode(db().pool, townB, npcB, eventB, { importance: 95 });
+      await insertReadyEpisode(db().pool, townA, npcC, eventC, { importance: 95 });
+      const ownEpisode = await insertReadyEpisode(db().pool, townA, npcA, eventA, {
+        importance: 95,
+      });
+
+      const anchors = await readStructuredAnchorCandidates(db().pool, townA, npcA);
+      expect(anchors.map((anchor) => anchor.episodeId)).toStrictEqual([ownEpisode]);
     });
   });
 
