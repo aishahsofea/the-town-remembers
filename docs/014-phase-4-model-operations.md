@@ -205,7 +205,14 @@ module deliberately surfaces.
    accepted action caused, reconstructable without ever reading a raw score.
 
 `e2e/phase-04-grounded-memory.spec.ts` (`P4-24`) is the automated version of
-walking this exact chain for a real two-browser journey.
+walking this exact chain for a real two-browser journey. Like `prompts:eval:live`/
+`test:model:live`, it needs real Bedrock/Titan access and is opt-in —
+`pnpm test:e2e`/`pnpm validate` skip it (not fail) without
+`TTR_E2E_LIVE_MODEL=1`:
+
+```bash
+pnpm test:e2e:live
+```
 
 ## 9. The local two-browser memory proof
 

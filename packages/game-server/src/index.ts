@@ -19,6 +19,7 @@ export * from "./persistence/join-ledger.js";
 export * from "./persistence/players.js";
 export * from "./persistence/sessions.js";
 export * from "./persistence/view-queries.js";
+export * from "./persistence/inspection.js";
 export * from "./application/town-creation.js";
 export * from "./application/invite-preview.js";
 export * from "./application/join.js";

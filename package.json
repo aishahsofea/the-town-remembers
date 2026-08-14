@@ -35,6 +35,7 @@
     "test:contracts": "vitest run --project contracts",
     "test:db": "vitest run --project database",
     "test:e2e": "playwright test",
+    "test:e2e:live": "TTR_E2E_LIVE_MODEL=1 playwright test e2e/phase-04-grounded-memory.spec.ts",
     "test:model": "vitest run --project model-runtime",
     "test:model:live": "TTR_MODEL_LIVE_TESTS=1 vitest run --project model-live",
     "test:rules": "vitest run --project rules",
