@@ -842,11 +842,20 @@ describe("planGive", () => {
 });
 
 describe("planAcceptPromise", () => {
+  const baseAcceptPromiseInputs = {
+    npcId: "npc-1",
+    playerId: "player-1",
+    termsVersion: "keep-lark-accident-secret-v1",
+    kind: "keep_secret" as const,
+    protectedClaimId: "claim-1",
+    ...EMPTY_BUNDLE,
+  };
+
   it("denies an invalid offer", () => {
     const result = planAcceptPromise({
       offerIsValid: false,
       hasActivePromiseAlready: false,
-      ...EMPTY_BUNDLE,
+      ...baseAcceptPromiseInputs,
     });
     if (!isExternalSelectionRequired(result))
       expect(result.reasonCode).toBe("PROMISE_OFFER_INVALID");
@@ -856,18 +865,65 @@ describe("planAcceptPromise", () => {
     const result = planAcceptPromise({
       offerIsValid: true,
       hasActivePromiseAlready: true,
-      ...EMPTY_BUNDLE,
+      ...baseAcceptPromiseInputs,
     });
     if (!isExternalSelectionRequired(result))
       expect(result.reasonCode).toBe("PROMISE_ALREADY_ACTIVE");
   });
 
-  it("requires external selection for a valid new offer", () => {
+  it("requires external selection and inserts the keep-secret promise's full row for a valid new offer", () => {
     const result = planAcceptPromise({
       offerIsValid: true,
       hasActivePromiseAlready: false,
-      ...EMPTY_BUNDLE,
+      ...baseAcceptPromiseInputs,
     });
     expect(isExternalSelectionRequired(result)).toBe(true);
+    if (isExternalSelectionRequired(result)) {
+      const promiseInsert = result.effects.find(
+        (effect) => effect.kind === "insert" && effect.table === "promises",
+      );
+      expect(promiseInsert).toMatchObject({
+        row: {
+          npc_id: "npc-1",
+          player_id: "player-1",
+          kind: "keep_secret",
+          protected_claim_id: "claim-1",
+          item_id: null,
+          status: "active",
+          terms_version: "keep-lark-accident-secret-v1",
+        },
+      });
+      expect(
+        result.effects.some((effect) => effect.kind === "conditional_state_change"),
+      ).toBe(false);
+    }
+  });
+
+  it("transfers item custody atomically for a return_item offer", () => {
+    const result = planAcceptPromise({
+      offerIsValid: true,
+      hasActivePromiseAlready: false,
+      ...baseAcceptPromiseInputs,
+      kind: "return_item",
+      termsVersion: "return-chapel-key-v1",
+      itemTransfer: { itemId: "item-key", itemRevision: 3 },
+    });
+    if (isExternalSelectionRequired(result)) {
+      const promiseInsert = result.effects.find(
+        (effect) => effect.kind === "insert" && effect.table === "promises",
+      );
+      expect(promiseInsert).toMatchObject({
+        row: { kind: "return_item", item_id: "item-key", protected_claim_id: null },
+      });
+      const custodyChange = result.effects.find(
+        (effect) => effect.kind === "conditional_state_change",
+      );
+      expect(custodyChange).toMatchObject({
+        table: "items",
+        key: { id: "item-key" },
+        expectedRevision: 3,
+        change: { held_by_actor_id: "player-1" },
+      });
+    }
   });
 });

@@ -64,7 +64,12 @@ import {
   resolveGiveTarget,
   type GiveLoadedInputs,
 } from "../application/actions/inputs/give.js";
+import {
+  resolveAcceptPromiseTarget,
+  type AcceptPromiseLoadedInputs,
+} from "../application/actions/inputs/accept-promise.js";
 import type {
+  AcceptPromiseDialogueSelection,
   AskDialogueSelection,
   GiveDialogueSelection,
   ShowDialogueSelection,
@@ -166,6 +171,12 @@ export interface RouterConfig {
     "give",
     GiveLoadedInputs,
     GiveDialogueSelection
+  >;
+  /** Present only when accept_promise is enabled; tests may inject a no-network handler. */
+  readonly acceptPromiseActionHandler?: ModelActionHandler<
+    "accept_promise",
+    AcceptPromiseLoadedInputs,
+    AcceptPromiseDialogueSelection
   >;
 }
 
@@ -808,6 +819,29 @@ async function handleSubmitAction(context: RouteHandlerContext): Promise<HttpRes
       targetActorId: await resolveGiveTarget(pool, townId, request.npcId),
       targetEntityId: null,
       requestPayload: { npcId: request.npcId, itemId: request.itemId },
+      handler,
+      now: context.config.now,
+      requestId: context.requestId,
+    });
+    response = respondToExecuteOutcome(townId, outcome);
+  } else if (request.kind === "accept_promise") {
+    const handler = context.config.acceptPromiseActionHandler;
+    if (handler === undefined) throw internalError();
+    const outcome = await executeModelAction({
+      pool,
+      deadline,
+      townId,
+      playerId,
+      idempotencyKey,
+      actionKind: "accept_promise",
+      targetActorId: await resolveAcceptPromiseTarget(
+        pool,
+        townId,
+        playerId,
+        request.offerId,
+      ),
+      targetEntityId: null,
+      requestPayload: { offerId: request.offerId },
       handler,
       now: context.config.now,
       requestId: context.requestId,

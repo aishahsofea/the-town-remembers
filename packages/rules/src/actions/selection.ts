@@ -1054,3 +1054,83 @@ export function applyGiveSelection(
 
   return effects;
 }
+
+// --- accept_promise -------------------------------------------------------------------------
+
+export type AcceptPromiseDialogueSelection = ValidatedDialogueResume;
+
+export interface ApplyAcceptPromiseSelectionInputs {
+  readonly actionId: string;
+  readonly visitId: string;
+  readonly playerId: string;
+  readonly npcId: string;
+  readonly npcCharacterEntityId: string;
+  readonly locationEntityId: string;
+  readonly occurredAt: Date;
+  readonly selection: AcceptPromiseDialogueSelection;
+}
+
+function acceptPromiseInteractionSummary(text: string): string {
+  return `A visitor accepted my promise. I said: ${text}`;
+}
+
+/**
+ * The dialogue turn's audit trail and recall memory. `planAcceptPromise`
+ * already committed every causal effect (the promise row, any item
+ * custody) before any model call — this only records the conversational
+ * exchange itself, as an ordinary `player_interaction` episode: accepting
+ * is a commitment, not yet a consequence, so it does not use
+ * `promise_consequence` the way a later fulfil/break does.
+ */
+export function applyAcceptPromiseSelection(
+  inputs: ApplyAcceptPromiseSelectionInputs,
+): readonly EffectPlanEntry[] {
+  return [
+    {
+      kind: "insert",
+      table: "npc_interactions",
+      row: {
+        player_action_id: inputs.actionId,
+        visit_id: inputs.visitId,
+        player_id: inputs.playerId,
+        npc_id: inputs.npcId,
+        input_kind: "promise",
+        player_text: null,
+        npc_text: inputs.selection.text,
+        response_mode: inputs.selection.responseMode,
+      },
+    },
+    {
+      kind: "insert",
+      table: "episodes",
+      ref: "accept-promise-episode",
+      row: {
+        npc_id: inputs.npcId,
+        episode_kind: "player_interaction",
+        summary: acceptPromiseInteractionSummary(inputs.selection.text),
+        importance: importanceMinimumFor("ordinary_interaction"),
+        occurred_at: inputs.occurredAt,
+        embedding_status: "pending",
+        updated_at: inputs.occurredAt,
+      },
+    },
+    {
+      kind: "insert",
+      table: "episode_references",
+      row: {
+        episode_id: { $planRef: "accept-promise-episode" },
+        reference_kind: "participant",
+        entity_id: inputs.npcCharacterEntityId,
+      },
+    },
+    {
+      kind: "insert",
+      table: "episode_references",
+      row: {
+        episode_id: { $planRef: "accept-promise-episode" },
+        reference_kind: "location",
+        entity_id: inputs.locationEntityId,
+      },
+    },
+  ];
+}

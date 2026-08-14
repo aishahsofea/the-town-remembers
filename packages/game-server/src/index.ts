@@ -36,4 +36,6 @@ export * from "./application/actions/inputs/show.js";
 export * from "./application/actions/show-model.js";
 export * from "./application/actions/inputs/give.js";
 export * from "./application/actions/give-model.js";
+export * from "./application/actions/inputs/accept-promise.js";
+export * from "./application/actions/accept-promise-model.js";
 export * from "./application/actions/model-executor.js";

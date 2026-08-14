@@ -684,9 +684,21 @@ export function planGive(inputs: GiveActionInputs): ActionPlanResult {
 
 // --- accept_promise -----------------------------------------------------------------------------
 
+/** Present only when accepting transfers custody of an item (the chapel-key loan). */
+export interface AcceptPromiseItemTransfer {
+  readonly itemId: string;
+  readonly itemRevision: number;
+}
+
 export interface AcceptPromiseInputs extends DisclosureBundleInputs {
   readonly offerIsValid: boolean;
   readonly hasActivePromiseAlready: boolean;
+  readonly npcId: string;
+  readonly playerId: string;
+  readonly kind: "keep_secret" | "return_item";
+  readonly termsVersion: string;
+  readonly protectedClaimId?: string;
+  readonly itemTransfer?: AcceptPromiseItemTransfer;
 }
 
 export function planAcceptPromise(inputs: AcceptPromiseInputs): ActionPlanResult {
@@ -696,9 +708,37 @@ export function planAcceptPromise(inputs: AcceptPromiseInputs): ActionPlanResult
     return deniedResult("PROMISE_ALREADY_ACTIVE", trace, {});
 
   const effects: EffectPlanEntry[] = [
-    { kind: "event_origin", eventType: "promise_accepted", effectIndex: 0 },
-    { kind: "insert", table: "promises", row: { status: "active" } },
+    {
+      kind: "event_origin",
+      eventType: "promise_accepted",
+      effectIndex: 0,
+      ref: "accept-promise-event",
+      metadata: { actorId: inputs.playerId, targetActorId: inputs.npcId },
+    },
+    {
+      kind: "insert",
+      table: "promises",
+      ref: "accepted-promise",
+      row: {
+        npc_id: inputs.npcId,
+        player_id: inputs.playerId,
+        kind: inputs.kind,
+        protected_claim_id: inputs.kind === "keep_secret" ? inputs.protectedClaimId : null,
+        item_id: inputs.kind === "return_item" ? inputs.itemTransfer?.itemId : null,
+        status: "active",
+        terms_version: inputs.termsVersion,
+      },
+    },
   ];
+  if (inputs.itemTransfer !== undefined) {
+    effects.push({
+      kind: "conditional_state_change",
+      table: "items",
+      key: { id: inputs.itemTransfer.itemId },
+      expectedRevision: inputs.itemTransfer.itemRevision,
+      change: { held_by_actor_id: inputs.playerId },
+    });
+  }
   return {
     kind: "external_selection_required",
     effects,

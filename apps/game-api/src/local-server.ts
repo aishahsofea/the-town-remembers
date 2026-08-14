@@ -11,6 +11,7 @@ import { createServer, type IncomingMessage, type Server } from "node:http";
 import process from "node:process";
 
 import {
+  createProductionAcceptPromiseActionHandler,
   createProductionAskActionHandler,
   createProductionGiveActionHandler,
   createProductionNormalizeClaimActionHandler,
@@ -124,6 +125,11 @@ export async function main(): Promise<void> {
             now,
           }),
           giveActionHandler: createProductionGiveActionHandler({
+            pool,
+            modelConfig: loadModelConfig(process.env),
+            now,
+          }),
+          acceptPromiseActionHandler: createProductionAcceptPromiseActionHandler({
             pool,
             modelConfig: loadModelConfig(process.env),
             now,

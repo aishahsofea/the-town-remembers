@@ -188,6 +188,9 @@ const EVENT_FOREIGN_KEY_COLUMN: Readonly<Partial<Record<string, string>>> = {
   // for `event_id` on the *insert* itself) sets the column explicitly, which
   // always wins over this default (`!(eventColumn in row)` below).
   relationship_changes: "event_id",
+  // `promises.accepted_event_id` (`P4-16`): NOT NULL, always this plan's own
+  // `promise_accepted` event — `planAcceptPromise` raises exactly one event.
+  promises: "accepted_event_id",
 };
 
 /**
@@ -267,6 +270,7 @@ function tableInsertDefaults(
   }
   if (table === "npc_beliefs") return { updated_at: context.now };
   if (table === "player_capabilities") return { updated_at: context.now };
+  if (table === "promises") return { updated_at: context.now };
   return {};
 }
 
