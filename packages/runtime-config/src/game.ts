@@ -22,6 +22,8 @@ import {
   type EnvironmentRecord,
 } from "./shared.js";
 
+const FLAG_VALUES = ["0", "1"] as const;
+
 export {
   ConfigurationError,
   type ConfigurationCategory,
@@ -44,6 +46,7 @@ const GameConfigSchema = z.strictObject({
   TTR_LOG_LEVEL: LogLevelSchema,
   TTR_APP_ORIGIN: OriginSchema,
   TTR_API_PORT: PortSchema,
+  TTR_ENABLE_NPC_MUTATIONS: z.enum(FLAG_VALUES),
 });
 
 export interface GameConfig {
@@ -53,6 +56,8 @@ export interface GameConfig {
   readonly appOrigin: string;
   /** Port the local `node:http` adapter binds. Unused by the Lambda entry. */
   readonly apiPort: number;
+  /** `D4-R`: gates the six model-backed action kinds. Default `false` — only local/isolated integration profiles enable it before `P5-22`. */
+  readonly enableNpcMutations: boolean;
 }
 
 export function loadGameConfig(source: EnvironmentRecord): GameConfig {
@@ -69,6 +74,7 @@ export function loadGameConfig(source: EnvironmentRecord): GameConfig {
         "http://localhost:5173",
       ),
       TTR_API_PORT: withDefault(source, "TTR_API_PORT", String(DEFAULT_API_PORT)),
+      TTR_ENABLE_NPC_MUTATIONS: withDefault(source, "TTR_ENABLE_NPC_MUTATIONS", "0"),
     },
     source,
   );
@@ -79,5 +85,6 @@ export function loadGameConfig(source: EnvironmentRecord): GameConfig {
     logLevel: parsed.TTR_LOG_LEVEL,
     appOrigin: parsed.TTR_APP_ORIGIN,
     apiPort: parsed.TTR_API_PORT,
+    enableNpcMutations: parsed.TTR_ENABLE_NPC_MUTATIONS === "1",
   };
 }

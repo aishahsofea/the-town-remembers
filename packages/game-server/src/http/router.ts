@@ -103,6 +103,8 @@ export interface RouterConfig {
   readonly now: () => Date;
   readonly pool: Pool;
   readonly securityConfig: SecurityConfig;
+  /** `D4-R`: gates the six model-backed action kinds. Defaults to `false` when omitted, matching `TTR_ENABLE_NPC_MUTATIONS`'s own default. */
+  readonly enableNpcMutations?: boolean;
 }
 
 export interface RouteHandlerContext {
@@ -572,7 +574,7 @@ async function handleSubmitAction(context: RouteHandlerContext): Promise<HttpRes
   const cookiesOut = reissued ? [buildSessionCookie(townId, token)] : [];
 
   const request = parseJsonBody(ActionRequestSchema, context.request.body);
-  requireEnabledActionKind(request.kind);
+  requireEnabledActionKind(request.kind, context.config.enableNpcMutations ?? false);
 
   const pool = context.config.pool;
   const playerId = authOutcome.session.playerId;

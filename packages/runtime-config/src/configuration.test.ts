@@ -46,6 +46,7 @@ describe("game runtime configuration", () => {
       logLevel: "warn",
       appOrigin: "https://town.example",
       apiPort: DEFAULT_API_PORT,
+      enableNpcMutations: false,
     });
   });
 
@@ -56,7 +57,19 @@ describe("game runtime configuration", () => {
       logLevel: "info",
       appOrigin: "http://localhost:5173",
       apiPort: DEFAULT_API_PORT,
+      enableNpcMutations: false,
     });
+  });
+
+  it("enables NPC mutations only when TTR_ENABLE_NPC_MUTATIONS is exactly '1'", () => {
+    expect(
+      loadGameConfig({ TTR_ENV: "local", TTR_ENABLE_NPC_MUTATIONS: "1" })
+        .enableNpcMutations,
+    ).toBe(true);
+    expect(
+      loadGameConfig({ TTR_ENV: "local", TTR_ENABLE_NPC_MUTATIONS: "0" })
+        .enableNpcMutations,
+    ).toBe(false);
   });
 
   it("fails closed when a deployed environment omits its build identity", () => {
