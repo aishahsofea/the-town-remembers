@@ -61,6 +61,15 @@ export const ACTION_LIFECYCLE_STATUSES = [
   "takeover",
   "processing_exhausted",
   "ambiguous_resolved",
+  // `P4-10`: a model-backed action's town-revision snapshot moved between
+  // the pre-model read and either the post-model re-read or the final
+  // commit's own guard — the model's already-selected dialogue is
+  // discarded (never committed), and the whole plan-and-select sequence
+  // reruns from a fresh reload, up to `MODEL_RETRIES.townRevisionRerunLimit`
+  // times. Never terminal on its own — exhausting the budget still stores
+  // the identical `conflict_exhausted`/`ACTION_CONFLICT` a deterministic
+  // action's own exhaustion path stores.
+  "superseded",
 ] as const;
 export type ActionLifecycleStatus = (typeof ACTION_LIFECYCLE_STATUSES)[number];
 
