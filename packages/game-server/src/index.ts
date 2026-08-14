@@ -28,4 +28,6 @@ export * from "./application/commands/prewarm.js";
 export * from "./application/commands/embed-seed.js";
 export * from "./application/actions/inputs/ask.js";
 export * from "./application/actions/ask-model.js";
+export * from "./application/actions/inputs/normalize-claim.js";
+export * from "./application/actions/normalize-claim-model.js";
 export * from "./application/actions/model-executor.js";

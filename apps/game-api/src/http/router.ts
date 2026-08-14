@@ -29,6 +29,7 @@ export interface RouterContext {
   readonly now: () => Date;
   readonly monotonicMs: () => number;
   readonly askActionHandler?: RouterConfig["askActionHandler"];
+  readonly normalizeClaimActionHandler?: RouterConfig["normalizeClaimActionHandler"];
 }
 
 /**
@@ -65,6 +66,9 @@ export async function handleRequest(
     ...(context.askActionHandler === undefined
       ? {}
       : { askActionHandler: context.askActionHandler }),
+    ...(context.normalizeClaimActionHandler === undefined
+      ? {}
+      : { normalizeClaimActionHandler: context.normalizeClaimActionHandler }),
   };
   const { response: routed, routeTemplate } = await routeRequest(
     request,

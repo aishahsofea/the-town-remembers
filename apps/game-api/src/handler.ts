@@ -11,6 +11,7 @@ import process from "node:process";
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from "aws-lambda";
 import {
   createProductionAskActionHandler,
+  createProductionNormalizeClaimActionHandler,
   createRuntimePool,
   filterAllowlistedHeaders,
 } from "@the-town-remembers/game-server";
@@ -36,6 +37,11 @@ function routerContext(): RouterContext {
       ...(config.enableNpcMutations
         ? {
             askActionHandler: createProductionAskActionHandler({
+              pool,
+              modelConfig: loadModelConfig(process.env),
+              now,
+            }),
+            normalizeClaimActionHandler: createProductionNormalizeClaimActionHandler({
               pool,
               modelConfig: loadModelConfig(process.env),
               now,

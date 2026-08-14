@@ -363,6 +363,29 @@ export function validateContent(registry: ContentRegistry): readonly ContentIssu
   if (entityTypes.get(key.subjectItemKey) !== "item")
     add("promise_subject", key.termsVersion);
 
+  // --- Claim contexts (D4-J, claim normalization's `allowed_contexts`) ----
+
+  const contextKeys = new Set(
+    registry.claimContexts.map((context) => context.contextKey),
+  );
+  if (!contextKeys.has(registry.defaultContextKey)) {
+    add("default_context_key", registry.defaultContextKey);
+  }
+  const contextAliasOwners = new Map<string, string>();
+  for (const context of registry.claimContexts) {
+    for (const alias of context.aliases) {
+      const owner = contextAliasOwners.get(alias);
+      if (owner !== undefined && owner !== context.contextKey) {
+        add(
+          "context_alias_collision",
+          `"${alias}" is claimed by both ${owner} and ${context.contextKey}`,
+        );
+      } else {
+        contextAliasOwners.set(alias, context.contextKey);
+      }
+    }
+  }
+
   // --- Dialogue corpus (D4-I, P4-03a) --------------------------------------
 
   validateDialogueCorpus(registry, npcKeys, claimKeys, entityTypes, add);

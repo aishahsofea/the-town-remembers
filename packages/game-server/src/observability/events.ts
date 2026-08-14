@@ -70,6 +70,11 @@ export const ACTION_LIFECYCLE_STATUSES = [
   // the identical `conflict_exhausted`/`ACTION_CONFLICT` a deterministic
   // action's own exhaustion path stores.
   "superseded",
+  // `P4-12`: a model-backed kind with no safe authored fallback (only
+  // `normalize_claim` today) stayed invalid through repair. Always terminal
+  // — `storeTerminalFailure` (`D4-O`) writes the `failed` row in the same
+  // call that raises this status.
+  "model_unavailable",
 ] as const;
 export type ActionLifecycleStatus = (typeof ACTION_LIFECYCLE_STATUSES)[number];
 
@@ -78,6 +83,7 @@ export const ACTION_LIFECYCLE_ERROR_CODES = [
   "ACTION_CONFLICT",
   "ACTION_SUPERSEDED",
   "ACTION_PROCESSING_EXHAUSTED",
+  "MODEL_UNAVAILABLE_RETRY_ACTION",
 ] as const;
 export type ActionLifecycleErrorCode = (typeof ACTION_LIFECYCLE_ERROR_CODES)[number];
 

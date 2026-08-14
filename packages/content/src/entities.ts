@@ -11,22 +11,15 @@
  * separates story entities from actors.
  */
 
+import { normalizeAliases } from "./alias.js";
+
 export type EntityType = "character" | "location" | "item" | "motive";
 
 /**
- * `D4-J`: NFKC-normalized, case-folded alternative names a player might use
- * to refer to this entity in free text, consumed by claim normalization's
- * `canonical_entities`/`canonical_actors` (Decision 010). An NPC has no
- * alias list of its own — it derives one transitively from its
- * `characterKey`'s entity, so the same name never has to be authored twice.
+ * `D4-J`: an NPC has no alias list of its own — it derives one transitively
+ * from its `characterKey`'s entity, so the same name never has to be
+ * authored twice.
  */
-function normalizeAlias(value: string): string {
-  return value.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
-}
-
-function normalizeAliases(values: readonly string[]): readonly string[] {
-  return Object.freeze(values.map(normalizeAlias));
-}
 
 export interface AuthoredEntity {
   readonly entityKey: string;

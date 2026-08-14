@@ -685,6 +685,64 @@ export async function completeAction(
   throw new StaleProcessingClaimError();
 }
 
+export interface StoreTerminalFailureParams {
+  readonly townId: string;
+  readonly actionId: string;
+  readonly processingToken: string;
+  readonly responseStatus: number;
+  readonly problemBody: StoredProblemBody;
+  readonly now: () => Date;
+}
+
+/**
+ * `D4-O`: writes the terminal `failed` state a model-backed action reaches
+ * when its output is invalid and repair also fails — Decision 006's `503
+ * MODEL_UNAVAILABLE_RETRY_ACTION`, which has no safe authored fallback
+ * (unlike NPC dialogue, `normalize_claim` cannot substitute presentation
+ * text for a proposition it never validated). This is the only writer of a
+ * terminal model failure. `decideAction`'s `failed` branch always replays
+ * the saved body unconditionally, so the same idempotency key never retries
+ * — Decision 006's "an intentional retry uses a new key" is enforced by the
+ * ledger table already having that row, not by anything here.
+ */
+export async function storeTerminalFailure(
+  pool: Pool,
+  deadlineAt: number,
+  params: StoreTerminalFailureParams,
+): Promise<void> {
+  const result = await runSerializable(pool, { deadlineAt }, async (transaction) => {
+    const now = params.now();
+    const updated = await transaction.query<{ id: string }>(
+      `UPDATE public.player_actions
+          SET status = 'failed', response_status = $3, error_code = $4,
+              response_payload = $5, processing_token = NULL,
+              processing_expires_at = NULL, completed_at = $6, updated_at = $6
+        WHERE town_id = $1 AND id = $2 AND status = 'processing'
+          AND processing_token = $7
+        RETURNING id`,
+      [
+        params.townId,
+        params.actionId,
+        params.responseStatus,
+        params.problemBody.code,
+        JSON.stringify(params.problemBody),
+        now,
+        params.processingToken,
+      ],
+    );
+    return { matched: updated.length > 0 };
+  });
+
+  if (result.outcome === "committed") {
+    if (result.value.matched) return;
+    throw new StaleProcessingClaimError();
+  }
+
+  const status = await readStatusByIdViaPool(pool, params.townId, params.actionId);
+  if (status === "failed") return;
+  throw new StaleProcessingClaimError();
+}
+
 export interface ActionStatusRow {
   readonly id: string;
   readonly status: ActionRecordStatus;

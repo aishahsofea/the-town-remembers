@@ -71,6 +71,7 @@ import {
   type SeedTransmission,
 } from "./seed.js";
 import { CONTENT_VERSION, RULES_VERSION, PROMISE_TERMS } from "./versions.js";
+import { CLAIM_CONTEXTS, DEFAULT_CONTEXT_KEY, type ClaimContext } from "./contexts.js";
 
 export interface ContentRegistry {
   readonly contentVersion: string;
@@ -106,6 +107,8 @@ export interface ContentRegistry {
   readonly outcomeTemplates: readonly OutcomeTemplate[];
   readonly denialTemplates: readonly DenialTemplate[];
   readonly fallbackLines: readonly FallbackLine[];
+  readonly claimContexts: readonly ClaimContext[];
+  readonly defaultContextKey: string;
 }
 
 export const BELL_MYSTERY_V1: ContentRegistry = Object.freeze({
@@ -142,6 +145,8 @@ export const BELL_MYSTERY_V1: ContentRegistry = Object.freeze({
   outcomeTemplates: OUTCOME_TEMPLATES,
   denialTemplates: DENIAL_TEMPLATES,
   fallbackLines: ALL_FALLBACK_LINES,
+  claimContexts: CLAIM_CONTEXTS,
+  defaultContextKey: DEFAULT_CONTEXT_KEY,
 });
 
 const REGISTRIES: ReadonlyMap<string, ContentRegistry> = new Map([

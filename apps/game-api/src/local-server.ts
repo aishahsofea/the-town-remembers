@@ -12,6 +12,7 @@ import process from "node:process";
 
 import {
   createProductionAskActionHandler,
+  createProductionNormalizeClaimActionHandler,
   createRuntimePool,
   filterAllowlistedHeaders,
 } from "@the-town-remembers/game-server";
@@ -100,6 +101,11 @@ export async function main(): Promise<void> {
     ...(config.enableNpcMutations
       ? {
           askActionHandler: createProductionAskActionHandler({
+            pool,
+            modelConfig: loadModelConfig(process.env),
+            now,
+          }),
+          normalizeClaimActionHandler: createProductionNormalizeClaimActionHandler({
             pool,
             modelConfig: loadModelConfig(process.env),
             now,

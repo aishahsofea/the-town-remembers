@@ -74,7 +74,9 @@ import {
   completeAction,
   runCompleteActionUpdate,
   storeRetryableConflict,
+  storeTerminalFailure,
   type ClaimActionParams,
+  type StoredProblemBody,
 } from "../../persistence/actions.js";
 import { rateScopeKey } from "../../persistence/rate-limits.js";
 import { actionRequestHash } from "../../security/fingerprint.js";
@@ -359,12 +361,46 @@ async function runClaimedModelAction<
 
     if (isExternalSelectionRequired(plan)) {
       const preModelRevision = await readTownRevision(params.pool, params.townId);
-      const dialogue = await params.handler.runModelSelection({
-        inputs,
-        pending: plan,
-        deadlineAt: preCommitDeadline(params.deadline),
-        attempt,
-      });
+      let dialogue: TSelection;
+      try {
+        dialogue = await params.handler.runModelSelection({
+          inputs,
+          pending: plan,
+          deadlineAt: preCommitDeadline(params.deadline),
+          attempt,
+        });
+      } catch (error) {
+        if (!(error instanceof ModelSelectionUnavailableError)) throw error;
+        await storeTerminalFailure(
+          params.pool,
+          applicationDeadlineAt(params.deadline),
+          {
+            townId: params.townId,
+            actionId,
+            processingToken,
+            responseStatus: error.responseStatus,
+            problemBody: error.problemBody,
+            now: params.now,
+          },
+        );
+        logEvent({
+          event: "action_lifecycle",
+          requestId: params.requestId,
+          actionKind: params.actionKind,
+          actionId: asUuid(actionId),
+          status: "model_unavailable",
+          attempt,
+          terminalErrorCode: "MODEL_UNAVAILABLE_RETRY_ACTION",
+        });
+        return {
+          kind: "replay",
+          actionId,
+          status: "failed",
+          responseStatus: error.responseStatus,
+          responsePayload: error.problemBody,
+          retryAfterSeconds: null,
+        };
+      }
       const postModelRevision = await readTownRevision(params.pool, params.townId);
 
       if (postModelRevision !== preModelRevision) {
@@ -591,6 +627,30 @@ async function runClaimedModelAction<
     },
     retryAfterSeconds: 1,
   };
+}
+
+/**
+ * Raised from `ModelActionHandler.runModelSelection` when a kind has no safe
+ * authored fallback and the model's output stayed invalid through repair
+ * (`D4-O`; docs/006's `503 MODEL_UNAVAILABLE_RETRY_ACTION`). Every
+ * dialogue-shaped kind (`ask`, `tell`, ...) always resolves to *some*
+ * `ValidatedDialogueResume` — an authored deflection is a safe last resort
+ * for presentation text. `normalize_claim` has no such fallback: it cannot
+ * present a proposition it never validated as though it were canonical.
+ * Caught only here, one level above every handler, so the terminal-failure
+ * write stays the single `storeTerminalFailure` call site regardless of
+ * which kind raised it.
+ */
+export class ModelSelectionUnavailableError extends Error {
+  readonly responseStatus: number;
+  readonly problemBody: StoredProblemBody;
+
+  constructor(responseStatus: number, problemBody: StoredProblemBody) {
+    super(problemBody.detail);
+    this.name = "ModelSelectionUnavailableError";
+    this.responseStatus = responseStatus;
+    this.problemBody = problemBody;
+  }
 }
 
 /** Raised when a claimed processing token no longer matches the durable row. */

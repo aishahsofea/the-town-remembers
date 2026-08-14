@@ -47,6 +47,11 @@ import {
   resolveAskTarget,
   type AskLoadedInputs,
 } from "../application/actions/inputs/ask.js";
+import {
+  resolveNormalizeClaimTarget,
+  type NormalizeClaimLoadedInputs,
+  type NormalizeClaimSelection,
+} from "../application/actions/inputs/normalize-claim.js";
 import type { AskDialogueSelection } from "@the-town-remembers/rules";
 import { inspectActionHandler } from "../application/actions/inputs/inspect.js";
 import { leaveActionHandler } from "../application/actions/inputs/leave.js";
@@ -120,6 +125,12 @@ export interface RouterConfig {
     "ask",
     AskLoadedInputs,
     AskDialogueSelection
+  >;
+  /** Present only when normalize_claim is enabled; tests may inject a no-network handler. */
+  readonly normalizeClaimActionHandler?: ModelActionHandler<
+    "normalize_claim",
+    NormalizeClaimLoadedInputs,
+    NormalizeClaimSelection
   >;
 }
 
@@ -685,6 +696,24 @@ async function handleSubmitAction(context: RouteHandlerContext): Promise<HttpRes
       targetActorId: await resolveAskTarget(pool, townId, request.npcId),
       targetEntityId: null,
       requestPayload: { npcId: request.npcId, question: request.question },
+      handler,
+      now: context.config.now,
+      requestId: context.requestId,
+    });
+    response = respondToExecuteOutcome(townId, outcome);
+  } else if (request.kind === "normalize_claim") {
+    const handler = context.config.normalizeClaimActionHandler;
+    if (handler === undefined) throw internalError();
+    const outcome = await executeModelAction({
+      pool,
+      deadline,
+      townId,
+      playerId,
+      idempotencyKey,
+      actionKind: "normalize_claim",
+      targetActorId: await resolveNormalizeClaimTarget(pool, townId, request.npcId),
+      targetEntityId: null,
+      requestPayload: { npcId: request.npcId, text: request.text },
       handler,
       now: context.config.now,
       requestId: context.requestId,

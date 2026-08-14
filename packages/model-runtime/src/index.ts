@@ -8,6 +8,12 @@ export * from "./warmup.js";
 // this narrow re-export preserves model-runtime as that layer's single model
 // dependency rather than making callers reach through it to model-contracts.
 export {
+  buildClaimNormalizationInput,
+  CLAIM_CLARIFICATION_REASON_CODES,
+  CLAIM_NORMALIZATION_PROMPT_V1_0_0,
+  CLAIM_PREDICATE_SIGNATURE_ENTRIES,
+  CLAIM_UNSUPPORTED_REASON_CODES,
+  ClaimNormalizationV1Schema,
   INFERENCE_SETTINGS,
   NPC_DIALOGUE_PROMPT_V1_0_0,
   NpcDialogueV1Schema,
@@ -20,4 +26,7 @@ export {
   TASK_INPUT_VERSIONS,
   toBedrockJsonSchema,
   VALIDATION_POLICY_VERSIONS,
+  type ClaimNormalizationReasonCode,
+  type ClaimNormalizationTrustedContext,
+  type ClaimPredicate,
 } from "@the-town-remembers/model-contracts";
