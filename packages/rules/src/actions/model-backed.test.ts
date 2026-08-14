@@ -52,6 +52,7 @@ describe("planTell", () => {
       claimDraftExists: false,
       claimDraftExpired: false,
       claimDraftAlreadyConfirmed: false,
+      claimDraftWrongNpc: false,
       ...EMPTY_BUNDLE,
     });
     expect(isExternalSelectionRequired(result)).toBe(false);
@@ -64,10 +65,23 @@ describe("planTell", () => {
       claimDraftExists: true,
       claimDraftExpired: true,
       claimDraftAlreadyConfirmed: false,
+      claimDraftWrongNpc: false,
       ...EMPTY_BUNDLE,
     });
     if (!isExternalSelectionRequired(result))
       expect(result.reasonCode).toBe("CLAIM_DRAFT_EXPIRED");
+  });
+
+  it("denies a claim draft no longer bound to the player's current visit/NPC", () => {
+    const result = planTell({
+      claimDraftExists: true,
+      claimDraftExpired: false,
+      claimDraftAlreadyConfirmed: false,
+      claimDraftWrongNpc: true,
+      ...EMPTY_BUNDLE,
+    });
+    if (!isExternalSelectionRequired(result))
+      expect(result.reasonCode).toBe("CLAIM_DRAFT_WRONG_NPC");
   });
 
   it("denies an already-confirmed claim draft", () => {
@@ -75,24 +89,24 @@ describe("planTell", () => {
       claimDraftExists: true,
       claimDraftExpired: false,
       claimDraftAlreadyConfirmed: true,
+      claimDraftWrongNpc: false,
       ...EMPTY_BUNDLE,
     });
     if (!isExternalSelectionRequired(result))
       expect(result.reasonCode).toBe("CLAIM_DRAFT_ALREADY_CONFIRMED");
   });
 
-  it("requires external selection for a valid draft", () => {
+  it("requires external selection for a valid draft, planning no effects of its own", () => {
     const result = planTell({
       claimDraftExists: true,
       claimDraftExpired: false,
       claimDraftAlreadyConfirmed: false,
+      claimDraftWrongNpc: false,
       ...EMPTY_BUNDLE,
     });
     expect(isExternalSelectionRequired(result)).toBe(true);
     if (isExternalSelectionRequired(result)) {
-      expect(result.effects).toStrictEqual([
-        { kind: "event_origin", eventType: "claim_transmitted", effectIndex: 0 },
-      ]);
+      expect(result.effects).toStrictEqual([]);
     }
   });
 });

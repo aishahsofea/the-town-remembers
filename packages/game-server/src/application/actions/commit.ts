@@ -64,7 +64,7 @@ export class RevisionConflictError extends Error {
 
 /**
  * `D4-F`: raised for a `{ $planRef }` that names neither its own insert nor
- * an earlier `InsertEffect.ref` in the same plan — an unknown handle, or one
+ * an earlier insert/event handle in the same plan — an unknown handle, or one
  * declared later. {@link validatePlanRefs} raises this before any statement
  * executes; {@link resolveRecord} raises the identical error at apply time
  * as defense in depth, in case a future caller ever bypasses the pre-pass.
@@ -107,8 +107,8 @@ function assertRecordResolvable(
 }
 
 /**
- * Validates every `PlanRef` in the plan resolves to its own insert or an
- * `InsertEffect.ref` declared earlier in the same plan — run once, before `commitEffectPlan`
+ * Validates every `PlanRef` in rows, changes, keys, and event metadata resolves
+ * to its own insert or a handle declared earlier in the same plan — run once, before `commitEffectPlan`
  * issues its first statement, so an unknown or forward handle fails closed
  * rather than committing a partial plan and rolling back.
  */
@@ -127,6 +127,11 @@ function validatePlanRefs(effects: readonly EffectPlanEntry[]): void {
         declaredRefs,
       );
       assertRecordResolvable(effect.key, declaredRefs);
+    } else if (isEventOriginEffect(effect)) {
+      if (effect.metadata !== undefined) {
+        assertRecordResolvable(effect.metadata, declaredRefs);
+      }
+      if (effect.ref !== undefined) declaredRefs.add(effect.ref);
     }
   }
 }
@@ -165,6 +170,28 @@ const EVENT_FOREIGN_KEY_COLUMN: Readonly<Partial<Record<string, string>>> = {
   // for the same structural reason as the three above: NOT NULL, always this
   // plan's own event, never a per-kind business decision.
   episodes: "event_id",
+  // `belief_evidence.event_id` / `npc_beliefs.updated_event_id` (`P4-13`):
+  // both NOT NULL on a first-ever insert for a (npc, claim) pair, always this
+  // plan's own event — a rules planner never sees the event id at plan-build
+  // time either way.
+  belief_evidence: "event_id",
+  npc_beliefs: "updated_event_id",
+};
+
+/**
+ * `applyConditionalStateChange`'s analogue of {@link EVENT_FOREIGN_KEY_COLUMN}
+ * for a column that must be **overwritten** on every guarded update, unlike
+ * {@link CONDITIONAL_CHANGE_EVENT_FOREIGN_KEY_COLUMN}'s immutable-once-set
+ * `COALESCE`. `npc_beliefs.updated_event_id` records the most recent event
+ * that changed the score, not the first one — a `tell` plan that recomputes
+ * an already-existing belief needs this plan's own just-created event id,
+ * only known once `commitEffectPlan`'s `event_origin` step has run
+ * ({@link EventOriginEffect.ref}, `D4-F`).
+ */
+const CONDITIONAL_CHANGE_OVERWRITE_EVENT_COLUMN: Readonly<
+  Partial<Record<string, string>>
+> = {
+  npc_beliefs: "updated_event_id",
 };
 
 /**
@@ -193,6 +220,12 @@ const CONDITIONAL_CHANGE_EVENT_FOREIGN_KEY_COLUMN: Readonly<
  */
 const TABLES_WITHOUT_CREATED_AT: ReadonlySet<string> = new Set(["player_visits"]);
 
+/** Composite-key tables whose schema intentionally has no surrogate `id`. */
+const TABLES_WITHOUT_ID: ReadonlySet<string> = new Set([
+  "claim_relations",
+  "npc_beliefs",
+]);
+
 /**
  * Context an insert-effect row cannot carry because the rules layer never
  * sees it: identity (`player_visits.player_id`), the just-computed town
@@ -220,6 +253,7 @@ function tableInsertDefaults(
       started_at: context.now,
     };
   }
+  if (table === "npc_beliefs") return { updated_at: context.now };
   return {};
 }
 
@@ -321,9 +355,13 @@ async function applyInsert(
 ): Promise<string> {
   assertSafeIdentifier(effect.table);
 
-  const id = insertIds[effect.table] ?? randomUUID();
+  const hasSurrogateId = !TABLES_WITHOUT_ID.has(effect.table);
+  if (!hasSurrogateId && effect.ref !== undefined) {
+    throw new Error(`Table "${effect.table}" has no id and cannot declare a plan ref.`);
+  }
+  const id = hasSurrogateId ? (insertIds[effect.table] ?? randomUUID()) : undefined;
   const resolvableRefs =
-    effect.ref === undefined ? idByRef : new Map(idByRef).set(effect.ref, id);
+    effect.ref === undefined ? idByRef : new Map(idByRef).set(effect.ref, id!);
   const resolvedEffectRow = resolveRecord(
     effect.row as Readonly<Record<string, unknown>>,
     resolvableRefs,
@@ -331,7 +369,7 @@ async function applyInsert(
   const row: Record<string, unknown> = {
     ...tableInsertDefaults(effect.table, { playerId, actionId, now, revision }),
     ...resolvedEffectRow,
-    id,
+    ...(id === undefined ? {} : { id }),
     town_id: townId,
     ...(TABLES_WITHOUT_CREATED_AT.has(effect.table) ? {} : { created_at: now }),
   };
@@ -354,7 +392,7 @@ async function applyInsert(
     `INSERT INTO public.${effect.table} (${columns.join(", ")}) VALUES (${placeholders.join(", ")})`,
     columns.map((column) => row[column]),
   );
-  return id;
+  return id ?? "";
 }
 
 async function applyConditionalStateChange(
@@ -378,7 +416,10 @@ async function applyConditionalStateChange(
   // already-revealed item's event id with its own.
   const eventColumn = CONDITIONAL_CHANGE_EVENT_FOREIGN_KEY_COLUMN[effect.table];
   const needsEventBackfill = eventColumn !== undefined && !(eventColumn in change);
-  if (needsEventBackfill && mostRecentEventId === undefined) {
+  const overwriteEventColumn = CONDITIONAL_CHANGE_OVERWRITE_EVENT_COLUMN[effect.table];
+  const needsEventOverwrite =
+    overwriteEventColumn !== undefined && !(overwriteEventColumn in change);
+  if ((needsEventBackfill || needsEventOverwrite) && mostRecentEventId === undefined) {
     throw new Error(
       `"${effect.table}" needs the plan's event id, but no event_origin effect ran before it.`,
     );
@@ -388,6 +429,7 @@ async function applyConditionalStateChange(
     ...Object.keys(change),
     ...Object.keys(key),
     ...(needsEventBackfill ? [eventColumn] : []),
+    ...(needsEventOverwrite ? [overwriteEventColumn] : []),
   ]) {
     assertSafeIdentifier(column);
   }
@@ -401,6 +443,10 @@ async function applyConditionalStateChange(
     parameters.push(mostRecentEventId);
     setClauses.push(`${eventColumn} = COALESCE(${eventColumn}, $${parameters.length})`);
   }
+  if (needsEventOverwrite) {
+    parameters.push(mostRecentEventId);
+    setClauses.push(`${overwriteEventColumn} = $${parameters.length}`);
+  }
   if (effect.expectedRevision !== undefined) {
     setClauses.push("revision = revision + 1");
   }
@@ -413,11 +459,18 @@ async function applyConditionalStateChange(
     parameters.push(effect.expectedRevision);
     whereClauses.push(`revision = $${parameters.length}`);
   }
+  // A Tell may spend most of the draft's remaining lifetime selecting and
+  // repairing dialogue. Re-check expiry with database time in the final
+  // guarded write so a draft cannot become confirmed after its ten-minute
+  // boundary merely because it was still valid during the earlier read.
+  if (effect.table === "claim_drafts" && change["status"] === "confirmed") {
+    whereClauses.push("expires_at > now()");
+  }
 
-  const rows = await transaction.query<{ readonly id: unknown }>(
+  const rows = await transaction.query<{ readonly matched: number }>(
     `UPDATE public.${effect.table} SET ${setClauses.join(", ")}
       WHERE town_id = $1 AND ${whereClauses.join(" AND ")}
-      RETURNING id`,
+      RETURNING 1 AS matched`,
     parameters,
   );
   if (rows.length === 0) throw new RevisionConflictError(effect.table);
@@ -449,6 +502,10 @@ export async function commitEffectPlan(
   for (const effect of params.effects) {
     if (isEventOriginEffect(effect)) {
       const sequenceNo = firstSequenceNo + eventIds.length;
+      const effectMetadata =
+        effect.metadata === undefined
+          ? undefined
+          : resolveRecord(effect.metadata, idByRef);
       const eventId = await appendPlayerEvent({
         transaction: params.transaction,
         townId: params.townId,
@@ -458,10 +515,18 @@ export async function commitEffectPlan(
         playerActionId: params.actionId,
         effectIndex: effect.effectIndex,
         idempotencyKey: params.idempotencyKey,
-        ...(params.eventMetadata ? { metadata: params.eventMetadata } : {}),
+        ...(params.eventMetadata || effectMetadata
+          ? {
+              metadata: {
+                ...params.eventMetadata,
+                ...effectMetadata,
+              },
+            }
+          : {}),
       });
       eventIds.push(eventId);
       mostRecentEventId = eventId;
+      if (effect.ref !== undefined) idByRef.set(effect.ref, eventId);
       continue;
     }
     if (isInsertEffect(effect)) {

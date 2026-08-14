@@ -14,6 +14,33 @@ export interface ActivePromiseRow {
   readonly itemId: string | null;
 }
 
+export interface BrokenSecretPromiseCandidate {
+  readonly promiseId: string;
+  readonly npcId: string;
+}
+
+/**
+ * Active secrecy promises this structured transmission would break. Telling
+ * the requesting NPC is explicitly allowed, so that requester is excluded in
+ * SQL and only genuinely terminal transitions are returned.
+ */
+export async function readSecretPromisesBrokenByTell(
+  pool: Pool,
+  townId: string,
+  playerId: string,
+  protectedClaimId: string,
+  recipientNpcId: string,
+): Promise<readonly BrokenSecretPromiseCandidate[]> {
+  const result = await pool.query<{ readonly id: string; readonly npc_id: string }>(
+    `SELECT id, npc_id FROM public.promises
+      WHERE town_id = $1 AND player_id = $2 AND kind = 'keep_secret'
+        AND protected_claim_id = $3 AND status = 'active' AND npc_id <> $4
+      ORDER BY id`,
+    [townId, playerId, protectedClaimId, recipientNpcId],
+  );
+  return result.rows.map((row) => ({ promiseId: row.id, npcId: row.npc_id }));
+}
+
 export interface AskPromiseOfferReadState {
   readonly activePromises: readonly ActivePromiseRow[];
   readonly oldChapelKey:

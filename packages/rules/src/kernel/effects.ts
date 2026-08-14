@@ -19,6 +19,15 @@
  * generated id (for example an originating claim transmission's
  * `root_transmission_id`) — this package only defines the shape, not the
  * resolver.
+ *
+ * {@link EventOriginEffect.ref} extends the same handle mechanism to the
+ * event a plan originates: a `tell` plan's guarded update to an existing
+ * `npc_beliefs` row must overwrite `updated_event_id` with this plan's own
+ * event id, and no id exists for that event until `commitEffectPlan` creates
+ * it (unlike an insert's id, which the caller could pre-allocate). Naming the
+ * `event_origin` effect lets a later `conditional_state_change`'s `change`
+ * reference `{ $planRef: ref }` the identical way an insert's `ref` is
+ * referenced.
  */
 
 import type { EventType } from "@the-town-remembers/database/domains";
@@ -77,6 +86,24 @@ export interface EventOriginEffect {
   readonly kind: "event_origin";
   readonly eventType: EventType;
   readonly effectIndex: number;
+  /** Plan-local handle a later effect's `row`/`change` may reference via `{ $planRef: ref }` to name this event's just-created id. */
+  readonly ref?: string;
+  /**
+   * Per-event causal metadata. Values may name an earlier plan-local insert;
+   * this is required when a plan creates a claim before originating the event
+   * that refers to it, and when one player action originates more than one
+   * semantically distinct event (for example `tell` plus `promise_broken`).
+   */
+  readonly metadata?: Readonly<{
+    actorId?: string | null | PlanRef;
+    targetActorId?: string | null | PlanRef;
+    subjectEntityId?: string | null | PlanRef;
+    locationEntityId?: string | null | PlanRef;
+    claimId?: string | null | PlanRef;
+    clueId?: string | null | PlanRef;
+    promiseId?: string | null | PlanRef;
+    payload?: Readonly<Record<string, unknown>>;
+  }>;
 }
 
 export type EffectPlanEntry<

@@ -13,6 +13,7 @@ import process from "node:process";
 import {
   createProductionAskActionHandler,
   createProductionNormalizeClaimActionHandler,
+  createProductionTellActionHandler,
   createRuntimePool,
   filterAllowlistedHeaders,
 } from "@the-town-remembers/game-server";
@@ -106,6 +107,11 @@ export async function main(): Promise<void> {
             now,
           }),
           normalizeClaimActionHandler: createProductionNormalizeClaimActionHandler({
+            pool,
+            modelConfig: loadModelConfig(process.env),
+            now,
+          }),
+          tellActionHandler: createProductionTellActionHandler({
             pool,
             modelConfig: loadModelConfig(process.env),
             now,

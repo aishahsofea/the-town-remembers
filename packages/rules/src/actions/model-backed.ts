@@ -85,26 +85,50 @@ export function planNormalizeClaim(inputs: NormalizeClaimInputs): ActionPlanResu
 
 // --- tell -------------------------------------------------------------------------------------
 
+/**
+ * `tell`'s own deterministic gate (`D4-K`'s `denied_draft_state`, though this
+ * planner never actually reaches dialogue selection for these four cases —
+ * see the class comment). All four checks are read at `loadInputs` time,
+ * before any model call, matching docs/005: "the visit must still be active
+ * and co-located with that NPC; changing target or editing the text requires
+ * a new draft".
+ */
 export interface TellInputs extends DisclosureBundleInputs {
   readonly claimDraftExists: boolean;
   readonly claimDraftExpired: boolean;
   readonly claimDraftAlreadyConfirmed: boolean;
+  readonly claimDraftWrongNpc: boolean;
 }
 
+/**
+ * Authority only — `event_origin`, the claim upsert, transmission, episode,
+ * evidence, and belief recompute all depend on nothing the model selects, but
+ * they live in `applyTellSelection` (`rules/actions/selection.ts`) rather
+ * than here, matching every other model-backed planner's split (`planAsk`'s
+ * own `effects: []`): the *rich* effects are built once, alongside the
+ * `npc_interactions` row they share a conversational turn with, not
+ * duplicated across two pure stages.
+ *
+ * A stale, expired, changed-NPC, or already-confirmed draft is a plain
+ * `deniedResult` with no dialogue call at all — docs/005 states plainly that
+ * such a draft "creates no claim transmission" and, by the same reasoning,
+ * no `npc_interactions` row either, so there is nothing for a model to react
+ * to. `D4-K`'s `denied_draft_state` gate result is therefore not produced by
+ * this corpus's `tell`: it stays reserved for a future caller that routes a
+ * draft-state failure through dialogue instead.
+ */
 export function planTell(inputs: TellInputs): ActionPlanResult {
   const trace = makeTrace("actions.tell");
   if (!inputs.claimDraftExists) return deniedResult("CLAIM_DRAFT_NOT_FOUND", trace, {});
   if (inputs.claimDraftExpired) return deniedResult("CLAIM_DRAFT_EXPIRED", trace, {});
+  if (inputs.claimDraftWrongNpc) return deniedResult("CLAIM_DRAFT_WRONG_NPC", trace, {});
   if (inputs.claimDraftAlreadyConfirmed) {
     return deniedResult("CLAIM_DRAFT_ALREADY_CONFIRMED", trace, {});
   }
 
-  const effects: EffectPlanEntry[] = [
-    { kind: "event_origin", eventType: "claim_transmitted", effectIndex: 0 },
-  ];
   return {
     kind: "external_selection_required",
-    effects,
+    effects: [],
     trustedContext: buildBundle(inputs),
     trace,
   };

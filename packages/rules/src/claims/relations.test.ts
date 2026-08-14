@@ -3,11 +3,50 @@ import { describe, expect, it } from "vitest";
 import { CLAIM_RELATIONS } from "@the-town-remembers/content";
 
 import {
+  deterministicClaimRelation,
   hasMirroredRelation,
   mirrorWeightFor,
   planContradictionMirrorBackfill,
   type ClaimRelationRow,
 } from "./relations.js";
+
+describe("deterministicClaimRelation", () => {
+  const claim = {
+    subjectEntityId: "bell",
+    predicate: "is_at",
+    objectEntityId: "chapel",
+    polarity: "positive",
+    contextKey: "current",
+  };
+
+  it("relates exact positive/negative opposites", () => {
+    expect(deterministicClaimRelation(claim, { ...claim, polarity: "negative" })).toBe(
+      "contradicts",
+    );
+  });
+
+  it("relates mutually exclusive positive locations in the same context", () => {
+    expect(
+      deterministicClaimRelation(claim, { ...claim, objectEntityId: "garden" }),
+    ).toBe("contradicts");
+  });
+
+  it("does not generalize location exclusivity across contexts or negative claims", () => {
+    expect(
+      deterministicClaimRelation(claim, {
+        ...claim,
+        objectEntityId: "garden",
+        contextKey: "festival_night",
+      }),
+    ).toBeUndefined();
+    expect(
+      deterministicClaimRelation(
+        { ...claim, polarity: "negative" },
+        { ...claim, objectEntityId: "garden" },
+      ),
+    ).toBeUndefined();
+  });
+});
 
 const AUTHORED_RELATIONS: readonly ClaimRelationRow[] = CLAIM_RELATIONS.map(
   (relation) => ({

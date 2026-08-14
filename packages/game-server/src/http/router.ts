@@ -52,7 +52,14 @@ import {
   type NormalizeClaimLoadedInputs,
   type NormalizeClaimSelection,
 } from "../application/actions/inputs/normalize-claim.js";
-import type { AskDialogueSelection } from "@the-town-remembers/rules";
+import {
+  resolveTellTarget,
+  type TellLoadedInputs,
+} from "../application/actions/inputs/tell.js";
+import type {
+  AskDialogueSelection,
+  TellDialogueSelection,
+} from "@the-town-remembers/rules";
 import { inspectActionHandler } from "../application/actions/inputs/inspect.js";
 import { leaveActionHandler } from "../application/actions/inputs/leave.js";
 import { startVisitActionHandler } from "../application/actions/inputs/start-visit.js";
@@ -131,6 +138,12 @@ export interface RouterConfig {
     "normalize_claim",
     NormalizeClaimLoadedInputs,
     NormalizeClaimSelection
+  >;
+  /** Present only when tell is enabled; tests may inject a no-network handler. */
+  readonly tellActionHandler?: ModelActionHandler<
+    "tell",
+    TellLoadedInputs,
+    TellDialogueSelection
   >;
 }
 
@@ -714,6 +727,29 @@ async function handleSubmitAction(context: RouteHandlerContext): Promise<HttpRes
       targetActorId: await resolveNormalizeClaimTarget(pool, townId, request.npcId),
       targetEntityId: null,
       requestPayload: { npcId: request.npcId, text: request.text },
+      handler,
+      now: context.config.now,
+      requestId: context.requestId,
+    });
+    response = respondToExecuteOutcome(townId, outcome);
+  } else if (request.kind === "tell") {
+    const handler = context.config.tellActionHandler;
+    if (handler === undefined) throw internalError();
+    const outcome = await executeModelAction({
+      pool,
+      deadline,
+      townId,
+      playerId,
+      idempotencyKey,
+      actionKind: "tell",
+      targetActorId: await resolveTellTarget(
+        pool,
+        townId,
+        request.claimDraftId,
+        playerId,
+      ),
+      targetEntityId: null,
+      requestPayload: { claimDraftId: request.claimDraftId },
       handler,
       now: context.config.now,
       requestId: context.requestId,

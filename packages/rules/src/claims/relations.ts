@@ -19,6 +19,53 @@ export interface ClaimRelationRow {
   readonly relationKind: ClaimRelationKind;
 }
 
+/** The identity fields needed to derive the two non-authored v1 contradictions. */
+export interface DeterministicRelationClaim {
+  readonly subjectEntityId: string;
+  readonly predicate: string;
+  readonly objectEntityId: string;
+  readonly polarity: string;
+  readonly contextKey: string;
+}
+
+/**
+ * Derives the schema contract's automatic contradictions: exact polarity
+ * opposites, plus mutually-exclusive positive locations for the same subject
+ * and context. Authored semantic relations remain seed data and are not
+ * generalized here.
+ */
+export function deterministicClaimRelation(
+  left: DeterministicRelationClaim,
+  right: DeterministicRelationClaim,
+): ClaimRelationKind | undefined {
+  if (
+    left.subjectEntityId !== right.subjectEntityId ||
+    left.predicate !== right.predicate ||
+    left.contextKey !== right.contextKey
+  ) {
+    return undefined;
+  }
+
+  if (
+    left.objectEntityId === right.objectEntityId &&
+    left.polarity !== right.polarity
+  ) {
+    return "contradicts";
+  }
+
+  const isExclusiveLocation = left.predicate === "was_at" || left.predicate === "is_at";
+  if (
+    isExclusiveLocation &&
+    left.polarity === "positive" &&
+    right.polarity === "positive" &&
+    left.objectEntityId !== right.objectEntityId
+  ) {
+    return "contradicts";
+  }
+
+  return undefined;
+}
+
 /** Whether the mirror `(b, a, kind)` row already exists for a `(a, b, kind)` row. */
 export function hasMirroredRelation(
   relations: readonly ClaimRelationRow[],
