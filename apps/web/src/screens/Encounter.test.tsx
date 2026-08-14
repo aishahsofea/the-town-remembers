@@ -23,7 +23,12 @@ function encounterView(
 }
 
 function playerViewBody(
-  overrides: { encounters?: unknown[]; activePromises?: unknown[] } = {},
+  overrides: {
+    encounters?: unknown[];
+    activePromises?: unknown[];
+    inventory?: unknown[];
+    discoveredClues?: unknown[];
+  } = {},
 ): unknown {
   return {
     viewVersion: "Zm9vYmFyYmF6cXV4Zm9vYmFyYmF6cXV4Zm9vYmFyYmE",
@@ -46,8 +51,8 @@ function playerViewBody(
       inspectables: [],
     },
     encounters: overrides.encounters ?? [encounterView()],
-    inventory: [],
-    discoveredClues: [],
+    inventory: overrides.inventory ?? [],
+    discoveredClues: overrides.discoveredClues ?? [],
     activePromises: overrides.activePromises ?? [],
     caseBoard: [],
     caseBoardContradictions: [],
@@ -401,5 +406,359 @@ describe("Encounter — Tell interpretation (P4-19)", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await screen.findByText("Noted.");
     expect(postedKinds).toEqual(["normalize_claim", "tell"]);
+  });
+});
+
+describe("Encounter — Show picker (P4-20 acceptance 1)", () => {
+  it("lists discovered clues and held items, and confirms viewing without a promise warning", async () => {
+    let postedBody: { kind: string; evidenceRef?: unknown } | undefined;
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : (input as Request).url;
+      if (url.includes("/player-view")) {
+        return Promise.resolve(
+          jsonResponse(
+            playerViewBody({
+              encounters: [encounterView({ availableActionKinds: ["show"] })],
+              discoveredClues: [
+                {
+                  clueId: "clue-1",
+                  title: "Muddy cart ruts",
+                  description: "Deep ruts near the gate.",
+                  firstContributor: { id: "p1", actorType: "player", displayName: "Aishah Sofea" },
+                  contributors: [{ id: "p1", actorType: "player", displayName: "Aishah Sofea" }],
+                },
+              ],
+              inventory: [
+                { itemId: "item-1", displayName: "Rusty key", description: "An old key." },
+              ],
+            }),
+          ),
+        );
+      }
+      if (init?.method === "POST" && url.includes("/actions")) {
+        postedBody = JSON.parse(init.body as string) as { kind: string; evidenceRef?: unknown };
+        return Promise.resolve(
+          jsonResponse({
+            actionId: "action-show",
+            kind: "show",
+            status: "completed",
+            outcome: "applied",
+            result: {
+              evidenceRef: { kind: "clue", clueId: "clue-1" },
+              structuredEffect: "applied",
+              appliedClueIds: ["clue-1"],
+              dialogue: { npcId: NPC.id, text: "I see.", responseMode: "selected" },
+              promiseOffers: [],
+            },
+          }),
+        );
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    mountEncounter();
+    fireEvent.click(await screen.findByRole("button", { name: "Show Nessa Reed" }));
+    await screen.findByText("Muddy cart ruts");
+    expect(screen.getByRole("button", { name: "Rusty key" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Muddy cart ruts" }));
+    const dialog = await screen.findByRole("dialog", { name: "Show this?" });
+    expect(dialog.textContent).not.toContain("promise");
+
+    fireEvent.click(screen.getByRole("button", { name: "Show Nessa Reed" }));
+    await screen.findByText("I see.");
+    expect(postedBody).toEqual({
+      kind: "show",
+      npcId: NPC.id,
+      evidenceRef: { kind: "clue", clueId: "clue-1" },
+    });
+  });
+
+  it("shows nothing-to-show when there are no clues or items", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = typeof input === "string" ? input : (input as Request).url;
+      if (url.includes("/player-view")) {
+        return Promise.resolve(
+          jsonResponse(
+            playerViewBody({ encounters: [encounterView({ availableActionKinds: ["show"] })] }),
+          ),
+        );
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    mountEncounter();
+    fireEvent.click(await screen.findByRole("button", { name: "Show Nessa Reed" }));
+    await screen.findByText("You have nothing to show.");
+  });
+});
+
+describe("Encounter — Give picker and custody-change confirmation (P4-20 acceptance 1)", () => {
+  it("lists held items only and warns a promise may be affected before transferring custody", async () => {
+    let postedBody: { kind: string; itemId?: string } | undefined;
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : (input as Request).url;
+      if (url.includes("/player-view")) {
+        return Promise.resolve(
+          jsonResponse(
+            playerViewBody({
+              encounters: [encounterView({ availableActionKinds: ["give"] })],
+              inventory: [
+                { itemId: "item-1", displayName: "Chapel key", description: "A brass key." },
+              ],
+            }),
+          ),
+        );
+      }
+      if (init?.method === "POST" && url.includes("/actions")) {
+        postedBody = JSON.parse(init.body as string) as { kind: string; itemId?: string };
+        return Promise.resolve(
+          jsonResponse({
+            actionId: "action-give",
+            kind: "give",
+            status: "completed",
+            outcome: "applied",
+            result: {
+              itemId: "item-1",
+              custody: "transferred",
+              dialogue: { npcId: NPC.id, text: "Thank you.", responseMode: "selected" },
+              promiseOffers: [],
+            },
+          }),
+        );
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    mountEncounter();
+    fireEvent.click(await screen.findByRole("button", { name: "Give Nessa Reed" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Chapel key" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Give this?" });
+    expect(dialog.textContent).toContain("This may affect a promise.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Give Nessa Reed" }));
+    await screen.findByText("Thank you.");
+    expect(postedBody).toEqual({ kind: "give", npcId: NPC.id, itemId: "item-1" });
+  });
+
+  it("Cancel from the confirm step returns to picking without submitting", async () => {
+    let posts = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : (input as Request).url;
+      if (url.includes("/player-view")) {
+        return Promise.resolve(
+          jsonResponse(
+            playerViewBody({
+              encounters: [encounterView({ availableActionKinds: ["give"] })],
+              inventory: [
+                { itemId: "item-1", displayName: "Chapel key", description: "A brass key." },
+              ],
+            }),
+          ),
+        );
+      }
+      if (init?.method === "POST" && url.includes("/actions")) {
+        posts += 1;
+        return Promise.resolve(jsonResponse({}));
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    mountEncounter();
+    fireEvent.click(await screen.findByRole("button", { name: "Give Nessa Reed" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Chapel key" }));
+    await screen.findByRole("dialog", { name: "Give this?" });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog", { name: "Give this?" })).toBeNull();
+    await screen.findByRole("button", { name: "Chapel key" });
+    expect(posts).toBe(0);
+  });
+});
+
+describe("Encounter — promise offers (P4-20 acceptance 2)", () => {
+  function askWithOffer() {
+    return {
+      actionId: "action-ask",
+      kind: "ask",
+      status: "completed",
+      outcome: "applied",
+      result: {
+        dialogue: { npcId: NPC.id, text: "Take it, if you promise to return it.", responseMode: "selected" },
+        promiseOffers: [
+          {
+            offerId: "offer-1",
+            sourceActionId: "action-ask",
+            ordinal: 0,
+            npcId: NPC.id,
+            kind: "return_item",
+            termsVersion: "v1",
+            summary: "Promise to return the chapel key.",
+            subject: { kind: "item", itemId: "item-1", displayName: "Chapel key" },
+          },
+        ],
+      },
+    };
+  }
+
+  it("renders an offer below the response and accepts it by opaque ID", async () => {
+    const postedKinds: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : (input as Request).url;
+      if (url.includes("/player-view")) {
+        return Promise.resolve(jsonResponse(playerViewBody()));
+      }
+      if (init?.method === "POST" && url.includes("/actions")) {
+        const body = JSON.parse(init.body as string) as { kind: string; offerId?: string };
+        postedKinds.push(body.kind);
+        if (body.kind === "ask") return Promise.resolve(jsonResponse(askWithOffer()));
+        return Promise.resolve(
+          jsonResponse({
+            actionId: "action-accept",
+            kind: "accept_promise",
+            status: "completed",
+            outcome: "applied",
+            result: {
+              promise: {
+                promiseId: "promise-1",
+                npc: NPC,
+                kind: "return_item",
+                summary: "Promise to return the chapel key.",
+                subject: { kind: "item", itemId: "item-1", displayName: "Chapel key" },
+                acceptedAt: new Date().toISOString(),
+              },
+              itemTransfer: null,
+            },
+          }),
+        );
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    mountEncounter();
+    fireEvent.click(await screen.findByRole("button", { name: "Ask Nessa Reed" }));
+    const textarea = await screen.findByLabelText("Ask Nessa Reed");
+    fireEvent.change(textarea, { target: { value: "Can I borrow this?" } });
+    fireEvent.keyDown(textarea, { key: "Enter", ctrlKey: true });
+
+    await screen.findByText("Promise to return the chapel key.");
+    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+
+    await screen.findByText("Promise to return the chapel key.", { selector: "article p" });
+    expect(postedKinds).toEqual(["ask", "accept_promise"]);
+  });
+
+  it("shows a stale-offer denial without reconstructing the offer", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : (input as Request).url;
+      if (url.includes("/player-view")) {
+        return Promise.resolve(jsonResponse(playerViewBody()));
+      }
+      if (init?.method === "POST" && url.includes("/actions")) {
+        const body = JSON.parse(init.body as string) as { kind: string };
+        if (body.kind === "ask") return Promise.resolve(jsonResponse(askWithOffer()));
+        return Promise.resolve(
+          jsonResponse({
+            actionId: "action-accept",
+            kind: "accept_promise",
+            status: "completed",
+            outcome: "denied",
+            result: {
+              type: "denied",
+              reasonCode: "PROMISE_OFFER_INVALID",
+              message: "That offer is no longer available.",
+            },
+          }),
+        );
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    mountEncounter();
+    fireEvent.click(await screen.findByRole("button", { name: "Ask Nessa Reed" }));
+    const textarea = await screen.findByLabelText("Ask Nessa Reed");
+    fireEvent.change(textarea, { target: { value: "Can I borrow this?" } });
+    fireEvent.keyDown(textarea, { key: "Enter", ctrlKey: true });
+
+    await screen.findByText("Promise to return the chapel key.");
+    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+
+    await screen.findByText("That offer is no longer available.");
+  });
+});
+
+describe("Encounter — simultaneous-item conflict (P4-20 acceptance 3)", () => {
+  it("renders a Give denial from a server race without any client-side custody inference", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : (input as Request).url;
+      if (url.includes("/player-view")) {
+        return Promise.resolve(
+          jsonResponse(
+            playerViewBody({
+              encounters: [encounterView({ availableActionKinds: ["give"] })],
+              inventory: [
+                { itemId: "item-1", displayName: "Chapel key", description: "A brass key." },
+              ],
+            }),
+          ),
+        );
+      }
+      if (init?.method === "POST" && url.includes("/actions")) {
+        return Promise.resolve(
+          jsonResponse({
+            actionId: "action-give",
+            kind: "give",
+            status: "completed",
+            outcome: "denied",
+            result: {
+              type: "denied",
+              reasonCode: "ITEM_NOT_HELD",
+              message: "You no longer have that item.",
+            },
+          }),
+        );
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    mountEncounter();
+    fireEvent.click(await screen.findByRole("button", { name: "Give Nessa Reed" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Chapel key" }));
+    await screen.findByRole("dialog", { name: "Give this?" });
+    fireEvent.click(screen.getByRole("button", { name: "Give Nessa Reed" }));
+
+    await screen.findByText("You no longer have that item.");
+    expect(screen.queryByRole("dialog", { name: "Give this?" })).toBeNull();
+  });
+});
+
+describe("Encounter — narrow viewport (P4-20 acceptance 4)", () => {
+  it("keeps Show and Give controls reachable at a narrow window width", async () => {
+    const originalWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 320 });
+    window.dispatchEvent(new Event("resize"));
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = typeof input === "string" ? input : (input as Request).url;
+      if (url.includes("/player-view")) {
+        return Promise.resolve(
+          jsonResponse(
+            playerViewBody({
+              encounters: [
+                encounterView({ availableActionKinds: ["ask", "show", "give"] }),
+              ],
+            }),
+          ),
+        );
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    mountEncounter();
+    expect(await screen.findByRole("button", { name: "Show Nessa Reed" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Give Nessa Reed" })).toBeTruthy();
+
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: originalWidth });
   });
 });

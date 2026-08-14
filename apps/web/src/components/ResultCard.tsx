@@ -131,6 +131,42 @@ export function ResultCard({ result }: ResultCardProps) {
     );
   }
 
+  if (result.kind === "show") {
+    const show = result.result as ActionResultByKind["show"];
+    return (
+      <div className="result-card">
+        <p>
+          {show.structuredEffect === "applied"
+            ? "The town takes note of what you showed."
+            : "Nothing changed."}
+        </p>
+        <NpcDialogueResult dialogue={show.dialogue} />
+      </div>
+    );
+  }
+
+  if (result.kind === "give") {
+    const give = result.result as ActionResultByKind["give"];
+    return (
+      <div className="result-card">
+        <p>{give.custody === "transferred" ? "It changes hands." : "It stays with you."}</p>
+        <NpcDialogueResult dialogue={give.dialogue} />
+      </div>
+    );
+  }
+
+  if (result.kind === "accept_promise") {
+    const accepted = result.result as ActionResultByKind["accept_promise"];
+    return (
+      <div className="result-card">
+        <article aria-label="Promise accepted">
+          <p>{accepted.promise.summary}</p>
+        </article>
+        {accepted.dialogue ? <NpcDialogueResult dialogue={accepted.dialogue} /> : null}
+      </div>
+    );
+  }
+
   return null;
 }
 
