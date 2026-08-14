@@ -404,6 +404,7 @@ async function handlePlayerView(context: RouteHandlerContext): Promise<HttpRespo
   const draft = await buildPlayerView(context.config.pool, {
     townId,
     playerId: outcome.session.playerId,
+    enableNpcMutations: context.config.enableNpcMutations ?? false,
   });
   const viewVersion = computePlayerViewVersion(draft);
   const ifNoneMatch = readHeader(headers, "if-none-match");

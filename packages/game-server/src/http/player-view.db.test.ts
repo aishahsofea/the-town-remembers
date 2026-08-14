@@ -4,7 +4,9 @@
 
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 
+import { PROMISE_TERMS } from "@the-town-remembers/content";
 import { PlayerViewSchema } from "@the-town-remembers/http-contracts";
+import { readInspectedInteraction } from "../persistence/inspection.js";
 import type { SecurityConfig } from "@the-town-remembers/runtime-config/security";
 import {
   createDisposableDatabase,
@@ -102,6 +104,35 @@ describe.skipIf(!shouldRunDatabaseTests())("player-view", () => {
   let festivalSquareId: string;
   let lanternInnId: string;
   let oldChapelId: string;
+  let corinNpcId: string;
+  let maraNpcId: string;
+  let nessaNpcId: string;
+  let larkDamagedBellClaimId: string;
+
+  /** Bumps `last_event_sequence` and inserts a minimal `world_events` row, returning its id. */
+  async function insertWorldEvent(eventType: string): Promise<string> {
+    const bumped = await handle!.pool.query<{ last_event_sequence: number }>(
+      `UPDATE public.towns SET last_event_sequence = last_event_sequence + 1, updated_at = $2
+        WHERE id = $1 RETURNING last_event_sequence`,
+      [townId, new Date()],
+    );
+    const eventId = randomUUID();
+    await handle!.pool.query(
+      `INSERT INTO public.world_events
+         (town_id, id, sequence_no, event_type, ambient_eligible, occurred_at, origin_kind,
+          effect_index, effect_key, payload, created_at)
+       VALUES ($1, $2, $3, $4, false, $5, 'system_seed', 0, $6, '{}', $5)`,
+      [
+        townId,
+        eventId,
+        bumped.rows[0]!.last_event_sequence,
+        eventType,
+        new Date(),
+        `test:${eventType}:${eventId}`,
+      ],
+    );
+    return eventId;
+  }
 
   beforeAll(async () => {
     handle = await createDisposableDatabase();
@@ -140,6 +171,31 @@ describe.skipIf(!shouldRunDatabaseTests())("player-view", () => {
     festivalSquareId = byKey.get("festival_square")!;
     lanternInnId = byKey.get("lantern_inn")!;
     oldChapelId = byKey.get("old_chapel")!;
+
+    const npcs = await handle.pool.query<{ id: string; character_key: string }>(
+      `SELECT n.id, ch.entity_key AS character_key
+         FROM public.npcs n
+         JOIN public.story_entities ch
+           ON ch.town_id = n.town_id AND ch.id = n.character_entity_id
+        WHERE n.town_id = $1`,
+      [townId],
+    );
+    const npcIdByKey = new Map(npcs.rows.map((row) => [row.character_key, row.id]));
+    corinNpcId = npcIdByKey.get("corin_hale")!;
+    maraNpcId = npcIdByKey.get("mara_venn")!;
+    nessaNpcId = npcIdByKey.get("nessa_reed")!;
+
+    const claim = await handle.pool.query<{ id: string }>(
+      `SELECT c.id FROM public.claims c
+         JOIN public.story_entities subj
+           ON subj.town_id = c.town_id AND subj.id = c.subject_entity_id
+         JOIN public.story_entities obj
+           ON obj.town_id = c.town_id AND obj.id = c.object_entity_id
+        WHERE c.town_id = $1 AND subj.entity_key = 'lark_venn'
+          AND obj.entity_key = 'festival_bell' AND c.predicate = 'damaged'`,
+      [townId],
+    );
+    larkDamagedBellClaimId = claim.rows[0]!.id;
   }, 180_000);
 
   afterAll(async () => {
@@ -574,6 +630,328 @@ describe.skipIf(!shouldRunDatabaseTests())("player-view", () => {
       config,
     );
     expect(response.status).toBe(410);
+  }, 30_000);
+
+  it("gates availableActionKinds behind TTR_ENABLE_NPC_MUTATIONS, regardless of a very low stance", async () => {
+    const player = await joinedPlayer("Gate Checker");
+    await db().pool.query(
+      `UPDATE public.npc_player_relationships SET trust_score = -80, suspicion_score = 80
+        WHERE town_id = $1 AND npc_id = $2 AND player_id = $3`,
+      [townId, corinNpcId, player.playerId],
+    );
+
+    const disabled = await routeRequest(
+      playerViewRequest(townId, player.cookie),
+      "req_1",
+      config,
+    );
+    const disabledView = PlayerViewSchema.parse(parseBody(disabled.response.body));
+    const disabledEncounter = disabledView.encounters.find((e) => e.npc.id === corinNpcId);
+    expect(disabledEncounter?.availableActionKinds).toStrictEqual([]);
+
+    const mutationsConfig: RouterConfig = { ...config, enableNpcMutations: true };
+    const enabled = await routeRequest(
+      playerViewRequest(townId, player.cookie),
+      "req_2",
+      mutationsConfig,
+    );
+    const enabledView = PlayerViewSchema.parse(parseBody(enabled.response.body));
+    const enabledEncounter = enabledView.encounters.find((e) => e.npc.id === corinNpcId);
+    expect(enabledEncounter?.availableActionKinds).toStrictEqual([
+      "ask",
+      "normalize_claim",
+      "tell",
+      "show",
+      "give",
+      "accept_promise",
+    ]);
+  }, 30_000);
+
+  it("projects an active promise directly written to public.promises", async () => {
+    const player = await joinedPlayer("Promise Holder");
+    const eventId = await insertWorldEvent("promise_accepted");
+    const promiseId = randomUUID();
+    await db().pool.query(
+      `INSERT INTO public.promises
+         (town_id, id, npc_id, player_id, kind, protected_claim_id, item_id, status,
+          accepted_event_id, terms_version, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, 'keep_secret', $5, NULL, 'active', $6, $7, $8, $8)`,
+      [
+        townId,
+        promiseId,
+        maraNpcId,
+        player.playerId,
+        larkDamagedBellClaimId,
+        eventId,
+        PROMISE_TERMS.keepLarkAccidentSecret.termsVersion,
+        new Date(),
+      ],
+    );
+
+    const { response } = await routeRequest(
+      playerViewRequest(townId, player.cookie),
+      "req_1",
+      config,
+    );
+    const view = PlayerViewSchema.parse(parseBody(response.body));
+
+    expect(view.activePromises).toHaveLength(1);
+    expect(view.activePromises[0]).toMatchObject({
+      promiseId,
+      npc: { id: maraNpcId, displayName: "Mara Venn" },
+      kind: "keep_secret",
+      summary: PROMISE_TERMS.keepLarkAccidentSecret.summary,
+      subject: { kind: "claim", claimId: larkDamagedBellClaimId },
+    });
+  }, 30_000);
+
+  it("classifies a multi-hop board entry as hearsay with its alleged source and a root-first provenance path", async () => {
+    const player = await joinedPlayer("Board Watcher");
+
+    const eventA = await insertWorldEvent("claim_transmitted");
+    const transmissionA = randomUUID();
+    await db().pool.query(
+      `INSERT INTO public.claim_transmissions
+         (town_id, id, claim_id, speaker_actor_id, recipient_actor_id, recipient_actor_type,
+          parent_transmission_id, parent_is_eligible, root_transmission_id, source_kind,
+          hop_count, event_id, ordinal, created_at)
+       VALUES ($1, $2, $3, $4, $5, 'npc', NULL, NULL, $2, 'original_assertion', 0, $6, 0, $7)`,
+      [
+        townId,
+        transmissionA,
+        larkDamagedBellClaimId,
+        player.playerId,
+        maraNpcId,
+        eventA,
+        new Date(),
+      ],
+    );
+
+    const eventB = await insertWorldEvent("claim_transmitted");
+    const transmissionB = randomUUID();
+    await db().pool.query(
+      `INSERT INTO public.claim_transmissions
+         (town_id, id, claim_id, speaker_actor_id, recipient_actor_id, recipient_actor_type,
+          parent_transmission_id, parent_is_eligible, root_transmission_id, source_kind,
+          hop_count, event_id, ordinal, created_at)
+       VALUES ($1, $2, $3, $4, $5, 'npc', $6, true, $6, 'repeated_testimony', 1, $7, 0, $8)`,
+      [
+        townId,
+        transmissionB,
+        larkDamagedBellClaimId,
+        maraNpcId,
+        nessaNpcId,
+        transmissionA,
+        eventB,
+        new Date(),
+      ],
+    );
+
+    const eventC = await insertWorldEvent("claim_transmitted");
+    const transmissionC = randomUUID();
+    await db().pool.query(
+      `INSERT INTO public.claim_transmissions
+         (town_id, id, claim_id, speaker_actor_id, recipient_actor_id, recipient_actor_type,
+          parent_transmission_id, parent_is_eligible, root_transmission_id, source_kind,
+          hop_count, event_id, ordinal, created_at)
+       VALUES ($1, $2, $3, $4, $5, 'player', $6, true, $7, 'repeated_testimony', 2, $8, 0, $9)`,
+      [
+        townId,
+        transmissionC,
+        larkDamagedBellClaimId,
+        nessaNpcId,
+        player.playerId,
+        transmissionB,
+        transmissionA,
+        eventC,
+        new Date(),
+      ],
+    );
+
+    const entryId = randomUUID();
+    await db().pool.query(
+      `INSERT INTO public.case_board_entries
+         (town_id, id, entry_kind, contributed_by_player_id, source_event_id,
+          claim_id, transmission_id, verification_status, created_at)
+       VALUES ($1, $2, 'hearsay', $3, $4, $5, $6, 'attributed_hearsay', $7)`,
+      [
+        townId,
+        entryId,
+        player.playerId,
+        eventC,
+        larkDamagedBellClaimId,
+        transmissionC,
+        new Date(),
+      ],
+    );
+
+    const { response } = await routeRequest(
+      playerViewRequest(townId, player.cookie),
+      "req_1",
+      config,
+    );
+    const view = PlayerViewSchema.parse(parseBody(response.body));
+
+    const entry = view.caseBoard.find((candidate) => candidate.entryId === entryId);
+    expect(entry).toMatchObject({
+      entryKind: "hearsay",
+      verificationStatus: "attributed_hearsay",
+      contributedBy: { id: player.playerId, displayName: "Board Watcher" },
+      speaker: { id: nessaNpcId, actorType: "npc", displayName: "Nessa Reed" },
+    });
+    expect(entry && "allegedSource" in entry).toBe(false);
+    expect(entry && "provenancePath" in entry ? entry.provenancePath : []).toStrictEqual([
+      { id: player.playerId, actorType: "player", displayName: "Board Watcher" },
+      { id: maraNpcId, actorType: "npc", displayName: "Mara Venn" },
+      { id: nessaNpcId, actorType: "npc", displayName: "Nessa Reed" },
+    ]);
+  }, 30_000);
+
+  it("classifies a standalone alleged-hearsay entry as hearsay, carrying its alleged source with a one-hop provenance path", async () => {
+    const player = await joinedPlayer("Alleged Source Watcher");
+
+    const eventId = await insertWorldEvent("claim_transmitted");
+    const transmissionId = randomUUID();
+    await db().pool.query(
+      `INSERT INTO public.claim_transmissions
+         (town_id, id, claim_id, speaker_actor_id, recipient_actor_id, recipient_actor_type,
+          parent_transmission_id, root_transmission_id, alleged_source_actor_id,
+          source_kind, hop_count, event_id, ordinal, created_at)
+       VALUES ($1, $2, $3, $4, $5, 'player', NULL, $2, $6, 'alleged_hearsay', 1, $7, 0, $8)`,
+      [
+        townId,
+        transmissionId,
+        larkDamagedBellClaimId,
+        nessaNpcId,
+        player.playerId,
+        maraNpcId,
+        eventId,
+        new Date(),
+      ],
+    );
+
+    const entryId = randomUUID();
+    await db().pool.query(
+      `INSERT INTO public.case_board_entries
+         (town_id, id, entry_kind, contributed_by_player_id, source_event_id,
+          claim_id, transmission_id, verification_status, created_at)
+       VALUES ($1, $2, 'hearsay', $3, $4, $5, $6, 'attributed_hearsay', $7)`,
+      [townId, entryId, player.playerId, eventId, larkDamagedBellClaimId, transmissionId, new Date()],
+    );
+
+    const { response } = await routeRequest(
+      playerViewRequest(townId, player.cookie),
+      "req_1",
+      config,
+    );
+    const view = PlayerViewSchema.parse(parseBody(response.body));
+
+    const entry = view.caseBoard.find((candidate) => candidate.entryId === entryId);
+    expect(entry).toMatchObject({
+      entryKind: "hearsay",
+      verificationStatus: "attributed_hearsay",
+      speaker: { id: nessaNpcId, actorType: "npc", displayName: "Nessa Reed" },
+      allegedSource: { id: maraNpcId, actorType: "npc", displayName: "Mara Venn" },
+    });
+    expect(entry && "provenancePath" in entry ? entry.provenancePath : []).toStrictEqual([
+      { id: nessaNpcId, actorType: "npc", displayName: "Nessa Reed" },
+    ]);
+  }, 30_000);
+
+  it("reconstructs one complete accepted interaction through the inspection views, ordinal and provenance root intact", async () => {
+    const player = await joinedPlayer("Inspection Subject");
+    const visit = await db().pool.query<{ id: string }>(
+      `SELECT id FROM public.player_visits
+        WHERE town_id = $1 AND player_id = $2 AND status = 'active'`,
+      [townId, player.playerId],
+    );
+    const visitId = visit.rows[0]!.id;
+
+    const eventId = await insertWorldEvent("npc_interaction");
+    const playerActionId = randomUUID();
+    await db().pool.query(
+      `INSERT INTO public.player_actions
+         (town_id, id, player_id, visit_id, idempotency_key, action_kind, request_hash,
+          request_payload, status, outcome, response_status, response_payload,
+          created_at, updated_at, completed_at)
+       VALUES ($1, $2, $3, $4, $5, 'ask', $6, '{}', 'completed', 'applied', 200, '{}',
+               $7, $7, $7)`,
+      [
+        townId,
+        playerActionId,
+        player.playerId,
+        visitId,
+        randomUUID(),
+        createHash("sha256").update("test-request").digest(),
+        new Date(),
+      ],
+    );
+
+    const interactionId = randomUUID();
+    await db().pool.query(
+      `INSERT INTO public.npc_interactions
+         (town_id, id, player_action_id, visit_id, player_id, npc_id, event_id,
+          input_kind, npc_text, response_mode, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'ask', 'Corin answers plainly.', 'selected', $8)`,
+      [
+        townId,
+        interactionId,
+        playerActionId,
+        visitId,
+        player.playerId,
+        corinNpcId,
+        eventId,
+        new Date(),
+      ],
+    );
+
+    const transmissionId = randomUUID();
+    await db().pool.query(
+      `INSERT INTO public.claim_transmissions
+         (town_id, id, claim_id, speaker_actor_id, recipient_actor_id, recipient_actor_type,
+          parent_transmission_id, root_transmission_id, source_kind, hop_count, event_id,
+          interaction_id, ordinal, created_at)
+       VALUES ($1, $2, $3, $4, $5, 'player', NULL, $2, 'original_assertion', 0, $6, $7, 0, $8)`,
+      [
+        townId,
+        transmissionId,
+        larkDamagedBellClaimId,
+        corinNpcId,
+        player.playerId,
+        eventId,
+        interactionId,
+        new Date(),
+      ],
+    );
+
+    const reconstructed = await readInspectedInteraction(
+      db().pool,
+      townId,
+      playerActionId,
+    );
+
+    expect(reconstructed).toMatchObject({
+      interactionId,
+      npcName: "Corin Hale",
+      inputKind: "ask",
+      responseMode: "selected",
+      npcText: "Corin answers plainly.",
+    });
+    expect(reconstructed?.eventSequence).toBeGreaterThan(0);
+    expect(reconstructed?.transmissions).toStrictEqual([
+      {
+        transmissionId,
+        claimKey: expect.any(String) as string,
+        speakerName: "Corin Hale",
+        speakerType: "npc",
+        sourceKind: "original_assertion",
+        ordinal: 0,
+        hopCount: 0,
+        rootTransmissionId: transmissionId,
+      },
+    ]);
+
+    expect(await readInspectedInteraction(db().pool, townId, randomUUID())).toBeUndefined();
   }, 30_000);
 
   it("returns undefined for a town or player row that does not exist", async () => {
