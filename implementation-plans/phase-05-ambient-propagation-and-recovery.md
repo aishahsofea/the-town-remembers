@@ -1,6 +1,7 @@
 # Phase 5 — Ambient Propagation and Recovery
 
 - **Status:** Detailed implementation plan
+- **Execution companion:** [Phase 5 execution detail](phase-05-execution-detail.md)
 - **Depends on:** Phase 4 grounded NPC/memory loop and the Phase 3 leave/action/browser foundations
 - **Primary boundary:** Atomic Leave/outbox → SQS FIFO → bounded ambient choice → atomic causal effects → recoverable player transition
 - **Explicit phase constraint:** This phase owns outbox delivery, SQS, ambient execution, recovery, and time-passes UI; it does not broaden model or simulation authority

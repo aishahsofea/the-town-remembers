@@ -72,6 +72,12 @@ rather than silently changing what an existing ID means.
 | 7 | [Cloud operations and inspection](phase-07-cloud-operations-and-inspection.md) | `P7-01`–`P7-11` |
 | 8 | [Hardening and demo readiness](phase-08-hardening-and-demo-readiness.md) | `P8-01`–`P8-11` |
 
+Implementation-ready companions add repository-grounded module boundaries,
+commands, tests, and commit sequences without changing the stable task IDs:
+[Phase 3 execution detail](phase-03-execution-detail.md),
+[Phase 4 execution detail](phase-04-execution-detail.md), and
+[Phase 5 execution detail](phase-05-execution-detail.md).
+
 ## Effort estimate
 
 These are implementation-and-verification estimates, not calendar promises.
