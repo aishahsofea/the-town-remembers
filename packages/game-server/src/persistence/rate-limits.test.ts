@@ -60,4 +60,21 @@ describe("RATE_LIMIT_BUCKETS", () => {
       burst: 10,
     });
   });
+
+  it("matches D4-S's model_action rates, bursts, and scopes exactly", () => {
+    expect(RATE_LIMIT_BUCKETS.modelActionPlayer).toStrictEqual({
+      bucketKind: "model_action",
+      scopeKind: "player",
+      ratePerWindow: 6,
+      windowMs: 60_000,
+      burst: 3,
+    });
+    expect(RATE_LIMIT_BUCKETS.modelActionTown).toStrictEqual({
+      bucketKind: "model_action",
+      scopeKind: "town",
+      ratePerWindow: 30,
+      windowMs: 60_000,
+      burst: 10,
+    });
+  });
 });

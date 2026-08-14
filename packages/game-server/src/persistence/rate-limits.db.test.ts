@@ -216,4 +216,26 @@ describe.skipIf(!shouldRunDatabaseTests())("api_rate_limits token bucket", () =>
     );
     expect(exhaustedAgain.admitted).toBe(false);
   }, 30_000);
+
+  it("D4-S: admits exactly three model_action requests in a burst, rejects the fourth with a Retry-After", async () => {
+    const scopeKey = rateScopeKey("player", randomUUID(), randomUUID());
+    const now = new Date("2026-01-01T00:00:00.000Z");
+    const deadlineAt = Date.now() + 10_000;
+    const bucket = RATE_LIMIT_BUCKETS.modelActionPlayer;
+
+    for (let index = 0; index < 3; index += 1) {
+      const decision = await checkRateLimit(
+        db().pool,
+        deadlineAt,
+        bucket,
+        scopeKey,
+        now,
+      );
+      expect(decision.admitted).toBe(true);
+    }
+
+    const fourth = await checkRateLimit(db().pool, deadlineAt, bucket, scopeKey, now);
+    expect(fourth.admitted).toBe(false);
+    if (!fourth.admitted) expect(fourth.retryAfterSeconds).toBeGreaterThan(0);
+  });
 });

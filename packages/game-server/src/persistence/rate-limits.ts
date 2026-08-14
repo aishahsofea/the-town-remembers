@@ -60,7 +60,19 @@ export interface RateLimitBucketConfig {
 const MINUTE_MS = 60_000;
 const FIFTEEN_MINUTES_MS = 15 * MINUTE_MS;
 
-/** The three buckets Phase 3 checks. `model_action` stays unused until Phase 4. */
+/**
+ * The five buckets this phase checks. `D4-S`: a `model_action` admission
+ * uses **both** `modelActionPlayer` and `modelActionTown` together — the
+ * per-player bucket bounds one player's own burst, the per-town bucket
+ * bounds the town's shared model spend regardless of which player is
+ * asking. Both share `bucket_kind: "model_action"` but differ in
+ * `scope_kind` (`"player"` vs `"town"`), so they occupy distinct
+ * `api_rate_limits` rows under the table's own `(scope_kind, scope_key,
+ * bucket_kind)` primary key — no schema change needed. Charging both, in
+ * the same transaction as the action claim, before the `player_actions`
+ * row is created, is `model-executor.ts`'s job (`P4-10`); this module only
+ * defines the bucket shapes.
+ */
 export const RATE_LIMIT_BUCKETS = {
   playerView: {
     bucketKind: "player_view",
@@ -81,6 +93,20 @@ export const RATE_LIMIT_BUCKETS = {
     scopeKind: "ip_hash",
     ratePerWindow: 10,
     windowMs: FIFTEEN_MINUTES_MS,
+    burst: 10,
+  },
+  modelActionPlayer: {
+    bucketKind: "model_action",
+    scopeKind: "player",
+    ratePerWindow: 6,
+    windowMs: MINUTE_MS,
+    burst: 3,
+  },
+  modelActionTown: {
+    bucketKind: "model_action",
+    scopeKind: "town",
+    ratePerWindow: 30,
+    windowMs: MINUTE_MS,
     burst: 10,
   },
 } as const satisfies Record<string, RateLimitBucketConfig>;
