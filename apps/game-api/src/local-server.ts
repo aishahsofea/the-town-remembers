@@ -13,6 +13,7 @@ import process from "node:process";
 import {
   createProductionAskActionHandler,
   createProductionNormalizeClaimActionHandler,
+  createProductionShowActionHandler,
   createProductionTellActionHandler,
   createRuntimePool,
   filterAllowlistedHeaders,
@@ -112,6 +113,11 @@ export async function main(): Promise<void> {
             now,
           }),
           tellActionHandler: createProductionTellActionHandler({
+            pool,
+            modelConfig: loadModelConfig(process.env),
+            now,
+          }),
+          showActionHandler: createProductionShowActionHandler({
             pool,
             modelConfig: loadModelConfig(process.env),
             now,

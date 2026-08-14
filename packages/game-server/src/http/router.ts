@@ -56,8 +56,13 @@ import {
   resolveTellTarget,
   type TellLoadedInputs,
 } from "../application/actions/inputs/tell.js";
+import {
+  resolveShowTarget,
+  type ShowLoadedInputs,
+} from "../application/actions/inputs/show.js";
 import type {
   AskDialogueSelection,
+  ShowDialogueSelection,
   TellDialogueSelection,
 } from "@the-town-remembers/rules";
 import { inspectActionHandler } from "../application/actions/inputs/inspect.js";
@@ -144,6 +149,12 @@ export interface RouterConfig {
     "tell",
     TellLoadedInputs,
     TellDialogueSelection
+  >;
+  /** Present only when show is enabled; tests may inject a no-network handler. */
+  readonly showActionHandler?: ModelActionHandler<
+    "show",
+    ShowLoadedInputs,
+    ShowDialogueSelection
   >;
 }
 
@@ -750,6 +761,24 @@ async function handleSubmitAction(context: RouteHandlerContext): Promise<HttpRes
       ),
       targetEntityId: null,
       requestPayload: { claimDraftId: request.claimDraftId },
+      handler,
+      now: context.config.now,
+      requestId: context.requestId,
+    });
+    response = respondToExecuteOutcome(townId, outcome);
+  } else if (request.kind === "show") {
+    const handler = context.config.showActionHandler;
+    if (handler === undefined) throw internalError();
+    const outcome = await executeModelAction({
+      pool,
+      deadline,
+      townId,
+      playerId,
+      idempotencyKey,
+      actionKind: "show",
+      targetActorId: await resolveShowTarget(pool, townId, request.npcId),
+      targetEntityId: null,
+      requestPayload: { npcId: request.npcId, evidenceRef: request.evidenceRef },
       handler,
       now: context.config.now,
       requestId: context.requestId,

@@ -12,6 +12,7 @@ import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from "aws-lambda
 import {
   createProductionAskActionHandler,
   createProductionNormalizeClaimActionHandler,
+  createProductionShowActionHandler,
   createProductionTellActionHandler,
   createRuntimePool,
   filterAllowlistedHeaders,
@@ -48,6 +49,11 @@ function routerContext(): RouterContext {
               now,
             }),
             tellActionHandler: createProductionTellActionHandler({
+              pool,
+              modelConfig: loadModelConfig(process.env),
+              now,
+            }),
+            showActionHandler: createProductionShowActionHandler({
               pool,
               modelConfig: loadModelConfig(process.env),
               now,

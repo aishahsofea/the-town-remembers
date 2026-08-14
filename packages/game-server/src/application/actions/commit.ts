@@ -176,6 +176,18 @@ const EVENT_FOREIGN_KEY_COLUMN: Readonly<Partial<Record<string, string>>> = {
   // time either way.
   belief_evidence: "event_id",
   npc_beliefs: "updated_event_id",
+  // `player_capabilities.granted_event_id` (`P4-14`): NOT NULL, always this
+  // plan's own event — `planShow` never sees the event id at plan-build time
+  // either, matching `belief_evidence`/`npc_beliefs` above.
+  player_capabilities: "granted_event_id",
+  // `relationship_changes.event_id` (`P4-14`): NOT NULL. Safe as a blanket
+  // backfill only because every current caller (`planShow`/`planGive`/
+  // `planAcceptPromise`) originates exactly one event per relationship
+  // change it inserts; a planner that ever needs to attribute one row to an
+  // *earlier* event in the same plan (as `tell`'s promise-broken effects do
+  // for `event_id` on the *insert* itself) sets the column explicitly, which
+  // always wins over this default (`!(eventColumn in row)` below).
+  relationship_changes: "event_id",
 };
 
 /**
@@ -254,6 +266,7 @@ function tableInsertDefaults(
     };
   }
   if (table === "npc_beliefs") return { updated_at: context.now };
+  if (table === "player_capabilities") return { updated_at: context.now };
   return {};
 }
 

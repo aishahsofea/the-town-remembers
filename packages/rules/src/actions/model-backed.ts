@@ -14,7 +14,9 @@ import type {
   DisclosureCandidateInput,
 } from "../disclosure/bundle.js";
 import { beliefLabelFor } from "../beliefs/labels.js";
+import { planCorroborationAdjustment } from "../beliefs/evidence.js";
 import {
+  aggregateRelationshipUpdates,
   relationshipDeltaFor,
   type RelationshipScores,
 } from "../beliefs/relationships.js";
@@ -23,6 +25,7 @@ import type { EffectPlanEntry } from "../kernel/effects.js";
 import { sumEventContributions } from "../kernel/numeric.js";
 import { RULES_REGISTRY } from "../kernel/version.js";
 import {
+  corinCapabilityGrantEligible,
   isShowAuthorized,
   planGiveCustody,
   planShowStructuredEffect,
@@ -152,8 +155,10 @@ export interface ShowAlreadyRecordedEvidence {
 }
 
 /** The listening NPC's current belief state on one claim, prior to this Show. */
+/** `exists: false` means no `npc_beliefs` row has ever been written for this (npc, claim) pair — `score`/`revision` are then unused placeholders. */
 export interface ShowClaimBeliefState {
   readonly claimId: string;
+  readonly exists: boolean;
   readonly score: number;
   readonly revision: number;
 }
@@ -179,6 +184,7 @@ export type ShowRelationshipReason =
     };
 
 export interface ShowInputs extends DisclosureBundleInputs {
+  readonly npcPresent: boolean;
   readonly evidenceKind: "clue" | "item";
   readonly clueDiscoveredInTown: boolean;
   readonly itemCurrentlyHeldByPlayer: boolean;
@@ -196,8 +202,47 @@ export interface ShowInputs extends DisclosureBundleInputs {
   readonly playerId: string;
   /** The NPC being shown evidence. */
   readonly npcId: string;
-  /** The pre-allocated id of the `evidence_shown` event this plan creates. */
-  readonly evidenceShownEventId: string;
+  /**
+   * Present only for a claim this exact Show's `lie_established` reason
+   * newly caught (`rules/world/lies.ts#establishesKnowingLie`). The loader
+   * pre-scopes `activeContributions` to exactly this (npc, claim, player) —
+   * `scopedSourceDiscreditedTarget`'s own scoping — so this planner never
+   * reaches for a wider set itself.
+   */
+  readonly sourceReversals?: readonly ShowSourceReversal[];
+  /** Present only when this NPC is the one authored route-B capability grantor. */
+  readonly capabilityGrant?: ShowCapabilityGrant;
+}
+
+/** One active contribution eligible for exact-opposite reversal. */
+export interface ShowSourceReversalContribution {
+  readonly evidenceId: string;
+  readonly signedWeight: number;
+}
+
+/**
+ * `D2-J`'s knowing-lie consequence for one caught claim: the discredited
+ * player's own active contribution(s) to `claimId` on this NPC (never a
+ * different claim or a different NPC — Decision 008's "knowledge does not
+ * teleport"), plus the independent-source counts needed to append the
+ * resulting corroboration delta.
+ */
+export interface ShowSourceReversal {
+  readonly claimId: string;
+  readonly activeContributions: readonly ShowSourceReversalContribution[];
+  readonly priorIndependentSourceCount: number;
+  readonly newIndependentSourceCount: number;
+}
+
+/**
+ * Corin's route-B chapel capability (`rules/world/clues.ts#corinCapabilityGrantEligible`).
+ * The loader supplies this only when the shown NPC is the authored grantor;
+ * `alreadyGranted` lets this stay idempotent without a second DB read here.
+ */
+export interface ShowCapabilityGrant {
+  readonly capabilityKey: string;
+  readonly alreadyGranted: boolean;
+  readonly presentedRequiredClueThisAction: boolean;
 }
 
 /** The reason-specific provenance columns, keyed off the discriminant. */
@@ -229,6 +274,7 @@ interface ShowScoreContribution {
 
 export function planShow(inputs: ShowInputs): ActionPlanResult {
   const trace = makeTrace("actions.show");
+  if (!inputs.npcPresent) return deniedResult("NPC_NOT_PRESENT", trace, {});
   if (
     !isShowAuthorized(inputs.evidenceKind, {
       clueDiscoveredInTown: inputs.clueDiscoveredInTown,
@@ -243,15 +289,23 @@ export function planShow(inputs: ShowInputs): ActionPlanResult {
     inputs.clueClaimEffects,
   );
   const effects: EffectPlanEntry[] = [
-    { kind: "event_origin", eventType: "evidence_shown", effectIndex: 0 },
+    {
+      kind: "event_origin",
+      eventType: "evidence_shown",
+      effectIndex: 0,
+      ref: "evidence-shown",
+    },
   ];
+  const beliefByClaimId = new Map(
+    inputs.claimBeliefs.map((belief) => [belief.claimId, belief]),
+  );
+  const contributions: ShowScoreContribution[] = [];
+  const affectedClaimIds = new Set<string>();
+
   if (structuredEffectPlan.structuredEffect === "applied") {
     const appliedClueIds = new Set(structuredEffectPlan.appliedClueIds);
     const alreadyRecordedKeys = new Set(
       inputs.alreadyRecordedEvidence.map((entry) => `${entry.claimId}:${entry.clueId}`),
-    );
-    const beliefByClaimId = new Map(
-      inputs.claimBeliefs.map((belief) => [belief.claimId, belief]),
     );
 
     // A clue can support or contradict several claims, so every matching
@@ -278,22 +332,73 @@ export function planShow(inputs: ShowInputs): ActionPlanResult {
           rule_version: RULES_REGISTRY.rulesVersion,
         },
       });
+      affectedClaimIds.add(link.claimId);
+      contributions.push({ claimId: link.claimId, delta: link.signedWeight });
     }
+  }
 
-    // Multiple new links to the same claim (from one clue or several) are
-    // summed against that claim's pre-effect score from one snapshot and
-    // clamped once, never clamped per contribution.
-    const affectedClaimIds = [
-      ...new Set(newLinks.map((link) => link.claimId)),
-    ].toSorted();
-    const contributions: ShowScoreContribution[] = [];
+  // `D2-J`: reversing the discredited player's own active contribution(s) to
+  // a caught claim, plus the resulting corroboration delta — scoped to
+  // exactly the claim `relationshipReasons` cited a `lie_established` row
+  // for, never a wider set (docs/008: "knowledge does not teleport").
+  for (const reversal of inputs.sourceReversals ?? []) {
+    affectedClaimIds.add(reversal.claimId);
+    for (const contribution of reversal.activeContributions.toSorted((left, right) =>
+      left.evidenceId.localeCompare(right.evidenceId),
+    )) {
+      effects.push({
+        kind: "insert",
+        table: "belief_evidence",
+        row: {
+          npc_id: inputs.npcId,
+          claim_id: reversal.claimId,
+          evidence_kind: "source_reversal",
+          signed_weight: -contribution.signedWeight,
+          reverses_evidence_id: contribution.evidenceId,
+          rule_version: RULES_REGISTRY.rulesVersion,
+        },
+      });
+      contributions.push({ claimId: reversal.claimId, delta: -contribution.signedWeight });
+    }
+    // `causalEventId` on the returned plan entry is never read below — this
+    // planner builds the `belief_evidence` row itself and lets
+    // `EVENT_FOREIGN_KEY_COLUMN` backfill `event_id` from the plan's own
+    // `evidence_shown` event, exactly like every other row here.
+    const corroboration = planCorroborationAdjustment(
+      inputs.npcId,
+      reversal.claimId,
+      reversal.priorIndependentSourceCount,
+      reversal.newIndependentSourceCount,
+      "evidence-shown",
+    );
+    if (corroboration !== undefined) {
+      effects.push({
+        kind: "insert",
+        table: "belief_evidence",
+        row: {
+          npc_id: inputs.npcId,
+          claim_id: reversal.claimId,
+          evidence_kind: "corroboration",
+          signed_weight: corroboration.signedWeight,
+          corroboration_threshold: reversal.newIndependentSourceCount,
+          rule_version: RULES_REGISTRY.rulesVersion,
+        },
+      });
+      contributions.push({
+        claimId: reversal.claimId,
+        delta: corroboration.signedWeight,
+      });
+    }
+  }
+
+  if (affectedClaimIds.size > 0) {
+    // Every affected claim's pre-effect score seeds its own contribution
+    // list, so a claim touched by more than one source (a direct link, a
+    // reversal, a corroboration delta) is still summed against one snapshot
+    // and clamped exactly once.
     for (const claimId of affectedClaimIds) {
       const belief = beliefByClaimId.get(claimId);
-      if (belief === undefined) continue;
-      contributions.push({ claimId, delta: belief.score });
-    }
-    for (const link of newLinks) {
-      contributions.push({ claimId: link.claimId, delta: link.signedWeight });
+      if (belief?.exists) contributions.push({ claimId, delta: belief.score });
     }
     const newScoresByClaimId = sumEventContributions(
       contributions,
@@ -301,21 +406,33 @@ export function planShow(inputs: ShowInputs): ActionPlanResult {
       (contribution) => contribution.delta,
     );
 
-    for (const claimId of affectedClaimIds) {
+    for (const claimId of [...affectedClaimIds].toSorted()) {
       const belief = beliefByClaimId.get(claimId);
       const newScore = newScoresByClaimId.get(claimId);
       if (belief === undefined || newScore === undefined) continue;
-      effects.push({
-        kind: "conditional_state_change",
-        table: "npc_beliefs",
-        key: { npc_id: inputs.npcId, claim_id: claimId },
-        expectedRevision: belief.revision,
-        change: {
-          score: newScore,
-          label: beliefLabelFor(newScore),
-          updated_event_id: inputs.evidenceShownEventId,
-        },
-      });
+      if (belief.exists) {
+        effects.push({
+          kind: "conditional_state_change",
+          table: "npc_beliefs",
+          key: { npc_id: inputs.npcId, claim_id: claimId },
+          expectedRevision: belief.revision,
+          change: {
+            score: newScore,
+            label: beliefLabelFor(newScore),
+          },
+        });
+      } else {
+        effects.push({
+          kind: "insert",
+          table: "npc_beliefs",
+          row: {
+            npc_id: inputs.npcId,
+            claim_id: claimId,
+            score: newScore,
+            label: beliefLabelFor(newScore),
+          },
+        });
+      }
     }
   }
   for (const reason of inputs.relationshipReasons) {
@@ -334,17 +451,61 @@ export function planShow(inputs: ShowInputs): ActionPlanResult {
       },
     });
   }
+  const relationshipSnapshot = {
+    npcId: inputs.npcId,
+    playerId: inputs.playerId,
+    ...inputs.relationship,
+  };
+  const relationshipContributions = inputs.relationshipReasons.map((reason) => ({
+    npcId: inputs.npcId,
+    playerId: inputs.playerId,
+    reasonKind: reason.reasonKind,
+  }));
+  const relationshipAggregate = aggregateRelationshipUpdates(
+    [relationshipSnapshot],
+    relationshipContributions,
+  )[0];
   effects.push(
-    ...relationshipStateChangeEffects(
-      [{ npcId: inputs.npcId, playerId: inputs.playerId, ...inputs.relationship }],
-      inputs.relationshipReasons.map((reason) => ({
-        npcId: inputs.npcId,
-        playerId: inputs.playerId,
-        reasonKind: reason.reasonKind,
-      })),
-      inputs.evidenceShownEventId,
-    ),
+    ...(relationshipAggregate === undefined
+      ? []
+      : [
+          {
+            kind: "conditional_state_change" as const,
+            table: "npc_player_relationships",
+            key: { npc_id: inputs.npcId, player_id: inputs.playerId },
+            expectedRevision: relationshipAggregate.expectedRevision,
+            change: {
+              trust_score: relationshipAggregate.trustScore,
+              suspicion_score: relationshipAggregate.suspicionScore,
+              updated_event_id: { $planRef: "evidence-shown" },
+            },
+          },
+        ]),
   );
+
+  const grant = inputs.capabilityGrant;
+  if (grant !== undefined && !grant.alreadyGranted) {
+    const postActionTrust = relationshipAggregate?.trustScore ?? inputs.relationship.trustScore;
+    const postActionSuspicion =
+      relationshipAggregate?.suspicionScore ?? inputs.relationship.suspicionScore;
+    if (
+      corinCapabilityGrantEligible(
+        grant.presentedRequiredClueThisAction,
+        postActionTrust,
+        postActionSuspicion,
+      )
+    ) {
+      effects.push({
+        kind: "insert",
+        table: "player_capabilities",
+        row: {
+          player_id: inputs.playerId,
+          capability_key: grant.capabilityKey,
+          status: "granted",
+        },
+      });
+    }
+  }
 
   return {
     kind: "external_selection_required",

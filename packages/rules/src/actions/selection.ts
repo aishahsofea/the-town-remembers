@@ -816,3 +816,98 @@ export function applyTellSelection(
 
   return effects;
 }
+
+// --- show ---------------------------------------------------------------------------------
+
+export type ShowDialogueSelection = ValidatedDialogueResume;
+
+export interface ApplyShowSelectionInputs {
+  readonly actionId: string;
+  readonly visitId: string;
+  readonly playerId: string;
+  readonly npcId: string;
+  readonly npcCharacterEntityId: string;
+  readonly locationEntityId: string;
+  readonly occurredAt: Date;
+  readonly selection: ShowDialogueSelection;
+  /** Every claim `planShow` actually recomputed a belief for — the direct link(s) and any caught-lie reversal. */
+  readonly affectedClaimIds: readonly string[];
+}
+
+function showInteractionSummary(text: string): string {
+  return `A visitor showed me evidence. I said: ${text}`;
+}
+
+/**
+ * The dialogue turn's audit trail and recall memory. `planShow` already
+ * computed every causal effect (belief, relationship, capability) before any
+ * model call — this only records the conversational exchange itself, sharing
+ * the same `evidence_shown` event `planShow` originated rather than raising
+ * a second one (`EVENT_FOREIGN_KEY_COLUMN` backfills both inserts' event
+ * columns from that one event once this plan's effects are appended after
+ * `planShow`'s own).
+ */
+export function applyShowSelection(
+  inputs: ApplyShowSelectionInputs,
+): readonly EffectPlanEntry[] {
+  const effects: EffectPlanEntry[] = [
+    {
+      kind: "insert",
+      table: "npc_interactions",
+      row: {
+        player_action_id: inputs.actionId,
+        visit_id: inputs.visitId,
+        player_id: inputs.playerId,
+        npc_id: inputs.npcId,
+        input_kind: "show",
+        player_text: null,
+        npc_text: inputs.selection.text,
+        response_mode: inputs.selection.responseMode,
+      },
+    },
+    {
+      kind: "insert",
+      table: "episodes",
+      ref: "show-episode",
+      row: {
+        npc_id: inputs.npcId,
+        episode_kind: "direct_observation",
+        summary: showInteractionSummary(inputs.selection.text),
+        importance: importanceMinimumFor("direct_observation"),
+        occurred_at: inputs.occurredAt,
+        embedding_status: "pending",
+        updated_at: inputs.occurredAt,
+      },
+    },
+    {
+      kind: "insert",
+      table: "episode_references",
+      row: {
+        episode_id: { $planRef: "show-episode" },
+        reference_kind: "participant",
+        entity_id: inputs.npcCharacterEntityId,
+      },
+    },
+    {
+      kind: "insert",
+      table: "episode_references",
+      row: {
+        episode_id: { $planRef: "show-episode" },
+        reference_kind: "location",
+        entity_id: inputs.locationEntityId,
+      },
+    },
+  ];
+  for (const claimId of [...new Set(inputs.affectedClaimIds)].toSorted()) {
+    effects.push({
+      kind: "insert",
+      table: "episode_references",
+      row: {
+        episode_id: { $planRef: "show-episode" },
+        reference_kind: "claim",
+        claim_id: claimId,
+      },
+    });
+  }
+  return effects;
+}

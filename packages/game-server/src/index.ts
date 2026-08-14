@@ -32,4 +32,6 @@ export * from "./application/actions/inputs/normalize-claim.js";
 export * from "./application/actions/normalize-claim-model.js";
 export * from "./application/actions/inputs/tell.js";
 export * from "./application/actions/tell-model.js";
+export * from "./application/actions/inputs/show.js";
+export * from "./application/actions/show-model.js";
 export * from "./application/actions/model-executor.js";
