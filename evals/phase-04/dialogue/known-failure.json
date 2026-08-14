@@ -1,0 +1,114 @@
+{
+  "promptFamily": "dialogue",
+  "cases": [
+    {
+      "id": "d-known-unknown-rendering-id",
+      "category": "known_failure",
+      "description": "a rendering id absent from approved_renderings",
+      "trustedContext": "BASE",
+      "output": {
+        "response_kind": "answer",
+        "rendering_ids": ["r_nope"]
+      },
+      "expect": {
+        "valid": false,
+        "errorCodes": ["unknown_rendering_id"]
+      }
+    },
+    {
+      "id": "d-known-duplicate-rendering-id",
+      "category": "known_failure",
+      "description": "the same rendering id selected twice",
+      "trustedContext": "BASE",
+      "output": {
+        "response_kind": "answer",
+        "rendering_ids": ["r1", "r1"]
+      },
+      "expect": {
+        "valid": false,
+        "errorCodes": ["duplicate_choice"]
+      }
+    },
+    {
+      "id": "d-known-missing-required-grounding",
+      "category": "known_failure",
+      "description": "a selection that never expresses the one required disclosure",
+      "trustedContext": {
+        "$base": "BASE",
+        "allowed_response_kinds": ["deflect"]
+      },
+      "output": {
+        "response_kind": "deflect",
+        "rendering_ids": ["r3"]
+      },
+      "expect": {
+        "valid": false,
+        "errorCodes": ["missing_required_disclosure"]
+      }
+    },
+    {
+      "id": "d-known-incompatible-response-kind",
+      "category": "known_failure",
+      "description": "an answer-only rendering selected under a deflect declaration",
+      "trustedContext": "BASE",
+      "output": {
+        "response_kind": "deflect",
+        "rendering_ids": ["r1"]
+      },
+      "expect": {
+        "valid": false,
+        "errorCodes": ["response_kind_conflict"]
+      }
+    },
+    {
+      "id": "d-known-cover-story-not-approved",
+      "category": "known_failure",
+      "description": "a substantive answer selected anyway when the deterministic gate already denied access",
+      "trustedContext": {
+        "$base": "BASE",
+        "dialogue_directive": {
+          "required_act": "answer_question",
+          "gate_result": "denied_access"
+        }
+      },
+      "output": {
+        "response_kind": "answer",
+        "rendering_ids": ["r1"]
+      },
+      "expect": {
+        "valid": false,
+        "errorCodes": ["gate_result_conflict"]
+      }
+    },
+    {
+      "id": "d-known-excessive-derived-length",
+      "category": "known_failure",
+      "description": "concatenation exceeds the accepted word limit",
+      "trustedContext": {
+        "$base": "BASE",
+        "required_disclosure_ids": [],
+        "approved_renderings": [
+          {
+            "rendering_id": "r_long",
+            "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word.",
+            "response_kind": "answer",
+            "disclosure_ids": [],
+            "outcome_ids": [],
+            "episode_ids": [],
+            "entity_ids": [],
+            "actor_ids": [],
+            "style_tags": []
+          }
+        ]
+      },
+      "output": {
+        "response_kind": "answer",
+        "rendering_ids": ["r_long"]
+      },
+      "expect": {
+        "valid": false,
+        "errorCodes": ["response_too_long"]
+      }
+    }
+  ]
+}

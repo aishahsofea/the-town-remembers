@@ -1,0 +1,66 @@
+{
+  "promptFamily": "repair",
+  "cases": [
+    {
+      "id": "r-control-build-repair-input-normalization",
+      "category": "control",
+      "description": "building a claim-normalization repair input from a real validation failure never leaks anything beyond the fixed envelope",
+      "mode": "repair_input",
+      "task": "claim_normalization",
+      "failedAttemptKind": "original",
+      "trustedContext": "NORMALIZATION_CONTEXT",
+      "rawInvalidOutput": "{\"status\":\"normalized\",\"subject_entity_id\":\"ent_corin\",\"predicate\":\"was_at\",\"object_entity_id\":\"ent_chapel\",\"polarity\":\"positive\",\"context_key\":\"festival_night\",\"alleged_source_actor_id\":null,\"reason_code\":\"ambiguous_subject\"}",
+      "validationErrorCodes": ["invalid_status_combination"],
+      "expect": {
+        "throws": null,
+        "untrustedInvalidOutputEquals": true,
+        "playerTextOmittedWhenUndefined": true
+      }
+    },
+    {
+      "id": "r-control-build-repair-input-dialogue",
+      "category": "control",
+      "description": "building an npc-dialogue repair input from a real validation failure never leaks anything beyond the fixed envelope",
+      "mode": "repair_input",
+      "task": "npc_dialogue",
+      "failedAttemptKind": "original",
+      "trustedContext": "DIALOGUE_CONTEXT",
+      "rawInvalidOutput": "{\"response_kind\":\"answer\",\"rendering_ids\":[\"r3\"]}",
+      "validationErrorCodes": ["missing_required_disclosure"],
+      "expect": {
+        "throws": null,
+        "untrustedInvalidOutputEquals": true,
+        "playerTextOmittedWhenUndefined": true
+      }
+    },
+    {
+      "id": "r-control-repaired-normalization-now-valid",
+      "category": "control",
+      "description": "fixing invalid_status_combination while preserving every other valid field revalidates cleanly",
+      "mode": "revalidate",
+      "task": "claim_normalization",
+      "trustedContext": "NORMALIZATION_CONTEXT",
+      "repairedOutput": {
+        "status": "normalized",
+        "subject_entity_id": "ent_corin",
+        "predicate": "was_at",
+        "object_entity_id": "ent_chapel",
+        "polarity": "positive",
+        "context_key": "festival_night",
+        "alleged_source_actor_id": null,
+        "reason_code": null
+      },
+      "expect": { "valid": true }
+    },
+    {
+      "id": "r-control-repaired-dialogue-now-valid",
+      "category": "control",
+      "description": "fixing missing_required_disclosure by selecting the covering rendering revalidates cleanly",
+      "mode": "revalidate",
+      "task": "npc_dialogue",
+      "trustedContext": "DIALOGUE_CONTEXT",
+      "repairedOutput": { "response_kind": "answer", "rendering_ids": ["r1"] },
+      "expect": { "valid": true }
+    }
+  ]
+}

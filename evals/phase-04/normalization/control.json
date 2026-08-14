@@ -1,0 +1,209 @@
+{
+  "promptFamily": "normalization",
+  "cases": [
+    {
+      "id": "n-control-was_at-positive",
+      "category": "control",
+      "description": "was_at, positive polarity, default context",
+      "trustedContext": "TRUSTED_CONTEXT",
+      "output": {
+        "status": "normalized",
+        "subject_entity_id": "ent_corin",
+        "predicate": "was_at",
+        "object_entity_id": "ent_chapel",
+        "polarity": "positive",
+        "context_key": "festival_night",
+        "alleged_source_actor_id": null,
+        "reason_code": null
+      },
+      "expect": { "valid": true, "normalizedKeyNotNull": true }
+    },
+    {
+      "id": "n-control-was_at-negative",
+      "category": "control",
+      "description": "was_at, negative polarity",
+      "trustedContext": "TRUSTED_CONTEXT",
+      "output": {
+        "status": "normalized",
+        "subject_entity_id": "ent_corin",
+        "predicate": "was_at",
+        "object_entity_id": "ent_chapel",
+        "polarity": "negative",
+        "context_key": "festival_night",
+        "alleged_source_actor_id": null,
+        "reason_code": null
+      },
+      "expect": { "valid": true, "normalizedKeyNotNull": true }
+    },
+    {
+      "id": "n-control-moved-positive",
+      "category": "control",
+      "description": "moved, positive polarity",
+      "trustedContext": "TRUSTED_CONTEXT",
+      "output": {
+        "status": "normalized",
+        "subject_entity_id": "ent_corin",
+        "predicate": "moved",
+        "object_entity_id": "ent_bell",
+        "polarity": "positive",
+        "context_key": "festival_night",
+        "alleged_source_actor_id": null,
+        "reason_code": null
+      },
+      "expect": { "valid": true, "normalizedKeyNotNull": true }
+    },
+    {
+      "id": "n-control-moved-negative",
+      "category": "control",
+      "description": "moved, negative polarity",
+      "trustedContext": "TRUSTED_CONTEXT",
+      "output": {
+        "status": "normalized",
+        "subject_entity_id": "ent_corin",
+        "predicate": "moved",
+        "object_entity_id": "ent_bell",
+        "polarity": "negative",
+        "context_key": "festival_night",
+        "alleged_source_actor_id": null,
+        "reason_code": null
+      },
+      "expect": { "valid": true, "normalizedKeyNotNull": true }
+    },
+    {
+      "id": "n-control-damaged-positive",
+      "category": "control",
+      "description": "damaged, positive polarity",
+      "trustedContext": "TRUSTED_CONTEXT",
+      "output": {
+        "status": "normalized",
+        "subject_entity_id": "ent_corin",
+        "predicate": "damaged",
+        "object_entity_id": "ent_bell",
+        "polarity": "positive",
+        "context_key": "festival_night",
+        "alleged_source_actor_id": null,
+        "reason_code": null
+      },
+      "expect": { "valid": true, "normalizedKeyNotNull": true }
+    },
+    {
+      "id": "n-control-damaged-negative",
+      "category": "control",
+      "description": "damaged, negative polarity",
+      "trustedContext": "TRUSTED_CONTEXT",
+      "output": {
+        "status": "normalized",
+        "subject_entity_id": "ent_corin",
+        "predicate": "damaged",
+        "object_entity_id": "ent_bell",
+        "polarity": "negative",
+        "context_key": "festival_night",
+        "alleged_source_actor_id": null,
+        "reason_code": null
+      },
+      "expect": { "valid": true, "normalizedKeyNotNull": true }
+    },
+    {
+      "id": "n-control-is_at-positive",
+      "category": "control",
+      "description": "is_at, positive polarity",
+      "trustedContext": "TRUSTED_CONTEXT",
+      "output": {
+        "status": "normalized",
+        "subject_entity_id": "ent_bell",
+        "predicate": "is_at",
+        "object_entity_id": "ent_chapel",
+        "polarity": "positive",
+        "context_key": "festival_night",
+        "alleged_source_actor_id": null,
+        "reason_code": null
+      },
+      "expect": { "valid": true, "normalizedKeyNotNull": true }
+    },
+    {
+      "id": "n-control-is_at-negative",
+      "category": "control",
+      "description": "is_at, negative polarity",
+      "trustedContext": "TRUSTED_CONTEXT",
+      "output": {
+        "status": "normalized",
+        "subject_entity_id": "ent_bell",
+        "predicate": "is_at",
+        "object_entity_id": "ent_chapel",
+        "polarity": "negative",
+        "context_key": "festival_night",
+        "alleged_source_actor_id": null,
+        "reason_code": null
+      },
+      "expect": { "valid": true, "normalizedKeyNotNull": true }
+    },
+    {
+      "id": "n-control-acted_for-positive",
+      "category": "control",
+      "description": "acted_for, positive polarity",
+      "trustedContext": "TRUSTED_CONTEXT",
+      "output": {
+        "status": "normalized",
+        "subject_entity_id": "ent_corin",
+        "predicate": "acted_for",
+        "object_entity_id": "ent_protect_lark",
+        "polarity": "positive",
+        "context_key": "festival_night",
+        "alleged_source_actor_id": null,
+        "reason_code": null
+      },
+      "expect": { "valid": true, "normalizedKeyNotNull": true }
+    },
+    {
+      "id": "n-control-acted_for-negative",
+      "category": "control",
+      "description": "acted_for, negative polarity",
+      "trustedContext": "TRUSTED_CONTEXT",
+      "output": {
+        "status": "normalized",
+        "subject_entity_id": "ent_corin",
+        "predicate": "acted_for",
+        "object_entity_id": "ent_protect_lark",
+        "polarity": "negative",
+        "context_key": "festival_night",
+        "alleged_source_actor_id": null,
+        "reason_code": null
+      },
+      "expect": { "valid": true, "normalizedKeyNotNull": true }
+    },
+    {
+      "id": "n-control-explicit-context",
+      "category": "control",
+      "description": "supplied explicit (non-default) allowed context",
+      "trustedContext": "TRUSTED_CONTEXT",
+      "output": {
+        "status": "normalized",
+        "subject_entity_id": "ent_corin",
+        "predicate": "was_at",
+        "object_entity_id": "ent_chapel",
+        "polarity": "positive",
+        "context_key": "current",
+        "alleged_source_actor_id": null,
+        "reason_code": null
+      },
+      "expect": { "valid": true, "normalizedKeyNotNull": true }
+    },
+    {
+      "id": "n-control-explicit-alleged-source",
+      "category": "control",
+      "description": "explicit alleged source naming a canonical actor",
+      "trustedContext": "TRUSTED_CONTEXT",
+      "output": {
+        "status": "normalized",
+        "subject_entity_id": "ent_corin",
+        "predicate": "was_at",
+        "object_entity_id": "ent_chapel",
+        "polarity": "positive",
+        "context_key": "festival_night",
+        "alleged_source_actor_id": "npc_corin",
+        "reason_code": null
+      },
+      "expect": { "valid": true, "normalizedKeyNotNull": true }
+    }
+  ]
+}

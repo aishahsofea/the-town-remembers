@@ -1,0 +1,67 @@
+{
+  "promptFamily": "dialogue",
+  "cases": [
+    {
+      "id": "d-boundary-no-disclosable-claim",
+      "category": "boundary",
+      "description": "nothing to disclose -- an empty selection is rejected structurally, never silently accepted",
+      "trustedContext": "BASE",
+      "output": { "response_kind": "answer", "rendering_ids": [] },
+      "expect": { "valid": false, "errorCodes": ["rendering_limit_exceeded"] }
+    },
+    {
+      "id": "d-boundary-failed-access-gate",
+      "category": "boundary",
+      "description": "a deflection is the only legal response once the deterministic gate has denied access",
+      "trustedContext": {
+        "$base": "BASE",
+        "dialogue_directive": {
+          "required_act": "answer_question",
+          "gate_result": "denied_access"
+        },
+        "required_disclosure_ids": [],
+        "allowed_response_kinds": ["deflect"]
+      },
+      "output": { "response_kind": "deflect", "rendering_ids": ["r3"] },
+      "expect": { "valid": true }
+    },
+    {
+      "id": "d-boundary-ambiguous-question-multiple-framings",
+      "category": "boundary",
+      "description": "an ambiguous player question still resolves to one legal ordered selection among several acceptable renderings",
+      "trustedContext": "BASE",
+      "output": { "response_kind": "answer", "rendering_ids": ["r2", "r1"] },
+      "expect": {
+        "valid": true,
+        "concatenatedText": "He asked me to keep Lark inside while he sorted the bell out himself. Corin came through before dawn, quiet about it."
+      }
+    },
+    {
+      "id": "d-boundary-one-rendering-several-groundings",
+      "category": "boundary",
+      "description": "one rendering satisfies two required disclosures at once",
+      "trustedContext": {
+        "$base": "BASE",
+        "required_disclosure_ids": ["d1", "d_hearsay"],
+        "approved_renderings": [
+          {
+            "rendering_id": "r_combined",
+            "text": "Corin was here, and yes, Lark told me about the bell too.",
+            "response_kind": "answer",
+            "disclosure_ids": ["d1", "d_hearsay"],
+            "outcome_ids": [],
+            "episode_ids": ["e1", "e2"],
+            "entity_ids": ["corin_hale"],
+            "actor_ids": [],
+            "style_tags": []
+          }
+        ]
+      },
+      "output": { "response_kind": "answer", "rendering_ids": ["r_combined"] },
+      "expect": {
+        "valid": true,
+        "expressedDisclosureIds": ["d1", "d_hearsay"]
+      }
+    }
+  ]
+}

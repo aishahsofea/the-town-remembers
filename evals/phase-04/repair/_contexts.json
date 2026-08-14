@@ -1,0 +1,105 @@
+{
+  "NORMALIZATION_CONTEXT": {
+    "speaker_actor_id": "actor_lark",
+    "canonical_entities": [
+      {
+        "entity_id": "ent_corin",
+        "kind": "character",
+        "display_name": "Corin Hale",
+        "aliases": []
+      },
+      {
+        "entity_id": "ent_bell",
+        "kind": "item",
+        "display_name": "the bell",
+        "aliases": []
+      },
+      {
+        "entity_id": "ent_chapel",
+        "kind": "location",
+        "display_name": "Old Chapel",
+        "aliases": []
+      }
+    ],
+    "canonical_actors": [
+      {
+        "actor_id": "actor_lark",
+        "actor_kind": "player",
+        "display_name": "Lark",
+        "aliases": []
+      }
+    ],
+    "predicate_signatures": [],
+    "allowed_contexts": [{ "context_key": "festival_night", "aliases": [] }],
+    "default_context_key": "festival_night"
+  },
+  "DIALOGUE_CONTEXT": {
+    "npc_profile": {
+      "npc_id": "npc_mara",
+      "display_name": "Mara Venn",
+      "voice_rules": [],
+      "current_location_id": "lantern_inn"
+    },
+    "player_action": { "action_kind": "ask", "target_entity_ids": [] },
+    "relationship_stance": "neutral",
+    "dialogue_directive": {
+      "required_act": "answer_question",
+      "gate_result": "passed"
+    },
+    "allowed_response_kinds": ["answer", "deflect"],
+    "approved_disclosures": [
+      {
+        "disclosure_id": "d1",
+        "claim_id": "corin_was_at_inn",
+        "stance": "believed",
+        "source_episode_id": "e1",
+        "parent_transmission_id": null,
+        "tier": "guarded",
+        "permitted_entity_ids": ["corin_hale"]
+      }
+    ],
+    "required_disclosure_ids": ["d1"],
+    "approved_outcomes": [],
+    "required_outcome_ids": [],
+    "approved_renderings": [
+      {
+        "rendering_id": "r1",
+        "text": "Corin came through before dawn, quiet about it.",
+        "response_kind": "answer",
+        "disclosure_ids": ["d1"],
+        "outcome_ids": [],
+        "episode_ids": ["e1"],
+        "entity_ids": ["corin_hale"],
+        "actor_ids": [],
+        "style_tags": []
+      },
+      {
+        "rendering_id": "r3",
+        "text": "There is too much frightened talk already.",
+        "response_kind": "deflect",
+        "disclosure_ids": [],
+        "outcome_ids": [],
+        "episode_ids": [],
+        "entity_ids": [],
+        "actor_ids": [],
+        "style_tags": []
+      }
+    ],
+    "approved_episodes": [
+      { "episode_id": "e1", "summary": "Mara saw Corin enter the inn." }
+    ],
+    "canonical_entities": [{ "entity_id": "corin_hale", "display_name": "Corin Hale" }],
+    "approved_actors": [],
+    "response_limits": {
+      "minimum_renderings": 1,
+      "maximum_renderings": 3,
+      "maximum_sentences": 3,
+      "maximum_words": 80,
+      "maximum_disclosures": 4,
+      "maximum_outcomes": 3,
+      "maximum_episode_references": 8,
+      "maximum_entity_references": 8,
+      "maximum_actor_references": 8
+    }
+  }
+}

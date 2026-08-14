@@ -14,9 +14,18 @@ importers:
       '@playwright/test':
         specifier: ^1.62.1
         version: 1.62.1
+      '@the-town-remembers/content':
+        specifier: workspace:*
+        version: link:packages/content
       '@the-town-remembers/database-admin':
         specifier: workspace:*
         version: link:packages/database-admin
+      '@the-town-remembers/game-server':
+        specifier: workspace:*
+        version: link:packages/game-server
+      '@the-town-remembers/model-runtime':
+        specifier: workspace:*
+        version: link:packages/model-runtime
       '@the-town-remembers/rules':
         specifier: workspace:*
         version: link:packages/rules

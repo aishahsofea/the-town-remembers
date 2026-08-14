@@ -1,0 +1,51 @@
+{
+  "TRUSTED_CONTEXT": {
+    "speaker_actor_id": "actor_lark",
+    "canonical_entities": [
+      {
+        "entity_id": "ent_corin",
+        "kind": "character",
+        "display_name": "Corin Hale",
+        "aliases": []
+      },
+      {
+        "entity_id": "ent_bell",
+        "kind": "item",
+        "display_name": "the bell",
+        "aliases": []
+      },
+      {
+        "entity_id": "ent_chapel",
+        "kind": "location",
+        "display_name": "Old Chapel",
+        "aliases": []
+      },
+      {
+        "entity_id": "ent_protect_lark",
+        "kind": "motive",
+        "display_name": "Protecting Lark",
+        "aliases": []
+      }
+    ],
+    "canonical_actors": [
+      {
+        "actor_id": "actor_lark",
+        "actor_kind": "player",
+        "display_name": "Lark",
+        "aliases": []
+      },
+      {
+        "actor_id": "npc_corin",
+        "actor_kind": "npc",
+        "display_name": "Corin Hale",
+        "aliases": []
+      }
+    ],
+    "predicate_signatures": [],
+    "allowed_contexts": [
+      { "context_key": "festival_night", "aliases": [] },
+      { "context_key": "current", "aliases": [] }
+    ],
+    "default_context_key": "festival_night"
+  }
+}

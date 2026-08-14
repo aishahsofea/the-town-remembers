@@ -1,0 +1,73 @@
+{
+  "promptFamily": "normalization",
+  "cases": [
+    {
+      "id": "n-boundary-question-no-assertion",
+      "category": "boundary",
+      "description": "a question carries no proposition -> unsupported/no_proposition",
+      "trustedContext": "TRUSTED_CONTEXT",
+      "output": {
+        "status": "unsupported",
+        "subject_entity_id": null,
+        "predicate": null,
+        "object_entity_id": null,
+        "polarity": null,
+        "context_key": null,
+        "alleged_source_actor_id": null,
+        "reason_code": "no_proposition"
+      },
+      "expect": { "valid": true, "normalizedKeyNotNull": false }
+    },
+    {
+      "id": "n-boundary-unsupported-context",
+      "category": "boundary",
+      "description": "a real-world time reference outside every authored context -> unsupported/unsupported_context",
+      "trustedContext": "TRUSTED_CONTEXT",
+      "output": {
+        "status": "unsupported",
+        "subject_entity_id": null,
+        "predicate": null,
+        "object_entity_id": null,
+        "polarity": null,
+        "context_key": null,
+        "alleged_source_actor_id": null,
+        "reason_code": "unsupported_context"
+      },
+      "expect": { "valid": true, "normalizedKeyNotNull": false }
+    },
+    {
+      "id": "n-boundary-opinion-outside-grammar",
+      "category": "boundary",
+      "description": "an opinion with no claim-grammar predicate -> unsupported/outside_claim_grammar",
+      "trustedContext": "TRUSTED_CONTEXT",
+      "output": {
+        "status": "unsupported",
+        "subject_entity_id": null,
+        "predicate": null,
+        "object_entity_id": null,
+        "polarity": null,
+        "context_key": null,
+        "alleged_source_actor_id": null,
+        "reason_code": "outside_claim_grammar"
+      },
+      "expect": { "valid": true, "normalizedKeyNotNull": false }
+    },
+    {
+      "id": "n-boundary-incomplete-claim",
+      "category": "boundary",
+      "description": "an incomplete claim missing its predicate requires clarification -> needs_clarification/ambiguous_predicate",
+      "trustedContext": "TRUSTED_CONTEXT",
+      "output": {
+        "status": "needs_clarification",
+        "subject_entity_id": null,
+        "predicate": null,
+        "object_entity_id": null,
+        "polarity": null,
+        "context_key": null,
+        "alleged_source_actor_id": null,
+        "reason_code": "ambiguous_predicate"
+      },
+      "expect": { "valid": true, "normalizedKeyNotNull": false }
+    }
+  ]
+}
