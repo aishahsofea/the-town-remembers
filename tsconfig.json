@@ -12,9 +12,6 @@
       "path": "./packages/serialization"
     },
     {
-      "path": "./packages/model-runtime"
-    },
-    {
       "path": "./packages/browser-config"
     },
     {
@@ -28,6 +25,9 @@
     },
     {
       "path": "./packages/rules"
+    },
+    {
+      "path": "./packages/model-runtime"
     },
     {
       "path": "./packages/database-admin"
