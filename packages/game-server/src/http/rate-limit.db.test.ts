@@ -336,10 +336,12 @@ describe.skipIf(!shouldRunDatabaseTests())("route-level rate limiting", () => {
   }, 30_000);
 
   it("the eleventh player-view within a burst is 429 with Retry-After", async () => {
+    const now = new Date();
+    const fixedTimeConfig: RouterConfig = { ...config, now: () => now };
     const inviteToken = randomUUID();
     const seed = await materializeTown(db().pool, {
       contentVersion: "bell-mystery-v1",
-      createdAt: new Date(),
+      createdAt: now,
       inviteTokenHash: createHash("sha256").update(inviteToken).digest(),
     });
     if (seed.outcome !== "committed") throw new Error("The seed did not commit.");
@@ -353,7 +355,7 @@ describe.skipIf(!shouldRunDatabaseTests())("route-level rate limiting", () => {
         sourceIp: randomUUID(),
       }),
       "req_join",
-      config,
+      fixedTimeConfig,
     );
     expect(joined.response.status).toBe(201);
     const cookie = cookiePair(joined.response.cookies[0]!);
@@ -363,7 +365,7 @@ describe.skipIf(!shouldRunDatabaseTests())("route-level rate limiting", () => {
       const { response } = await routeRequest(
         playerViewRequest(seed.value.townId, cookie),
         `req_view_${index}`,
-        config,
+        fixedTimeConfig,
       );
       expect(response.status).toBe(200);
     }
@@ -371,7 +373,7 @@ describe.skipIf(!shouldRunDatabaseTests())("route-level rate limiting", () => {
     const { response: eleventh } = await routeRequest(
       playerViewRequest(seed.value.townId, cookie),
       "req_view_eleventh",
-      config,
+      fixedTimeConfig,
     );
     expect(eleventh.status).toBe(429);
     expect(eleventh.headers["retry-after"]).toBeDefined();
