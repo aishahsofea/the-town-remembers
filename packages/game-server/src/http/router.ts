@@ -38,6 +38,16 @@ import {
   executeAction,
   type ExecuteActionOutcome,
 } from "../application/actions/executor.js";
+import {
+  executeModelAction,
+  type ExecuteModelActionOutcome,
+  type ModelActionHandler,
+} from "../application/actions/model-executor.js";
+import {
+  resolveAskTarget,
+  type AskLoadedInputs,
+} from "../application/actions/inputs/ask.js";
+import type { AskDialogueSelection } from "@the-town-remembers/rules";
 import { inspectActionHandler } from "../application/actions/inputs/inspect.js";
 import { leaveActionHandler } from "../application/actions/inputs/leave.js";
 import { startVisitActionHandler } from "../application/actions/inputs/start-visit.js";
@@ -105,6 +115,12 @@ export interface RouterConfig {
   readonly securityConfig: SecurityConfig;
   /** `D4-R`: gates the six model-backed action kinds. Defaults to `false` when omitted, matching `TTR_ENABLE_NPC_MUTATIONS`'s own default. */
   readonly enableNpcMutations?: boolean;
+  /** Present only when Ask is enabled; tests may inject a no-network handler. */
+  readonly askActionHandler?: ModelActionHandler<
+    "ask",
+    AskLoadedInputs,
+    AskDialogueSelection
+  >;
 }
 
 export interface RouteHandlerContext {
@@ -464,7 +480,7 @@ async function handleActionStatus(context: RouteHandlerContext): Promise<HttpRes
  */
 function respondToExecuteOutcome<K extends ActionKind>(
   townId: string,
-  outcome: ExecuteActionOutcome<K>,
+  outcome: ExecuteActionOutcome<K> | ExecuteModelActionOutcome<K>,
 ): Omit<HttpResponse, "cookies"> {
   switch (outcome.kind) {
     case "executed":
@@ -534,6 +550,8 @@ function respondToExecuteOutcome<K extends ActionKind>(
           ...locationHeader(actionStatusPath(townId, outcome.blockingActionId)),
         },
       });
+    case "rate_limited":
+      throw rateLimited(outcome.retryAfterSeconds);
   }
 }
 
@@ -650,6 +668,24 @@ async function handleSubmitAction(context: RouteHandlerContext): Promise<HttpRes
       targetEntityId: null,
       requestPayload: {},
       handler: leaveActionHandler,
+      now: context.config.now,
+      requestId: context.requestId,
+    });
+    response = respondToExecuteOutcome(townId, outcome);
+  } else if (request.kind === "ask") {
+    const handler = context.config.askActionHandler;
+    if (handler === undefined) throw internalError();
+    const outcome = await executeModelAction({
+      pool,
+      deadline,
+      townId,
+      playerId,
+      idempotencyKey,
+      actionKind: "ask",
+      targetActorId: await resolveAskTarget(pool, townId, request.npcId),
+      targetEntityId: null,
+      requestPayload: { npcId: request.npcId, question: request.question },
+      handler,
       now: context.config.now,
       requestId: context.requestId,
     });

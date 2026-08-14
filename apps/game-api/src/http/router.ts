@@ -28,6 +28,7 @@ export interface RouterContext {
   readonly pool: Pool;
   readonly now: () => Date;
   readonly monotonicMs: () => number;
+  readonly askActionHandler?: RouterConfig["askActionHandler"];
 }
 
 /**
@@ -60,6 +61,10 @@ export async function handleRequest(
     now: context.now,
     pool: context.pool,
     securityConfig: context.securityConfig,
+    enableNpcMutations: context.config.enableNpcMutations,
+    ...(context.askActionHandler === undefined
+      ? {}
+      : { askActionHandler: context.askActionHandler }),
   };
   const { response: routed, routeTemplate } = await routeRequest(
     request,

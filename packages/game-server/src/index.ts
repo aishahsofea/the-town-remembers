@@ -26,3 +26,6 @@ export * from "./application/player-view/build.js";
 export * from "./application/player-view/etag.js";
 export * from "./application/commands/prewarm.js";
 export * from "./application/commands/embed-seed.js";
+export * from "./application/actions/inputs/ask.js";
+export * from "./application/actions/ask-model.js";
+export * from "./application/actions/model-executor.js";

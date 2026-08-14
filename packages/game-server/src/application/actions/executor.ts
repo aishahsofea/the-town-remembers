@@ -73,6 +73,8 @@ export interface LoadInputsContext {
   readonly townId: string;
   readonly playerId: string;
   readonly deadlineAt: number;
+  /** Zero-based outer revision-rerun attempt. */
+  readonly attempt: number;
   /** The request's own target fields — a destination location, an inspectable, and so on. */
   readonly targetActorId: string | null;
   readonly targetEntityId: string | null;
@@ -302,6 +304,7 @@ async function runClaimed<K extends ActionKind, TInputs>(
       townId: params.townId,
       playerId: params.playerId,
       deadlineAt: preCommitDeadline(params.deadline),
+      attempt,
       targetActorId: params.targetActorId,
       targetEntityId: params.targetEntityId,
       requestPayload: params.requestPayload,
@@ -480,6 +483,11 @@ export async function executeAction<K extends ActionKind, TInputs>(
       return { kind: "key_reused" };
     case "blocked":
       return { kind: "blocked", blockingActionId: claim.blockingActionId };
+    case "rate_limited":
+      // Deterministic actions never pass `modelRateLimit` to `claimAction`.
+      throw new Error(
+        "A deterministic action unexpectedly reached model rate limiting.",
+      );
     case "replay":
       return {
         kind: "replay",

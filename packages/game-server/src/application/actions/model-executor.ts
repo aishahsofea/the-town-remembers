@@ -76,6 +76,7 @@ import {
   storeRetryableConflict,
   type ClaimActionParams,
 } from "../../persistence/actions.js";
+import { rateScopeKey } from "../../persistence/rate-limits.js";
 import { actionRequestHash } from "../../security/fingerprint.js";
 import { commitEffectPlan, RevisionConflictError } from "./commit.js";
 import type { LoadInputsContext } from "./executor.js";
@@ -100,7 +101,11 @@ export interface RunModelSelectionParams<TInputs> {
  * `DecisionResult` *or* `ExternalSelectionRequired`), unlike
  * `ActionHandler.plan`'s deterministic-only `DecisionResult`.
  */
-export interface ModelActionHandler<K extends ActionKind, TInputs> {
+export interface ModelActionHandler<
+  K extends ActionKind,
+  TInputs,
+  TSelection extends ValidatedDialogueResume = ValidatedDialogueResume,
+> {
   readonly kind: K;
   loadInputs(pool: Pool, context: LoadInputsContext): Promise<TInputs>;
   plan(inputs: TInputs): ActionPlanResult;
@@ -109,14 +114,23 @@ export interface ModelActionHandler<K extends ActionKind, TInputs> {
    * fallback) result — never a raw, unvalidated model response. Runs
    * outside any transaction; must finish by `params.deadlineAt`.
    */
-  runModelSelection(
-    params: RunModelSelectionParams<TInputs>,
-  ): Promise<ValidatedDialogueResume>;
+  runModelSelection(params: RunModelSelectionParams<TInputs>): Promise<TSelection>;
+  /**
+   * Projects causal rows derived from the validated selection. This stays a
+   * pure callback and runs before the final transaction; only the returned
+   * effect data enters `commitEffectPlan`.
+   */
+  applySelection?(
+    inputs: TInputs,
+    pending: ExternalSelectionRequired,
+    selection: TSelection,
+  ): readonly EffectPlanEntry[];
   allocateInsertIds?(inputs: TInputs): Readonly<Record<string, string>>;
   buildResult(
     inputs: TInputs,
     effects: readonly EffectPlanEntry[],
     insertIds: Readonly<Record<string, string>>,
+    selection?: TSelection,
   ): ActionResultByKind[K];
   reasonMessage(reasonCode: ReasonCode): string;
   resolveVisitId?(
@@ -126,7 +140,11 @@ export interface ModelActionHandler<K extends ActionKind, TInputs> {
   eventMetadata?(inputs: TInputs): WorldEventMetadata;
 }
 
-export interface ExecuteModelActionParams<K extends ActionKind, TInputs> {
+export interface ExecuteModelActionParams<
+  K extends ActionKind,
+  TInputs,
+  TSelection extends ValidatedDialogueResume = ValidatedDialogueResume,
+> {
   readonly pool: Pool;
   readonly deadline: OperationDeadline;
   readonly townId: string;
@@ -136,7 +154,7 @@ export interface ExecuteModelActionParams<K extends ActionKind, TInputs> {
   readonly targetActorId: string | null;
   readonly targetEntityId: string | null;
   readonly requestPayload: Readonly<Record<string, unknown>>;
-  readonly handler: ModelActionHandler<K, TInputs>;
+  readonly handler: ModelActionHandler<K, TInputs, TSelection>;
   readonly now: () => Date;
   readonly sleep?: (milliseconds: number) => Promise<void>;
   readonly requestId: string;
@@ -163,7 +181,8 @@ export type ExecuteModelActionOutcome<K extends ActionKind> =
       readonly retryAfterSeconds: number | null;
     }
   | { readonly kind: "key_reused" }
-  | { readonly kind: "blocked"; readonly blockingActionId: string };
+  | { readonly kind: "blocked"; readonly blockingActionId: string }
+  | { readonly kind: "rate_limited"; readonly retryAfterSeconds: number };
 
 async function readTownRevision(pool: Pool, townId: string): Promise<number> {
   const result = await pool.query<{ readonly revision: number }>(
@@ -203,8 +222,12 @@ async function readCompletedStatus(
  * `preModelRevision` — the authoritative revision check, on top of the
  * app-level pre/post snapshot comparison in the caller's loop.
  */
-async function attemptModelCommit<K extends ActionKind, TInputs>(
-  params: ExecuteModelActionParams<K, TInputs>,
+async function attemptModelCommit<
+  K extends ActionKind,
+  TInputs,
+  TSelection extends ValidatedDialogueResume,
+>(
+  params: ExecuteModelActionParams<K, TInputs, TSelection>,
   actionId: string,
   attempt: number,
   processingToken: string,
@@ -309,8 +332,12 @@ async function attemptModelCommit<K extends ActionKind, TInputs>(
     : { kind: "ok", matched: false, transactionRetries: 0 };
 }
 
-async function runClaimedModelAction<K extends ActionKind, TInputs>(
-  params: ExecuteModelActionParams<K, TInputs>,
+async function runClaimedModelAction<
+  K extends ActionKind,
+  TInputs,
+  TSelection extends ValidatedDialogueResume,
+>(
+  params: ExecuteModelActionParams<K, TInputs, TSelection>,
   actionId: string,
   processingToken: string,
 ): Promise<ExecuteModelActionOutcome<K>> {
@@ -321,6 +348,7 @@ async function runClaimedModelAction<K extends ActionKind, TInputs>(
       townId: params.townId,
       playerId: params.playerId,
       deadlineAt: preCommitDeadline(params.deadline),
+      attempt,
       targetActorId: params.targetActorId,
       targetEntityId: params.targetEntityId,
       requestPayload: params.requestPayload,
@@ -350,7 +378,14 @@ async function runClaimedModelAction<K extends ActionKind, TInputs>(
         });
         continue;
       }
-      const decision = resumeWithDialogue(plan, dialogue);
+      const resumed = resumeWithDialogue(plan, dialogue);
+      const decision = {
+        ...resumed,
+        effects: [
+          ...resumed.effects,
+          ...(params.handler.applySelection?.(inputs, plan, dialogue) ?? []),
+        ],
+      };
       if (decision.outcome !== "applied") {
         // `resumeWithDialogue`'s own implementation always returns
         // `"applied"` — this narrows the type accordingly and documents
@@ -363,7 +398,7 @@ async function runClaimedModelAction<K extends ActionKind, TInputs>(
         actionId,
         params.actionKind,
         decision.outcome,
-        params.handler.buildResult(inputs, decision.effects, insertIds),
+        params.handler.buildResult(inputs, decision.effects, insertIds, dialogue),
       );
       CompletedActionResponseSchema.parse(response satisfies CompletedActionResponse);
 
@@ -567,8 +602,12 @@ export class StaleModelExecutionClaimError extends Error {
 }
 
 /** Claims, executes (including any model call the planner requires), and commits one player action end to end. */
-export async function executeModelAction<K extends ActionKind, TInputs>(
-  params: ExecuteModelActionParams<K, TInputs>,
+export async function executeModelAction<
+  K extends ActionKind,
+  TInputs,
+  TSelection extends ValidatedDialogueResume = ValidatedDialogueResume,
+>(
+  params: ExecuteModelActionParams<K, TInputs, TSelection>,
 ): Promise<ExecuteModelActionOutcome<K>> {
   const requestHash = actionRequestHash({
     kind: params.actionKind,
@@ -589,6 +628,10 @@ export async function executeModelAction<K extends ActionKind, TInputs>(
     now: params.now,
     deadlineAt: preCommitDeadline(params.deadline),
     requestId: params.requestId,
+    modelRateLimit: {
+      playerScopeKey: rateScopeKey("player", params.townId, params.playerId),
+      townScopeKey: rateScopeKey("town", params.townId, params.townId),
+    },
     ...(params.sleep ? { sleep: params.sleep } : {}),
   };
   const claim = await claimAction(params.pool, claimParams);
@@ -604,6 +647,11 @@ export async function executeModelAction<K extends ActionKind, TInputs>(
       return { kind: "key_reused" };
     case "blocked":
       return { kind: "blocked", blockingActionId: claim.blockingActionId };
+    case "rate_limited":
+      return {
+        kind: "rate_limited",
+        retryAfterSeconds: claim.retryAfterSeconds,
+      };
     case "replay":
       return {
         kind: "replay",

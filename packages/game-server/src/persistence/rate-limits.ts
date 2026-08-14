@@ -227,6 +227,41 @@ export async function admitRateLimit(
   };
 }
 
+export interface RateLimitAdmissionRequest {
+  readonly bucket: RateLimitBucketConfig;
+  readonly scopeKey: Buffer;
+}
+
+/**
+ * Consume several buckets as one admission. A savepoint lets a rejection
+ * return its useful `Retry-After` while undoing any earlier bucket charge;
+ * the caller's surrounding transaction remains open and can return the
+ * rejection without creating its ledger row. This is used by `D4-S`'s
+ * player + town model-action gate.
+ */
+export async function admitRateLimitsAtomically(
+  transaction: TransactionContext,
+  requests: readonly RateLimitAdmissionRequest[],
+  now: Date,
+): Promise<RateLimitDecision> {
+  await transaction.query("SAVEPOINT rate_limit_admission");
+  for (const request of requests) {
+    const decision = await admitRateLimit(
+      transaction,
+      request.bucket,
+      request.scopeKey,
+      now,
+    );
+    if (!decision.admitted) {
+      await transaction.query("ROLLBACK TO SAVEPOINT rate_limit_admission");
+      await transaction.query("RELEASE SAVEPOINT rate_limit_admission");
+      return decision;
+    }
+  }
+  await transaction.query("RELEASE SAVEPOINT rate_limit_admission");
+  return { admitted: true };
+}
+
 /**
  * Standalone admission check that opens its own serializable transaction —
  * for a route with no other write to share one with (`player-view`'s poll).

@@ -238,4 +238,98 @@ describe.skipIf(!shouldRunDatabaseTests())("executeModelAction", () => {
     if (outcome.kind !== "executed") throw new Error("unreachable");
     expect(outcome.response.outcome).toBe("denied");
   });
+
+  it("charges only fresh model work, rejects the fourth burst action without a ledger row, and bypasses replay", async () => {
+    const fixture = await fixtureTownAndPlayer();
+    const keys = Array.from({ length: 4 }, () => randomUUID());
+    let modelCalls = 0;
+    const handler = askHandler(() => {
+      modelCalls += 1;
+      return Promise.resolve({
+        npcId: randomUUID(),
+        text: "hello",
+        responseMode: "selected",
+      });
+    });
+
+    for (const idempotencyKey of keys.slice(0, 3)) {
+      const outcome = await executeModelAction({
+        ...baseParams(fixture, handler, "ask"),
+        idempotencyKey,
+      });
+      expect(outcome.kind).toBe("executed");
+    }
+
+    const fourth = await executeModelAction({
+      ...baseParams(fixture, handler, "ask"),
+      idempotencyKey: keys[3]!,
+    });
+    expect(fourth.kind).toBe("rate_limited");
+    if (fourth.kind !== "rate_limited") throw new Error("unreachable");
+    expect(fourth.retryAfterSeconds).toBeGreaterThan(0);
+    expect(modelCalls).toBe(3);
+
+    const absent = await db().pool.query(
+      `SELECT id FROM public.player_actions
+        WHERE town_id = $1 AND player_id = $2 AND idempotency_key = $3`,
+      [fixture.townId, fixture.playerId, keys[3]],
+    );
+    expect(absent.rowCount).toBe(0);
+
+    const replay = await executeModelAction({
+      ...baseParams(fixture, handler, "ask"),
+      idempotencyKey: keys[0]!,
+    });
+    expect(replay.kind).toBe("replay");
+    expect(modelCalls).toBe(3);
+  });
+
+  it("charges before reclaiming retryable work and leaves the row retryable when rejected", async () => {
+    const fixture = await fixtureTownAndPlayer();
+    const ordinaryHandler = askHandler(() =>
+      Promise.resolve({
+        npcId: randomUUID(),
+        text: "hello",
+        responseMode: "selected",
+      }),
+    );
+
+    for (let index = 0; index < 2; index += 1) {
+      const outcome = await executeModelAction(
+        baseParams(fixture, ordinaryHandler, "ask"),
+      );
+      expect(outcome.kind).toBe("executed");
+    }
+
+    const retryKey = randomUUID();
+    const conflictingHandler = askHandler(async () => {
+      await bumpRevision(db().pool, fixture.townId);
+      return { npcId: randomUUID(), text: "hello", responseMode: "selected" };
+    });
+    const retryable = await executeModelAction({
+      ...baseParams(fixture, conflictingHandler, "ask"),
+      idempotencyKey: retryKey,
+    });
+    expect(retryable.kind).toBe("replay");
+    if (retryable.kind !== "replay") throw new Error("unreachable");
+    expect(retryable.status).toBe("retryable");
+
+    await db().pool.query(
+      `UPDATE public.player_actions SET retry_after_at = $3
+        WHERE town_id = $1 AND id = $2`,
+      [fixture.townId, retryable.actionId, new Date(Date.now() - 1_000)],
+    );
+
+    const rejectedReclaim = await executeModelAction({
+      ...baseParams(fixture, ordinaryHandler, "ask"),
+      idempotencyKey: retryKey,
+    });
+    expect(rejectedReclaim.kind).toBe("rate_limited");
+
+    const row = await db().pool.query<{ readonly status: string }>(
+      `SELECT status FROM public.player_actions WHERE town_id = $1 AND id = $2`,
+      [fixture.townId, retryable.actionId],
+    );
+    expect(row.rows[0]?.status).toBe("retryable");
+  });
 });

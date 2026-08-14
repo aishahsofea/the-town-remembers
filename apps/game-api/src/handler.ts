@@ -10,10 +10,12 @@ import process from "node:process";
 
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from "aws-lambda";
 import {
+  createProductionAskActionHandler,
   createRuntimePool,
   filterAllowlistedHeaders,
 } from "@the-town-remembers/game-server";
 import { loadGameConfig } from "@the-town-remembers/runtime-config/game";
+import { loadModelConfig } from "@the-town-remembers/runtime-config/model";
 import { loadSecurityConfig } from "@the-town-remembers/runtime-config/security";
 
 import { handleRequest, type RouterContext } from "./http/router.js";
@@ -21,13 +23,27 @@ import { handleRequest, type RouterContext } from "./http/router.js";
 let cachedContext: RouterContext | undefined;
 
 function routerContext(): RouterContext {
-  cachedContext ??= {
-    config: loadGameConfig(process.env),
-    securityConfig: loadSecurityConfig(process.env),
-    pool: createRuntimePool(process.env),
-    now: () => new Date(),
-    monotonicMs: () => performance.now(),
-  };
+  if (cachedContext === undefined) {
+    const config = loadGameConfig(process.env);
+    const pool = createRuntimePool(process.env);
+    const now = (): Date => new Date();
+    cachedContext = {
+      config,
+      securityConfig: loadSecurityConfig(process.env),
+      pool,
+      now,
+      monotonicMs: () => performance.now(),
+      ...(config.enableNpcMutations
+        ? {
+            askActionHandler: createProductionAskActionHandler({
+              pool,
+              modelConfig: loadModelConfig(process.env),
+              now,
+            }),
+          }
+        : {}),
+    };
+  }
   return cachedContext;
 }
 

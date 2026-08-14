@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   admitRateLimit,
+  admitRateLimitsAtomically,
   checkRateLimit,
   RATE_LIMIT_BUCKETS,
   rateScopeKey,
@@ -237,5 +238,51 @@ describe.skipIf(!shouldRunDatabaseTests())("api_rate_limits token bucket", () =>
     const fourth = await checkRateLimit(db().pool, deadlineAt, bucket, scopeKey, now);
     expect(fourth.admitted).toBe(false);
     if (!fourth.admitted) expect(fourth.retryAfterSeconds).toBeGreaterThan(0);
+  });
+
+  it("rolls back an earlier bucket charge when a later bucket rejects", async () => {
+    const townId = randomUUID();
+    const freshPlayerScope = rateScopeKey("player", townId, randomUUID());
+    const exhaustedTownScope = rateScopeKey("town", townId, townId);
+    const now = new Date("2026-01-01T00:00:00.000Z");
+    const deadlineAt = Date.now() + 10_000;
+
+    for (let index = 0; index < RATE_LIMIT_BUCKETS.modelActionTown.burst; index += 1) {
+      const decision = await checkRateLimit(
+        db().pool,
+        deadlineAt,
+        RATE_LIMIT_BUCKETS.modelActionTown,
+        exhaustedTownScope,
+        now,
+      );
+      expect(decision.admitted).toBe(true);
+    }
+
+    const grouped = await runSerializable(db().pool, { deadlineAt }, (transaction) =>
+      admitRateLimitsAtomically(
+        transaction,
+        [
+          {
+            bucket: RATE_LIMIT_BUCKETS.modelActionPlayer,
+            scopeKey: freshPlayerScope,
+          },
+          {
+            bucket: RATE_LIMIT_BUCKETS.modelActionTown,
+            scopeKey: exhaustedTownScope,
+          },
+        ],
+        now,
+      ),
+    );
+    expect(grouped.outcome).toBe("committed");
+    if (grouped.outcome !== "committed") throw new Error("unreachable");
+    expect(grouped.value.admitted).toBe(false);
+
+    const firstBucket = await db().pool.query(
+      `SELECT scope_key FROM public.api_rate_limits
+        WHERE scope_kind = 'player' AND scope_key = $1 AND bucket_kind = 'model_action'`,
+      [freshPlayerScope],
+    );
+    expect(firstBucket.rowCount).toBe(0);
   });
 });

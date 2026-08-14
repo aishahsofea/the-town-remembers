@@ -38,8 +38,10 @@ import {
   type ActionRecordStatus,
   type BlockingActionRow,
   type ExistingActionRow,
+  type LedgerDecision,
 } from "../application/actions/ledger.js";
 import { isDatabaseUuid } from "./identifiers.js";
+import { admitRateLimitsAtomically, RATE_LIMIT_BUCKETS } from "./rate-limits.js";
 
 /** Docs/007: player processing claims last 35 seconds and do not renew. */
 const CLAIM_MS = 35_000;
@@ -158,6 +160,16 @@ function toBlockerRow(raw: RawBlockerRow): BlockingActionRow {
   return { id: raw.id, processingExpiresAt: raw.processing_expires_at };
 }
 
+/** Ledger decisions that will start fresh work and therefore consume model capacity. */
+function decisionChargesRateLimit(decision: LedgerDecision): boolean {
+  return (
+    decision.kind === "create" ||
+    decision.kind === "reclaim" ||
+    decision.kind === "takeover" ||
+    decision.kind === "supersedeThenCreate"
+  );
+}
+
 export type ClaimDecision =
   | {
       readonly outcome: "claimed";
@@ -178,7 +190,8 @@ export type ClaimDecision =
       readonly retryAfterSeconds: number | null;
     }
   | { readonly outcome: "key_reused" }
-  | { readonly outcome: "blocked"; readonly blockingActionId: string };
+  | { readonly outcome: "blocked"; readonly blockingActionId: string }
+  | { readonly outcome: "rate_limited"; readonly retryAfterSeconds: number };
 
 export function retryAfterSecondsFrom(
   retryAfterAt: Date | null,
@@ -215,6 +228,15 @@ export interface ClaimActionParams {
   readonly now: () => Date;
   readonly deadlineAt: number;
   readonly requestId: string;
+  /**
+   * Present only for the six model-backed kinds. Both buckets are admitted
+   * atomically in the claim transaction after replay/block resolution but
+   * before any action row is created or reclaimed (`D4-S`).
+   */
+  readonly modelRateLimit?: {
+    readonly playerScopeKey: Buffer;
+    readonly townScopeKey: Buffer;
+  };
   readonly sleep?: (milliseconds: number) => Promise<void>;
 }
 
@@ -376,6 +398,29 @@ async function attemptOnce(
       requestHash: params.requestHash,
       now,
     });
+
+    if (params.modelRateLimit && decisionChargesRateLimit(decision)) {
+      const admission = await admitRateLimitsAtomically(
+        transaction,
+        [
+          {
+            bucket: RATE_LIMIT_BUCKETS.modelActionPlayer,
+            scopeKey: params.modelRateLimit.playerScopeKey,
+          },
+          {
+            bucket: RATE_LIMIT_BUCKETS.modelActionTown,
+            scopeKey: params.modelRateLimit.townScopeKey,
+          },
+        ],
+        now,
+      );
+      if (!admission.admitted) {
+        return {
+          outcome: "rate_limited",
+          retryAfterSeconds: admission.retryAfterSeconds,
+        } as const satisfies SingleAttemptOutcome;
+      }
+    }
 
     switch (decision.kind) {
       case "create": {
