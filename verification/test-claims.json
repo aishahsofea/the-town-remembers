@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "claims": [
+    {
+      "id": "V-DB-CONCURRENT-CUSTODY-RESOLUTION",
+      "requirement": "Concurrent transactions competing for the same town resolution or the same item's custody resolve to exactly one winner under real CockroachDB serialization, never a duplicate or lost effect.",
+      "primary": {
+        "file": "packages/database-admin/src/vector-concurrency.test.ts",
+        "test": "lets only one town resolution exist, whichever writer arrives first",
+        "boundary": "database"
+      },
+      "cases": [
+        "town-resolution-single-writer-wins",
+        "item-custody-single-writer-wins"
+      ],
+      "secondary": [],
+      "setup": "db-isolated",
+      "isolationReason": "Proves at-most-one-writer-wins outcomes under real concurrent transactions; a shared fixture's resets from neighboring files would confound the timing this test depends on (VPR-06).",
+      "source": "VPR-06 database test classification"
+    },
+    {
+      "id": "V-DB-TRANSACTION-SERIALIZATION-RETRY",
+      "requirement": "A real CockroachDB SERIALIZABLE conflict is retried transparently and re-runs the whole transaction body; retries stop at the configured deadline instead of retrying forever.",
+      "primary": {
+        "file": "packages/database-admin/src/transaction-integration.test.ts",
+        "test": "retries a real serialization conflict and re-runs the body whole",
+        "boundary": "database"
+      },
+      "cases": ["serialization-conflict-retried", "retry-deadline-stops-attempts"],
+      "secondary": [],
+      "setup": "db-isolated",
+      "isolationReason": "Proves the transaction helper's serialization/retry behavior against real engine contention; a shared fixture's concurrent resets would confound the timing this suite depends on (VPR-06).",
+      "source": "VPR-06 database test classification"
+    },
+    {
+      "id": "V-PROMPT-CORPUS-BASELINE",
+      "requirement": "The prompt evaluation corpus covers every prompt family with at least a control and a known-failure/boundary fixture, and a run that regresses a previously-passing fixture against the committed baseline is caught.",
+      "primary": {
+        "file": "scripts/prompts-eval.test.mjs",
+        "test": "checkCorpusShape passes when every family has a control and a known-failure/boundary fixture",
+        "boundary": "pure function"
+      },
+      "cases": ["corpus-shape-complete", "baseline-regression-detected"],
+      "secondary": [],
+      "setup": "filesystem",
+      "source": "Phase 4 prompt evaluation gate (validate-performance-and-test-rationalization.md)"
+    },
+    {
+      "id": "V-MODEL-RUNTIME-PROJECT-MEMBERSHIP",
+      "requirement": "The model-runtime package's tests stay inside the vitest project list, so `pnpm test` and `pnpm validate` cannot silently stop collecting them.",
+      "primary": {
+        "file": "scripts/vitest-config.test.mjs",
+        "test": "model-runtime remains a member of the full vitest project list",
+        "boundary": "pure function"
+      },
+      "cases": ["model-runtime-project-present"],
+      "secondary": [],
+      "setup": "none",
+      "source": "VPR audit — vitest project membership drift"
+    },
+    {
+      "id": "V-JOIN-SECRET-NONLEAK",
+      "requirement": "An allocated join secret reaches no player-visible surface: not the DOM, not an error surface, not the console, and not the browser's address bar, storage, or cookies.",
+      "primary": {
+        "file": "apps/web/src/screens/Join.test.tsx",
+        "test": "never exposes a live join secret to the DOM, an error surface, or the console",
+        "boundary": "component/hook"
+      },
+      "cases": ["dom-outer-html-clean", "error-surface-clean", "console-clean"],
+      "secondary": [
+        {
+          "file": "e2e/join.spec.ts",
+          "test": "shows the tokenless /join in the address bar, and the token never leaks into storage, cookies, the console, or the DOM",
+          "boundary": "browser",
+          "uniqueProof": "Checks the real address bar, cookies, and browser storage — surfaces a component test cannot observe at all — in addition to re-confirming DOM/console cleanliness inside an actual browser session."
+        }
+      ],
+      "setup": "dom",
+      "source": "Decision 006"
+    },
+    {
+      "id": "V-CDK-FOUNDATION-LEAST-PRIVILEGE",
+      "requirement": "The foundation CDK stack's synthesized IAM policies never grant a wildcard action or resource, and no synthesized template contains a plaintext secret value.",
+      "primary": {
+        "file": "infrastructure/src/foundation-stack.test.ts",
+        "test": "grants no wildcard action or resource",
+        "boundary": "pure function"
+      },
+      "cases": ["no-wildcard-iam-action-or-resource", "no-plaintext-secret-in-template"],
+      "secondary": [],
+      "setup": "none",
+      "source": "Phase 7 execution detail — CDK safety"
+    },
+    {
+      "id": "V-BROWSER-JOURNEY-FIRST-PLAYABLE",
+      "requirement": "A player can create a town, join, resume the same identity, travel, inspect, safely reload mid-journey, retry one action idempotently, and leave — all across the real HTTP, database, and browser-session boundary.",
+      "primary": {
+        "file": "e2e/phase-03-first-playable.spec.ts",
+        "test": "the first playable journey: create, join, resume, travel, inspect, replay, leave, away, return",
+        "boundary": "browser"
+      },
+      "cases": ["reload-resumes-session", "idempotent-action-replay"],
+      "secondary": [],
+      "setup": "browser",
+      "isolationReason": "Full page reloads and session-cookie persistence across a multi-step journey require a real browser session against the real backend; no lower boundary can observe reload/cookie persistence together with committed server state (Phase 3 exit gate).",
+      "source": "Phase 3 exit gate"
+    },
+    {
+      "id": "V-BROWSER-JOURNEY-GROUNDED-MEMORY",
+      "requirement": "A claim confirmed by one player, grounded in CockroachDB memory, demonstrably shapes a later dialogue for a second player, and an unconfirmed false claim leaves its object's belief untouched — across two persisted browser sessions.",
+      "primary": {
+        "file": "e2e/phase-04-grounded-memory.spec.ts",
+        "test": "grounded memory: Player A's confirmed claim shapes Player B's dialogue and evidence changes belief, with the object of a false claim left untouched",
+        "boundary": "browser"
+      },
+      "cases": ["confirmed-claim-shapes-later-dialogue", "false-claim-leaves-belief-untouched"],
+      "secondary": [],
+      "setup": "browser",
+      "isolationReason": "Requires two concurrently persisted real browser sessions (Player A and Player B) reloading against committed server-side memory; a component or API-level test cannot observe cross-player, cross-session dialogue effects (Phase 4/5 joint exit gate).",
+      "source": "Phase 4/5 exit gate"
+    }
+  ]
+}

@@ -1,0 +1,117 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://the-town-remembers.internal/verification/test-claims.schema.json",
+  "title": "Behavioral claim ledger",
+  "description": "Framework-neutral ownership ledger for behavioral test claims. See docs/agents/testing-policy.md section 3.2 and TG-02/TG-04/TG-08.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "claims"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "claims": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/claim" }
+    }
+  },
+  "definitions": {
+    "boundary": {
+      "type": "string",
+      "enum": [
+        "typecheck",
+        "pure function",
+        "component/hook",
+        "API/application",
+        "database",
+        "real socket",
+        "browser",
+        "deployed/live"
+      ]
+    },
+    "setup": {
+      "type": "string",
+      "enum": [
+        "none",
+        "typecheck",
+        "filesystem",
+        "dom",
+        "socket",
+        "db-shared",
+        "db-isolated",
+        "browser",
+        "model-live",
+        "cloud-live"
+      ]
+    },
+    "owner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "test", "boundary"],
+      "properties": {
+        "file": { "type": "string", "minLength": 1 },
+        "test": { "type": "string", "minLength": 1 },
+        "boundary": { "$ref": "#/definitions/boundary" }
+      }
+    },
+    "secondaryOwner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "test", "boundary", "uniqueProof"],
+      "properties": {
+        "file": { "type": "string", "minLength": 1 },
+        "test": { "type": "string", "minLength": 1 },
+        "boundary": { "$ref": "#/definitions/boundary" },
+        "uniqueProof": {
+          "type": "string",
+          "minLength": 1,
+          "description": "TG-04: the specific property this boundary observes that the primary owner's boundary cannot. Generic phrases like 'extra confidence' or 'comprehensive coverage' do not satisfy this field."
+        }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "requirement", "primary", "cases", "setup", "source"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^V-[A-Z][A-Z0-9-]*$",
+          "description": "Stable, never reused for a different behavior (TG-02)."
+        },
+        "requirement": { "type": "string", "minLength": 1 },
+        "primary": { "$ref": "#/definitions/owner" },
+        "cases": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Each entry names a distinct branch, boundary, equivalence class, or regression (TG-06), not an ordinary input value."
+        },
+        "secondary": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/secondaryOwner" }
+        },
+        "setup": { "$ref": "#/definitions/setup" },
+        "isolationReason": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Required when setup is db-isolated, browser, model-live, or cloud-live (TG-08)."
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Decision, phase acceptance item, bug, or security invariant this claim traces to."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "setup": { "enum": ["db-isolated", "browser", "model-live", "cloud-live"] }
+            }
+          },
+          "then": { "required": ["isolationReason"] }
+        }
+      ]
+    }
+  }
+}
