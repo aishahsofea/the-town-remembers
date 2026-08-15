@@ -106,3 +106,36 @@ This matters more as Phase 3 (and later phases) grow: burning 10 minutes per
 iteration on a coverage gate compounds fast across many commits in one
 phase. The scoped-run-first, full-run-last workflow is the accepted default
 for this repo, not just a one-off shortcut.
+
+## Local CockroachDB hygiene: never `kill`/interrupt a DB-touching run silently
+
+Every `db-shared`/`db-isolated` test drops its own scratch database
+(`ttr_test_*`, `ttr_doctor_*`) in a `finally`/`dispose()` block. A process
+that is interrupted — `kill`, Ctrl-C mid-run, a crashed shell, a stale
+background job left running from an earlier session — never reaches that
+`finally`, so the database it created is never dropped. One or two of these
+after a normal crash is harmless. Dozens are not: CockroachDB's catalog/range
+overhead scales with the number of databases on the cluster, not with how
+much of that data anyone still needs, and a cluster carrying 40+ leftover
+scratch databases measurably slows down *every* schema-touching query —
+including in totally unrelated test files, which shows up as `pnpm validate`
+mysteriously taking 3-4x longer than its usual ~9-10 minutes, or individual
+tests timing out at their 30s default.
+
+If you interrupt (or need to `kill`) any command that touches the database —
+`pnpm test`, `pnpm validate`, `pnpm test:e2e`, `pnpm db:doctor` — treat the
+local CockroachDB as possibly dirty afterward:
+
+1. Check for orphans: `node scripts/db-cleanup-orphans.mjs` (dry run, lists
+   them).
+2. Drop them: `pnpm db:cleanup-orphans`.
+3. `pnpm db:doctor` also warns on its own if it finds more than 5 orphaned
+   databases, so a plain `pnpm db:doctor` run is a reasonable first check
+   when a DB-backed run feels unexpectedly slow, before assuming it's a code
+   regression.
+
+Also check `.cache/db-suite-owner.lock` if a run reports
+`DbSuiteOwnershipError` — that lock is `scripts/db-suite-lock.mjs`'s claim
+that a database-touching stage already owns the shared suite database, and
+it has the same "never released by a killed process" failure mode. The error
+message itself names the exact PID and file to check.

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "generatedBy": "node scripts/generate-legacy-baseline.mjs --write",
-  "declarationCount": 1762,
+  "declarationCount": 1768,
   "declarations": [
     {
       "file": "apps/ambient-worker/src/handler.test.ts",
@@ -6678,6 +6678,30 @@
     {
       "file": "scripts/database-test-classification.test.mjs",
       "test": "the default gate creates no more than 10 databases (VPR-08 exit target)"
+    },
+    {
+      "file": "scripts/db-cleanup-orphans.test.mjs",
+      "test": "dropOrphanDatabases never issues a query for a non-orphan name"
+    },
+    {
+      "file": "scripts/db-cleanup-orphans.test.mjs",
+      "test": "dropOrphanDatabases only issues DROP DATABASE for orphan-shaped names"
+    },
+    {
+      "file": "scripts/db-cleanup-orphans.test.mjs",
+      "test": "listDatabaseNames reads database_name off SHOW DATABASES rows"
+    },
+    {
+      "file": "scripts/db-cleanup-orphans.test.mjs",
+      "test": "never matches a real, non-scratch database name"
+    },
+    {
+      "file": "scripts/db-cleanup-orphans.test.mjs",
+      "test": "recognizes every scratch/disposable prefix this repo generates"
+    },
+    {
+      "file": "scripts/db-cleanup-orphans.test.mjs",
+      "test": "selectOrphanNames filters and sorts"
     },
     {
       "file": "scripts/db-doctor.test.mjs",

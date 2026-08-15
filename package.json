@@ -13,6 +13,7 @@
     "check:bundle": "node scripts/check-bundle-safety.mjs",
     "check:source-text": "node scripts/check-source-text.mjs",
     "check:test-policy": "node scripts/check-test-policy.mjs",
+    "db:cleanup-orphans": "node scripts/db-cleanup-orphans.mjs --drop",
     "db:doctor": "node scripts/db-doctor.mjs",
     "db:down": "node scripts/cockroach.mjs stop",
     "db:migrate": "node scripts/db-migrate.mjs",
