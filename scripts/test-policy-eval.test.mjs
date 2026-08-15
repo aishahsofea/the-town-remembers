@@ -79,6 +79,27 @@ test("scoreDecision hard-passes and flags human review when uniqueProof is prese
   assert.equal(result.needsHumanReview, true);
 });
 
+test("scoreDecision does not require uniqueProof from an 'ask' decision", () => {
+  const result = scoreDecision(
+    scenario({ action: "ask", boundary: null, setup: null, uniqueProofRequired: true }),
+    { action: "ask" },
+  );
+  assert.equal(result.hardPass, true);
+});
+
+test("scoreDecision does not require isolationReason from an 'ask' decision", () => {
+  const result = scoreDecision(
+    scenario({
+      action: "ask",
+      boundary: null,
+      setup: null,
+      isolationReasonRequired: true,
+    }),
+    { action: "ask" },
+  );
+  assert.equal(result.hardPass, true);
+});
+
 test("scoreDecision fails when isolationReason is required but missing", () => {
   const result = scoreDecision(scenario({ isolationReasonRequired: true }), {
     action: "add",

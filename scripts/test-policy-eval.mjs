@@ -72,15 +72,25 @@ export function scoreDecision(scenario, decision = {}) {
     mismatches.push(fieldMismatch("setup", expected.setup, decision.setup ?? null));
   }
 
+  // uniqueProofRequired/isolationReasonRequired mark scenarios where *adding
+  // an owner* would need that justification. An "ask" decision refuses to
+  // add anything, so it cannot be faulted for omitting a justification for
+  // an owner it never proposed.
+  const decisionCreatesOwner = expected.action !== "ask" && decision.action !== "ask";
+
   const uniqueProofPresent =
     typeof decision.uniqueProof === "string" && decision.uniqueProof.length > 0;
-  if (expected.uniqueProofRequired && !uniqueProofPresent) {
+  if (expected.uniqueProofRequired && decisionCreatesOwner && !uniqueProofPresent) {
     mismatches.push(fieldMismatch("uniqueProof", "present", "missing"));
   }
 
   const isolationReasonPresent =
     typeof decision.isolationReason === "string" && decision.isolationReason.length > 0;
-  if (expected.isolationReasonRequired && !isolationReasonPresent) {
+  if (
+    expected.isolationReasonRequired &&
+    decisionCreatesOwner &&
+    !isolationReasonPresent
+  ) {
     mismatches.push(fieldMismatch("isolationReason", "present", "missing"));
   }
 

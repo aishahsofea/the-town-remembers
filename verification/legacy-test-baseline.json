@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "generatedBy": "node scripts/generate-legacy-baseline.mjs --write",
-  "declarationCount": 1760,
+  "declarationCount": 1762,
   "declarations": [
     {
       "file": "apps/ambient-worker/src/handler.test.ts",
@@ -6930,6 +6930,14 @@
     {
       "file": "scripts/test-policy-eval.test.mjs",
       "test": "scoreDecision does not constrain a field the scenario leaves null"
+    },
+    {
+      "file": "scripts/test-policy-eval.test.mjs",
+      "test": "scoreDecision does not require isolationReason from an 'ask' decision"
+    },
+    {
+      "file": "scripts/test-policy-eval.test.mjs",
+      "test": "scoreDecision does not require uniqueProof from an 'ask' decision"
     },
     {
       "file": "scripts/test-policy-eval.test.mjs",
