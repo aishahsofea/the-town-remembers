@@ -139,3 +139,25 @@ Also check `.cache/db-suite-owner.lock` if a run reports
 that a database-touching stage already owns the shared suite database, and
 it has the same "never released by a killed process" failure mode. The error
 message itself names the exact PID and file to check.
+
+**If dropping orphans doesn't fix it, restart the CockroachDB process
+itself.** A `cockroach start-single-node` process left running for many
+hours across many `pnpm test`/`pnpm validate` cycles accumulates memory and
+I/O state (observed: 7+ hours uptime, ~8GB resident, hundreds of GB of
+lifetime disk I/O on a "local dev" instance) that outlives any individual
+orphan database and isn't fixed by dropping them — `createDisposableDatabase()`
+itself starts timing out at its 180s hook timeout. This does not wipe data
+(`pnpm db:down` stops the process; `pnpm db:up` starts it again against the
+same on-disk store), so it's always safe to try:
+
+```bash
+pnpm db:down
+pnpm db:up
+node scripts/db-doctor.mjs   # should complete in a few seconds, not hang
+```
+
+If a single database-project test file (e.g.
+`vitest run --project database packages/database-admin/src/grants.test.ts`)
+takes noticeably longer than ~20s after a fresh `pnpm db:up`, something is
+still wrong — don't assume it will "warm up," investigate before running the
+full suite again.
