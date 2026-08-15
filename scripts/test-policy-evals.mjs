@@ -59,7 +59,10 @@ export function validateScenario(scenario, source = "<scenario>") {
   if (!CATEGORIES.has(scenario.category)) {
     fail(errors, `${source}: category must be one of ${[...CATEGORIES].join(", ")}`);
   }
-  if (typeof scenario.id === "string" && !scenario.id.startsWith(`${scenario.category}-`)) {
+  if (
+    typeof scenario.id === "string" &&
+    !scenario.id.startsWith(`${scenario.category}-`)
+  ) {
     fail(errors, `${source}: id prefix must match category "${scenario.category}"`);
   }
   if (typeof scenario.title !== "string" || scenario.title.length === 0) {
@@ -78,7 +81,10 @@ export function validateScenario(scenario, source = "<scenario>") {
     return errors;
   }
   if (!ACTIONS.has(expected.action)) {
-    fail(errors, `${source}: expected.action must be one of ${[...ACTIONS].join(", ")}`);
+    fail(
+      errors,
+      `${source}: expected.action must be one of ${[...ACTIONS].join(", ")}`,
+    );
   }
   if (
     expected.claimId !== undefined &&
@@ -92,7 +98,10 @@ export function validateScenario(scenario, source = "<scenario>") {
     expected.boundary !== null &&
     !BOUNDARIES.has(expected.boundary)
   ) {
-    fail(errors, `${source}: expected.boundary must be one of ${[...BOUNDARIES].join(", ")}`);
+    fail(
+      errors,
+      `${source}: expected.boundary must be one of ${[...BOUNDARIES].join(", ")}`,
+    );
   }
   if (
     expected.setup !== undefined &&
@@ -119,7 +128,10 @@ export function validateScenario(scenario, source = "<scenario>") {
     } else {
       for (const ruleId of expected.violatedRules) {
         if (typeof ruleId !== "string" || !RULE_ID_PATTERN.test(ruleId)) {
-          fail(errors, `${source}: expected.violatedRules entries must match ${RULE_ID_PATTERN}`);
+          fail(
+            errors,
+            `${source}: expected.violatedRules entries must match ${RULE_ID_PATTERN}`,
+          );
         }
       }
     }
@@ -175,7 +187,9 @@ function runCli() {
   const errors = validateAllScenarios();
   if (errors.length === 0) {
     const entries = loadScenarios();
-    console.log(`${entries.length} test-policy-eval scenario(s) pass schema validation.`);
+    console.log(
+      `${entries.length} test-policy-eval scenario(s) pass schema validation.`,
+    );
     return;
   }
   console.error(`Test-policy-eval corpus failed with ${errors.length} error(s):`);

@@ -88,7 +88,9 @@ test("rejects a malformed violatedRules entry", () => {
 });
 
 test("rejects a missing rationale", () => {
-  const errors = validateScenario(baseScenario({ expected: { action: "add", rationale: "" } }));
+  const errors = validateScenario(
+    baseScenario({ expected: { action: "add", rationale: "" } }),
+  );
   assert.ok(errors.some((e) => e.includes("rationale")));
 });
 

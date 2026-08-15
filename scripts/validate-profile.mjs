@@ -28,6 +28,7 @@ export const STAGES = Object.freeze([
   { name: "check:source-text", script: "check:source-text" },
   { name: "check:boundaries", script: "check:boundaries" },
   { name: "check:assets", script: "check:assets" },
+  { name: "check:test-policy", script: "check:test-policy" },
   { name: "typecheck", script: "typecheck" },
   { name: "test:tooling", script: "test:tooling" },
   { name: "lint", script: "lint" },

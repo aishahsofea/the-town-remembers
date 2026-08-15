@@ -5,7 +5,15 @@
   "description": "One control, known-failure, or boundary scenario used to prove the canonical test-ownership policy (docs/agents/testing-policy.md) produces the same decision across coding agents.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "id", "category", "title", "context", "request", "expected"],
+  "required": [
+    "schemaVersion",
+    "id",
+    "category",
+    "title",
+    "context",
+    "request",
+    "expected"
+  ],
   "properties": {
     "schemaVersion": { "const": 1 },
     "id": {

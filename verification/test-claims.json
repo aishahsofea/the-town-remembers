@@ -86,7 +86,10 @@
         "test": "grants no wildcard action or resource",
         "boundary": "pure function"
       },
-      "cases": ["no-wildcard-iam-action-or-resource", "no-plaintext-secret-in-template"],
+      "cases": [
+        "no-wildcard-iam-action-or-resource",
+        "no-plaintext-secret-in-template"
+      ],
       "secondary": [],
       "setup": "none",
       "source": "Phase 7 execution detail — CDK safety"
@@ -113,7 +116,10 @@
         "test": "grounded memory: Player A's confirmed claim shapes Player B's dialogue and evidence changes belief, with the object of a false claim left untouched",
         "boundary": "browser"
       },
-      "cases": ["confirmed-claim-shapes-later-dialogue", "false-claim-leaves-belief-untouched"],
+      "cases": [
+        "confirmed-claim-shapes-later-dialogue",
+        "false-claim-leaves-belief-untouched"
+      ],
       "secondary": [],
       "setup": "browser",
       "isolationReason": "Requires two concurrently persisted real browser sessions (Player A and Player B) reloading against committed server-side memory; a component or API-level test cannot observe cross-player, cross-session dialogue effects (Phase 4/5 joint exit gate).",

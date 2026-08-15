@@ -66,7 +66,10 @@ test("syncAdapterContent replaces only the existing block, preserving surroundin
 });
 
 test("checkAdapterContent fails when no block is present", () => {
-  const result = checkAdapterContent("# Adapter\n\nnothing generated here\n", "irrelevant");
+  const result = checkAdapterContent(
+    "# Adapter\n\nnothing generated here\n",
+    "irrelevant",
+  );
   assert.equal(result.ok, false);
   assert.match(result.reason, /no generated test-policy block/);
 });

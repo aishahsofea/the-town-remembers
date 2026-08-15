@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "generatedBy": "node scripts/generate-legacy-baseline.mjs --write",
-  "declarationCount": 1718,
+  "declarationCount": 1751,
   "declarations": [
     {
       "file": "apps/ambient-worker/src/handler.test.ts",
@@ -6496,6 +6496,74 @@
       "test": "reports a NUL byte with its line and column"
     },
     {
+      "file": "scripts/check-test-policy.test.mjs",
+      "test": "a brand new untracked behavior"
+    },
+    {
+      "file": "scripts/check-test-policy.test.mjs",
+      "test": "a tracked legacy behavior"
+    },
+    {
+      "file": "scripts/check-test-policy.test.mjs",
+      "test": "accepts a minimal fully-governed fixture"
+    },
+    {
+      "file": "scripts/check-test-policy.test.mjs",
+      "test": "browser check"
+    },
+    {
+      "file": "scripts/check-test-policy.test.mjs",
+      "test": "does the thing"
+    },
+    {
+      "file": "scripts/check-test-policy.test.mjs",
+      "test": "ignores createDisposableDatabase mentioned only in a comment"
+    },
+    {
+      "file": "scripts/check-test-policy.test.mjs",
+      "test": "passes when a new declaration is recorded in the legacy baseline"
+    },
+    {
+      "file": "scripts/check-test-policy.test.mjs",
+      "test": "rejects a claim pointing at a file that does not exist"
+    },
+    {
+      "file": "scripts/check-test-policy.test.mjs",
+      "test": "rejects a claim whose primary test cannot be found in its file"
+    },
+    {
+      "file": "scripts/check-test-policy.test.mjs",
+      "test": "rejects a direct createDisposableDatabase() call outside the allowlist"
+    },
+    {
+      "file": "scripts/check-test-policy.test.mjs",
+      "test": "rejects a drifted (hand-edited) adapter block"
+    },
+    {
+      "file": "scripts/check-test-policy.test.mjs",
+      "test": "rejects a malformed eval scenario alongside other checks"
+    },
+    {
+      "file": "scripts/check-test-policy.test.mjs",
+      "test": "rejects a new test declaration that is neither governed nor in the legacy baseline"
+    },
+    {
+      "file": "scripts/check-test-policy.test.mjs",
+      "test": "rejects a secondary owner with a generic uniqueProof"
+    },
+    {
+      "file": "scripts/check-test-policy.test.mjs",
+      "test": "rejects an expensive setup claim with no isolationReason"
+    },
+    {
+      "file": "scripts/check-test-policy.test.mjs",
+      "test": "rejects duplicate claim ids"
+    },
+    {
+      "file": "scripts/check-test-policy.test.mjs",
+      "test": "rejects two claims sharing the same primary owner"
+    },
+    {
       "file": "scripts/check-workspace-boundaries.test.mjs",
       "test": "accepts model configuration imported by game-server and the ambient worker"
     },
@@ -6698,6 +6766,70 @@
     {
       "file": "scripts/deferred-key-constraints.test.mjs",
       "test": "DEFERRED_KEY_CONSTRAINTS matches every constraint 0009_deferred_keys.sql adds"
+    },
+    {
+      "file": "scripts/generate-legacy-baseline.test.mjs",
+      "test": "buildBaseline also excludes declarations owned as a secondary claim"
+    },
+    {
+      "file": "scripts/generate-legacy-baseline.test.mjs",
+      "test": "buildBaseline excludes declarations already owned by the claim ledger"
+    },
+    {
+      "file": "scripts/generate-legacy-baseline.test.mjs",
+      "test": "buildBaseline output is sorted for a stable diff"
+    },
+    {
+      "file": "scripts/generate-legacy-baseline.test.mjs",
+      "test": "extractDeclarations does not see parameterized .each names"
+    },
+    {
+      "file": "scripts/generate-legacy-baseline.test.mjs",
+      "test": "extractDeclarations finds test() and it() names, including modifiers"
+    },
+    {
+      "file": "scripts/generate-legacy-baseline.test.mjs",
+      "test": "extractDeclarations ignores describe() and unrelated calls"
+    },
+    {
+      "file": "scripts/generate-legacy-baseline.test.mjs",
+      "test": "focused"
+    },
+    {
+      "file": "scripts/generate-legacy-baseline.test.mjs",
+      "test": "governed behavior"
+    },
+    {
+      "file": "scripts/generate-legacy-baseline.test.mjs",
+      "test": "inner"
+    },
+    {
+      "file": "scripts/generate-legacy-baseline.test.mjs",
+      "test": "legacy behavior"
+    },
+    {
+      "file": "scripts/generate-legacy-baseline.test.mjs",
+      "test": "middle"
+    },
+    {
+      "file": "scripts/generate-legacy-baseline.test.mjs",
+      "test": "plain it"
+    },
+    {
+      "file": "scripts/generate-legacy-baseline.test.mjs",
+      "test": "plain test"
+    },
+    {
+      "file": "scripts/generate-legacy-baseline.test.mjs",
+      "test": "secondary journey"
+    },
+    {
+      "file": "scripts/generate-legacy-baseline.test.mjs",
+      "test": "single quoted"
+    },
+    {
+      "file": "scripts/generate-legacy-baseline.test.mjs",
+      "test": "zebra"
     },
     {
       "file": "scripts/local-env.test.mjs",

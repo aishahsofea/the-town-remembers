@@ -34,13 +34,19 @@ export function extractCoreBlock(policyMarkdown) {
   const startIndex = policyMarkdown.indexOf(CORE_START);
   const endIndex = policyMarkdown.indexOf(CORE_END);
   if (startIndex === -1 || endIndex === -1 || endIndex < startIndex) {
-    throw new Error(`${POLICY_PATH} is missing matching ${CORE_START}/${CORE_END} markers`);
+    throw new Error(
+      `${POLICY_PATH} is missing matching ${CORE_START}/${CORE_END} markers`,
+    );
   }
   return policyMarkdown.slice(startIndex + CORE_START.length, endIndex).trim();
 }
 
 export function computeChecksum(coreBlockText) {
-  return crypto.createHash("sha256").update(coreBlockText, "utf8").digest("hex").slice(0, 12);
+  return crypto
+    .createHash("sha256")
+    .update(coreBlockText, "utf8")
+    .digest("hex")
+    .slice(0, 12);
 }
 
 export function buildGeneratedBlock(coreBlockText, checksum) {
@@ -100,7 +106,10 @@ export function checkAdapterContent(existingContent, generatedBlock) {
     return { ok: false, reason: "no generated test-policy block found" };
   }
   if (existingBlock.text !== generatedBlock) {
-    return { ok: false, reason: "generated test-policy block has drifted from the canonical source" };
+    return {
+      ok: false,
+      reason: "generated test-policy block has drifted from the canonical source",
+    };
   }
   return { ok: true };
 }
@@ -151,7 +160,9 @@ function runCli() {
       for (const failure of failures) {
         console.error(`- ${failure}`);
       }
-      console.error("Run `node scripts/sync-agent-test-policy.mjs --write` to regenerate.");
+      console.error(
+        "Run `node scripts/sync-agent-test-policy.mjs --write` to regenerate.",
+      );
       process.exitCode = 1;
       return;
     }

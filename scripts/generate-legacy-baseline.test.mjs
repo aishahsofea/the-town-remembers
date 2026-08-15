@@ -66,7 +66,11 @@ test("buildBaseline excludes declarations already owned by the claim ledger", ()
         {
           id: "V-EXAMPLE",
           requirement: "x",
-          primary: { file: "packages/a/src/foo.test.ts", test: "governed behavior", boundary: "pure function" },
+          primary: {
+            file: "packages/a/src/foo.test.ts",
+            test: "governed behavior",
+            boundary: "pure function",
+          },
           cases: ["x"],
           setup: "none",
           source: "test",
