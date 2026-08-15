@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 import { GATE_RESULTS, isGateResult, type GateResult } from "./gate-results.js";
 
@@ -21,10 +21,12 @@ describe("gate result domain", () => {
   });
 
   it("narrows to the GateResult type when true", () => {
+    // Compile-time only (VPR-10): if isGateResult were not declared as
+    // `value is GateResult`, this line would fail typecheck, not just this
+    // assertion -- and pnpm typecheck already runs over every *.test.ts.
     const candidate: string = "denied_belief";
     if (isGateResult(candidate)) {
-      const narrowed: GateResult = candidate;
-      expect(narrowed).toBe("denied_belief");
+      expectTypeOf(candidate).toEqualTypeOf<GateResult>();
     } else {
       throw new Error("expected denied_belief to be a recognized gate result");
     }

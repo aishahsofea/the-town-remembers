@@ -37,7 +37,8 @@ export const COVERAGE_MAP: readonly CoverageMapRow[] = Object.freeze([
     goal: "G3",
     requirement: "no ambient clock/identity/env read anywhere in packages/rules/src",
     testFile: "kernel/determinism.test.ts",
-    testName: "keeps %s free of ambient calls",
+    testName:
+      "keeps every non-test source file free of ambient calls and database client imports",
   },
   {
     goal: "G5",

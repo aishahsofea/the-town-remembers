@@ -6,7 +6,7 @@ import {
 } from "@the-town-remembers/http-contracts";
 import type { SecurityConfig } from "@the-town-remembers/runtime-config/security";
 import {
-  createDisposableDatabase,
+  useSharedTestDatabase,
   shouldRunDatabaseTests,
   type DisposableDatabase,
 } from "@the-town-remembers/test-support/database";
@@ -79,7 +79,7 @@ describe.skipIf(!shouldRunDatabaseTests())("POST /actions — normalize_claim", 
   let normalizedResult: NormalizeClaimSelection;
 
   beforeAll(async () => {
-    database = await createDisposableDatabase();
+    database = await useSharedTestDatabase();
     inviteToken = randomUUID();
     const seeded = await materializeTown(database.pool, {
       contentVersion: "bell-mystery-v1",

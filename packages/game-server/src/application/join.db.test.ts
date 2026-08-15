@@ -3,7 +3,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { SecurityConfig } from "@the-town-remembers/runtime-config/security";
 import { materializeTown } from "@the-town-remembers/town-seed";
 import {
-  createDisposableDatabase,
+  useSharedTestDatabase,
   shouldRunDatabaseTests,
   type DisposableDatabase,
 } from "@the-town-remembers/test-support/database";
@@ -64,7 +64,7 @@ describe.skipIf(!shouldRunDatabaseTests())("first-time join", () => {
   let inviteToken: string;
 
   beforeAll(async () => {
-    handle = await createDisposableDatabase();
+    handle = await useSharedTestDatabase();
     config = {
       buildId: "test-build",
       appOrigin: APP_ORIGIN,
@@ -314,7 +314,7 @@ describe.skipIf(!shouldRunDatabaseTests())("join into a non-active town", () => 
   let townId: string;
 
   beforeAll(async () => {
-    handle = await createDisposableDatabase();
+    handle = await useSharedTestDatabase();
     const result = await materializeTown(handle.pool, {
       contentVersion: "bell-mystery-v1",
       createdAt: new Date(),

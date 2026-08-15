@@ -16,7 +16,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { ProblemResponseSchema } from "@the-town-remembers/http-contracts";
 import type { SecurityConfig } from "@the-town-remembers/runtime-config/security";
 import {
-  createDisposableDatabase,
+  useSharedTestDatabase,
   shouldRunDatabaseTests,
   type DisposableDatabase,
 } from "@the-town-remembers/test-support/database";
@@ -157,7 +157,7 @@ describe.skipIf(!shouldRunDatabaseTests())(
       // instance, two independent town rows) — the property under test is
       // `town_id` scoping inside one database, not database-per-tenant
       // isolation, so one shared handle is both sufficient and faster.
-      handleA = await createDisposableDatabase();
+      handleA = await useSharedTestDatabase();
 
       config = {
         buildId: "test-build",

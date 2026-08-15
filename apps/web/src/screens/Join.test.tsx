@@ -130,19 +130,6 @@ describe("Join — closed town", () => {
 });
 
 describe("Join — first-time join", () => {
-  function stubFreshSession(): void {
-    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
-      const url = requestedUrl(input);
-      if (url.includes("/invites/") && !url.includes("/join")) {
-        return Promise.resolve(jsonResponse(PREVIEW));
-      }
-      if (url.includes("/player-view")) {
-        return Promise.resolve(problemResponse(401, "INVALID_SESSION", "no session"));
-      }
-      throw new Error(`unexpected fetch in this test: ${url}`);
-    });
-  }
-
   it("keeps the field populated after a conflict and uses a fresh key for the corrected name", async () => {
     setCapturedInviteToken("token-1");
     const joinKeys: string[] = [];
@@ -191,20 +178,67 @@ describe("Join — first-time join", () => {
     expect(joinKeys[1]).not.toBe(joinKeys[0]);
   });
 
-  it("never renders the join secret anywhere in the DOM", async () => {
+  it("never exposes a live join secret to the DOM, an error surface, or the console", async () => {
     setCapturedInviteToken("token-1");
-    stubFreshSession();
+    let resolveJoin!: (response: Response) => void;
+    const pendingJoinResponse = new Promise<Response>((resolve) => {
+      resolveJoin = resolve;
+    });
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = requestedUrl(input);
+      if (url.includes("/invites/") && !url.includes("/join")) {
+        return Promise.resolve(jsonResponse(PREVIEW));
+      }
+      if (url.includes("/player-view")) {
+        return Promise.resolve(problemResponse(401, "INVALID_SESSION", "no session"));
+      }
+      if (url.endsWith("/join")) return pendingJoinResponse;
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    const consoleSpies = [
+      vi.spyOn(console, "error").mockImplementation(() => {}),
+      vi.spyOn(console, "warn").mockImplementation(() => {}),
+      vi.spyOn(console, "log").mockImplementation(() => {}),
+    ];
 
     render(<Join />);
-    await screen.findByLabelText("Your name");
+    const input = await screen.findByLabelText("Your name");
+    fireEvent.change(input, { target: { value: "Aishah Sofea" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enter the town" }));
 
-    const stored = sessionStorage.getItem("ttr.join-session");
-    const secret = stored
-      ? (JSON.parse(stored) as { joinAttemptSecret: string }).joinAttemptSecret
-      : undefined;
-    // The session is only created at submit time; nothing is stored yet.
-    expect(secret).toBeUndefined();
-    expect(document.documentElement.outerHTML).not.toContain("join-attempt-secret");
+    // The join request is still pending, so the secret already exists in
+    // its one permitted location (submit time writes it synchronously,
+    // before the fetch), and stays live until the request settles.
+    await waitFor(() => {
+      expect(sessionStorage.getItem("ttr.join-session")).not.toBeNull();
+    });
+    const stored = sessionStorage.getItem("ttr.join-session")!;
+    const secret = (JSON.parse(stored) as { joinAttemptSecret: string })
+      .joinAttemptSecret;
+    expect(secret.length).toBeGreaterThan(0);
+
+    function assertSecretNotExposed(): void {
+      expect(document.documentElement.outerHTML).not.toContain(secret);
+      for (const spy of consoleSpies) {
+        for (const call of spy.mock.calls) {
+          for (const argument of call) {
+            const text =
+              typeof argument === "string" ? argument : JSON.stringify(argument);
+            expect(text).not.toContain(secret);
+          }
+        }
+      }
+    }
+
+    assertSecretNotExposed();
+
+    // Settle the request with a server-controlled error surface (`role="alert"`
+    // renders `error.problem.detail` verbatim) while the secret is still live,
+    // and check again -- an error surface is exactly where a client-side leak
+    // would most plausibly show up.
+    resolveJoin(problemResponse(500, "INTERNAL", "Something went wrong upstream."));
+    await screen.findByRole("alert");
+    assertSecretNotExposed();
   });
 
   it("navigates to the map on a successful join and clears the join session", async () => {

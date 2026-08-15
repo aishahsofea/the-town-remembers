@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import {
-  createDisposableDatabase,
+  useSharedTestDatabase,
   insertPlayer,
   shouldRunDatabaseTests,
   type DisposableDatabase,
@@ -17,7 +17,7 @@ describe.skipIf(!shouldRunDatabaseTests())("loadDisclosureSources", () => {
   let playerId: string | undefined;
 
   beforeAll(async () => {
-    handle = await createDisposableDatabase();
+    handle = await useSharedTestDatabase();
     const inviteToken = randomUUID();
     const result = await materializeTown(handle.pool, {
       contentVersion: "bell-mystery-v1",

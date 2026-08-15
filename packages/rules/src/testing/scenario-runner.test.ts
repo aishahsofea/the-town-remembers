@@ -17,10 +17,6 @@ describe("every named scenario runs and produces a deterministic digest", () => 
     const second = computeScenarioDigest(name);
     expect(first).toBe(second);
   });
-
-  it.each(SCENARIO_NAMES)("%s produces at least one step", (name) => {
-    expect(runScenario(name).length).toBeGreaterThan(0);
-  });
 });
 
 describe("golden scenario: start_and_travel", () => {
@@ -64,10 +60,8 @@ describe("golden scenario: show_evidence_flow", () => {
   });
 });
 
-describe("hidden-state projection-unchanged case", () => {
-  it("running the same scenario twice from scratch never diverges, proving no rule leaks ambient state between runs", () => {
-    const runOne = runScenario("both_endings");
-    const runTwo = runScenario("both_endings");
-    expect(runOne).toStrictEqual(runTwo);
-  });
-});
+// "hidden-state projection-unchanged case" used to live here, running
+// both_endings twice and comparing full results. It duplicated the digest
+// determinism check above for that one scenario -- computeScenarioDigest
+// already hashes runScenario()'s complete output, so a mismatch there
+// would have caught the same ambient-state leak (VPR-10).

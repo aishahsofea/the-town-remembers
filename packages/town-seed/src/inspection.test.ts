@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 import { ACCEPTED_VIEWS } from "@the-town-remembers/database-admin";
 import {
-  createDisposableDatabase,
+  useSharedTestDatabase,
   shouldRunDatabaseTests,
   type DisposableDatabase,
 } from "@the-town-remembers/test-support/database";
@@ -25,7 +25,7 @@ describe.skipIf(!shouldRunDatabaseTests())("the inspection surface", () => {
   let townId: string;
 
   beforeAll(async () => {
-    handle = await createDisposableDatabase();
+    handle = await useSharedTestDatabase();
     const result = await materializeTown(handle.pool, {
       contentVersion: "bell-mystery-v1",
       createdAt: CREATED_AT,

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { asVector256 } from "@the-town-remembers/database";
 import type { TitanEmbedClient } from "@the-town-remembers/model-runtime";
 import {
-  createDisposableDatabase,
+  useSharedTestDatabase,
   insertNpc,
   insertTown,
   shouldRunDatabaseTests,
@@ -72,7 +72,7 @@ describe.skipIf(!shouldRunDatabaseTests())("embed-seed backfill", () => {
   let handle: DisposableDatabase | undefined;
 
   beforeAll(async () => {
-    handle = await createDisposableDatabase();
+    handle = await useSharedTestDatabase();
   }, 180_000);
 
   afterAll(async () => {

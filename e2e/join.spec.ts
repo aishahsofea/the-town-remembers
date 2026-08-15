@@ -7,6 +7,26 @@ import { expect, test, type Page } from "@playwright/test";
  * browser, independent of a live backend or database. Server-side join
  * correctness already has its own extensive suite in
  * `packages/game-server/src/http/actions.db.test.ts` and friends.
+ *
+ * Layer ownership (`VPR-13`), checked against `screens/Join.test.tsx`
+ * (component, jsdom + mocked fetch):
+ *   - "shows the tokenless /join..." and "refreshing /join before
+ *     authentication...": a real address bar and a real page reload —
+ *     jsdom has neither. Browser-only, kept.
+ *   - "an existing session shows Return as..." and "a closed town shows no
+ *     name field": removed. Both assert component logic
+ *     (`Join.test.tsx`'s "Join — existing session" and "Join — closed
+ *     town" describe blocks already cover the identical behavior) with no
+ *     address-bar, storage, focus, or navigation-lifecycle assertion this
+ *     spec adds on top.
+ *   - "a server-side name conflict...": kept for its real
+ *     `document.activeElement`/`selectionStart` check — jsdom's selection
+ *     APIs are not a reliable stand-in for a real browser's.
+ *   - "the join attempt secret is never present...": kept, but repaired
+ *     the same way `Join.test.tsx`'s equivalent case was (`VPR-11`) — it
+ *     checked the DOM before the secret was ever allocated (fill, not
+ *     submit), which cannot fail no matter what the client does with a
+ *     real secret.
  */
 
 const TOKEN = "secret-invite-token-abc123";
@@ -136,68 +156,6 @@ test.describe("invite bootstrap", () => {
 });
 
 test.describe("join screen", () => {
-  test("an existing session shows Return as {displayName} and issues no join POST", async ({
-    page,
-  }) => {
-    await mockPreview(page, PREVIEW_BODY);
-    const joinPosts: string[] = [];
-    await page.route("**/api/v1/towns/*/player-view", async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          viewVersion: "Zm9vYmFyYmF6cXV4Zm9vYmFyYmF6cXV4Zm9vYmFyYmE",
-          town: {
-            id: "town_1",
-            mysteryTitle: "The Missing Festival Bell",
-            contentVersion: "bell-mystery-v1",
-            tagline: "The bell is gone.",
-            status: "active",
-          },
-          player: { id: "p1", displayName: "Aishah Sofea", visit: { status: "away" } },
-          map: [],
-          currentLocation: null,
-          encounters: [],
-          inventory: [],
-          discoveredClues: [],
-          activePromises: [],
-          caseBoard: [],
-          caseBoardContradictions: [],
-          caseAttempts: [],
-          resolution: {
-            state: "investigating",
-            accusationGate: { state: "locked", message: "Locked." },
-          },
-          ambientTransition: null,
-        }),
-      });
-    });
-    await page.route("**/api/v1/invites/*/join", (route) => {
-      joinPosts.push(route.request().url());
-      return route.fulfill({ status: 500, body: "{}" });
-    });
-
-    await page.goto(`/join/${TOKEN}`);
-
-    await expect(
-      page.getByRole("button", { name: "Return as Aishah Sofea" }),
-    ).toBeVisible();
-    expect(joinPosts).toHaveLength(0);
-  });
-
-  test("a closed town shows no name field", async ({ page }) => {
-    await mockPreview(page, {
-      ...PREVIEW_BODY,
-      joinMode: "closed",
-      townStatus: "resolved",
-    });
-
-    await page.goto(`/join/${TOKEN}`);
-
-    await expect(page.getByText("Closed")).toBeVisible();
-    await expect(page.getByLabel("Your name")).not.toBeVisible();
-  });
-
   test("a server-side name conflict keeps the field, selects its text, and shows the conflict copy without a second POST", async ({
     page,
   }) => {
@@ -234,16 +192,40 @@ test.describe("join screen", () => {
     expect(selection).toBe("Aishah Sofea");
   });
 
-  test("the join attempt secret is never present in the rendered DOM", async ({
-    page,
-  }) => {
+  test("never exposes a live join secret to the rendered DOM", async ({ page }) => {
     await mockPreview(page, PREVIEW_BODY);
     await mockNoExistingSession(page);
 
+    // Holds the /join response open so the assertion below runs while the
+    // secret genuinely exists (`ttr.join-session` is written synchronously
+    // at submit time, before the request settles) -- checking before
+    // submission, as this case used to, cannot fail no matter what the
+    // client does with a real secret (VPR-11's equivalent repair in
+    // Join.test.tsx).
+    let releaseJoinResponse!: () => void;
+    const joinRequestHeld = new Promise<void>((resolve) => {
+      releaseJoinResponse = resolve;
+    });
+    await page.route("**/api/v1/invites/*/join", async (route) => {
+      await joinRequestHeld;
+      await route.fulfill({ status: 500, body: "{}" });
+    });
+
     await page.goto(`/join/${TOKEN}`);
     await page.getByLabel("Your name").fill("Aishah Sofea");
+    await page.getByRole("button", { name: "Enter the town" }).click();
+
+    const secret = await page.waitForFunction(() => {
+      const raw = sessionStorage.getItem("ttr.join-session");
+      if (!raw) return null;
+      return (JSON.parse(raw) as { joinAttemptSecret: string }).joinAttemptSecret;
+    });
+    const secretValue = (await secret.jsonValue()) as string;
+    expect(secretValue.length).toBeGreaterThan(0);
 
     const html = await page.content();
-    expect(html).not.toMatch(/[A-Za-z0-9_-]{43}/);
+    expect(html).not.toContain(secretValue);
+
+    releaseJoinResponse();
   });
 });

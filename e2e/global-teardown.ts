@@ -17,6 +17,7 @@ import { loadTestConfig } from "@the-town-remembers/runtime-config/test";
 import { assertDisposableName } from "@the-town-remembers/test-support/database";
 import { Pool } from "pg";
 
+import { release } from "../scripts/db-suite-lock.mjs";
 import { applyLocalDefaults } from "../scripts/local-env.mjs";
 import {
   DISPOSABLE_DB_STATE_FILE,
@@ -37,6 +38,7 @@ export default async function globalTeardown(): Promise<void> {
     await pool.query(`DROP DATABASE IF EXISTS ${state.name} CASCADE`);
   } finally {
     await pool.end();
+    if (state.lock !== undefined) release(state.lock);
   }
 
   rmSync(DISPOSABLE_DB_STATE_FILE, { force: true });

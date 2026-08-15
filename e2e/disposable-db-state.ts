@@ -16,6 +16,8 @@
 import os from "node:os";
 import path from "node:path";
 
+import type { DbSuiteLockRecord } from "../scripts/db-suite-lock.d.mts";
+
 export const DISPOSABLE_DB_STATE_FILE = path.join(
   os.tmpdir(),
   "ttr-e2e-disposable-db.json",
@@ -25,4 +27,6 @@ export interface DisposableDbState {
   readonly name: string;
   /** Administrative DSN pointing at the disposable database. */
   readonly adminUrl: string;
+  /** The db-suite-lock.mjs record held for this journey, released in global-teardown.ts. */
+  readonly lock?: DbSuiteLockRecord;
 }

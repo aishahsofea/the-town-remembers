@@ -31,3 +31,7 @@ cdk.out/
 
 # Emitted declaration output for browser projects
 dist-types/
+
+# Local tooling state: validate-profile JSON reports, the database-suite
+# ownership lock. Nothing here is a source of truth.
+.cache/

@@ -34,7 +34,7 @@ import { PRICE_CATALOG_VERSION } from "@the-town-remembers/model-runtime";
 import { planAsk, type ExternalSelectionRequired } from "@the-town-remembers/rules";
 import type { ModelConfig } from "@the-town-remembers/runtime-config/model";
 import {
-  createDisposableDatabase,
+  useSharedTestDatabase,
   insertPlayer,
   insertTown,
   shouldRunDatabaseTests,
@@ -88,7 +88,7 @@ describe.skipIf(!shouldRunDatabaseTests())("model and memory security (P4-22)", 
   let database: DisposableDatabase | undefined;
 
   beforeAll(async () => {
-    database = await createDisposableDatabase();
+    database = await useSharedTestDatabase();
   }, 180_000);
 
   afterAll(async () => {

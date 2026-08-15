@@ -12,7 +12,7 @@
 import { randomUUID } from "node:crypto";
 
 import {
-  createDisposableDatabase,
+  useSharedTestDatabase,
   insertPlayer,
   insertStoryEntity,
   insertTown,
@@ -39,7 +39,7 @@ describe.skipIf(!shouldRunDatabaseTests())("executeAction", () => {
   let handle: DisposableDatabase | undefined;
 
   beforeAll(async () => {
-    handle = await createDisposableDatabase();
+    handle = await useSharedTestDatabase();
   }, 180_000);
 
   afterAll(async () => {

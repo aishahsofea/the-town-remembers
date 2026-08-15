@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import {
-  createDisposableDatabase,
+  useSharedTestDatabase,
   insertPlayer,
   insertTown,
   shouldRunDatabaseTests,
@@ -22,7 +22,7 @@ describe.skipIf(!shouldRunDatabaseTests())("agent_runs telemetry", () => {
   let handle: DisposableDatabase | undefined;
 
   beforeAll(async () => {
-    handle = await createDisposableDatabase();
+    handle = await useSharedTestDatabase();
   }, 180_000);
 
   afterAll(async () => {

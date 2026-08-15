@@ -9,7 +9,7 @@ import { PlayerViewSchema } from "@the-town-remembers/http-contracts";
 import { readInspectedInteraction } from "../persistence/inspection.js";
 import type { SecurityConfig } from "@the-town-remembers/runtime-config/security";
 import {
-  createDisposableDatabase,
+  useSharedTestDatabase,
   shouldRunDatabaseTests,
   type DisposableDatabase,
 } from "@the-town-remembers/test-support/database";
@@ -135,7 +135,7 @@ describe.skipIf(!shouldRunDatabaseTests())("player-view", () => {
   }
 
   beforeAll(async () => {
-    handle = await createDisposableDatabase();
+    handle = await useSharedTestDatabase();
     config = {
       buildId: "test-build",
       appOrigin: APP_ORIGIN,

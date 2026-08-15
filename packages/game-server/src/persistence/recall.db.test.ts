@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { asVector256, type Vector256 } from "@the-town-remembers/database";
 import {
-  createDisposableDatabase,
+  useSharedTestDatabase,
   insertNpc,
   insertPlayer,
   insertStoryEntity,
@@ -23,7 +23,7 @@ describe.skipIf(!shouldRunDatabaseTests())("recall persistence", () => {
   let handle: DisposableDatabase | undefined;
 
   beforeAll(async () => {
-    handle = await createDisposableDatabase();
+    handle = await useSharedTestDatabase();
   }, 180_000);
 
   afterAll(async () => {

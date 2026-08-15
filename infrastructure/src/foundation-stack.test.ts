@@ -12,25 +12,32 @@ const DEPLOYMENT = loadDeploymentConfig({
   TTR_AWS_ACCOUNT: "123456789012",
 });
 
-function synthesizedTemplate(): Template {
-  return Template.fromStack(createApp(DEPLOYMENT).stack);
-}
-
-function templateJson(): Record<string, unknown> {
-  return synthesizedTemplate().toJSON();
-}
+/**
+ * One app/template fixture, synthesized once and reused read-only by every
+ * assertion below (`VPR-12`) — CDK synthesis is the expensive part of this
+ * file (roughly eight independent syntheses before this change), and none
+ * of `Template`'s query methods (`resourceCountIs`, `hasResourceProperties`,
+ * `findResources`, `toJSON`) mutate the stack they read from.
+ *
+ * "synthesizes identically twice" is the one deliberate exception: it
+ * performs exactly one additional independent synthesis and compares it
+ * against this fixture, rather than reusing it as a no-op comparison
+ * against itself.
+ */
+const FOUNDATION_APP = createApp(DEPLOYMENT);
+const TEMPLATE = Template.fromStack(FOUNDATION_APP.stack);
+const TEMPLATE_JSON = TEMPLATE.toJSON();
 
 describe("foundation stack", () => {
   it("creates exactly the three Lambda artifacts", () => {
-    const template = synthesizedTemplate();
-    template.resourceCountIs("AWS::Lambda::Function", 3);
+    TEMPLATE.resourceCountIs("AWS::Lambda::Function", 3);
 
     for (const [timeout, memory] of [
       [28, 512],
       [30, 512],
       [30, 256],
     ] as const) {
-      template.hasResourceProperties("AWS::Lambda::Function", {
+      TEMPLATE.hasResourceProperties("AWS::Lambda::Function", {
         Timeout: timeout,
         MemorySize: memory,
         Runtime: "nodejs22.x",
@@ -40,13 +47,12 @@ describe("foundation stack", () => {
   });
 
   it("passes only non-secret identity into the function environment", () => {
-    synthesizedTemplate().hasResourceProperties("AWS::Lambda::Function", {
+    TEMPLATE.hasResourceProperties("AWS::Lambda::Function", {
       Environment: { Variables: { TTR_ENV: "production", TTR_BUILD_ID: "a1b2c3d" } },
     });
   });
 
   it("creates none of the resources Phase 7 owns", () => {
-    const template = synthesizedTemplate();
     for (const type of [
       "AWS::S3::Bucket",
       "AWS::CloudFront::Distribution",
@@ -57,14 +63,14 @@ describe("foundation stack", () => {
       "AWS::CloudWatch::Alarm",
       "AWS::Budgets::Budget",
     ]) {
-      template.resourceCountIs(type, 0);
+      TEMPLATE.resourceCountIs(type, 0);
     }
     expect(DEFERRED_TO_PHASE_7.length).toBeGreaterThan(0);
   });
 
   it("grants no wildcard action or resource", () => {
-    const policies = synthesizedTemplate().findResources("AWS::IAM::Policy");
-    const roles = synthesizedTemplate().findResources("AWS::IAM::Role");
+    const policies = TEMPLATE.findResources("AWS::IAM::Policy");
+    const roles = TEMPLATE.findResources("AWS::IAM::Role");
 
     for (const resource of [...Object.values(policies), ...Object.values(roles)]) {
       const serialized = JSON.stringify(resource);
@@ -76,7 +82,7 @@ describe("foundation stack", () => {
   });
 
   it("contains no plaintext secret value", () => {
-    const serialized = JSON.stringify(templateJson());
+    const serialized = JSON.stringify(TEMPLATE_JSON);
     for (const marker of [
       "postgresql://",
       "AKIA",
@@ -91,7 +97,10 @@ describe("foundation stack", () => {
   });
 
   it("synthesizes identically twice", () => {
-    expect(JSON.stringify(templateJson())).toBe(JSON.stringify(templateJson()));
+    const independentTemplateJson = Template.fromStack(
+      createApp(DEPLOYMENT).stack,
+    ).toJSON();
+    expect(JSON.stringify(independentTemplateJson)).toBe(JSON.stringify(TEMPLATE_JSON));
   });
 
   it("names the stack from the deployment environment", () => {
@@ -102,8 +111,7 @@ describe("foundation stack", () => {
   });
 
   it("binds the account and region from deployment configuration", () => {
-    const { stack } = createApp(DEPLOYMENT);
-    expect(stack.account).toBe("123456789012");
-    expect(stack.region).toBe("eu-west-1");
+    expect(FOUNDATION_APP.stack.account).toBe("123456789012");
+    expect(FOUNDATION_APP.stack.region).toBe("eu-west-1");
   });
 });

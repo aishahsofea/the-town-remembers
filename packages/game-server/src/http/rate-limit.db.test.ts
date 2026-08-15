@@ -12,7 +12,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { SecurityConfig } from "@the-town-remembers/runtime-config/security";
 import { materializeTown } from "@the-town-remembers/town-seed";
 import {
-  createDisposableDatabase,
+  useSharedTestDatabase,
   shouldRunDatabaseTests,
   type DisposableDatabase,
 } from "@the-town-remembers/test-support/database";
@@ -103,7 +103,7 @@ describe.skipIf(!shouldRunDatabaseTests())("route-level rate limiting", () => {
   let config: RouterConfig;
 
   beforeAll(async () => {
-    handle = await createDisposableDatabase();
+    handle = await useSharedTestDatabase();
     config = {
       buildId: "test-build",
       appOrigin: APP_ORIGIN,

@@ -20,16 +20,18 @@ describe("packages/rules/README.md", () => {
     expect(fs.existsSync(readmePath)).toBe(true);
   });
 
-  it.each([
-    "Authority boundary and the pure-input/effect-plan pattern",
-    "Adding a new rules or content version",
-    "The five-step action order",
-    "Stable-ordering catalog",
-    "External-selection seam catalog",
-    "Trace-field catalog",
-    "Handoff examples for Phase 3/4/5",
-  ])("documents %s", (heading) => {
-    expect(readme).toContain(heading);
+  it("documents every section a Phase 3/4/5 handoff reader needs (G22)", () => {
+    const requiredHeadings = [
+      "Authority boundary and the pure-input/effect-plan pattern",
+      "Adding a new rules or content version",
+      "The five-step action order",
+      "Stable-ordering catalog",
+      "External-selection seam catalog",
+      "Trace-field catalog",
+      "Handoff examples for Phase 3/4/5",
+    ];
+    const missing = requiredHeadings.filter((heading) => !readme.includes(heading));
+    expect(missing).toEqual([]);
   });
 });
 

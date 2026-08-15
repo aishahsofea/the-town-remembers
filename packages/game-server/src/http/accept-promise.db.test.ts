@@ -13,7 +13,7 @@ import {
 import { decodePromiseOffer, encodePromiseOffer } from "@the-town-remembers/rules";
 import type { SecurityConfig } from "@the-town-remembers/runtime-config/security";
 import {
-  createDisposableDatabase,
+  useSharedTestDatabase,
   shouldRunDatabaseTests,
   type DisposableDatabase,
 } from "@the-town-remembers/test-support/database";
@@ -52,7 +52,7 @@ describe.skipIf(!shouldRunDatabaseTests())("POST /actions — accept_promise", (
   let chapelKeyId: string;
 
   beforeAll(async () => {
-    database = await createDisposableDatabase();
+    database = await useSharedTestDatabase();
     inviteToken = randomUUID();
     const seeded = await materializeTown(database.pool, {
       contentVersion: "bell-mystery-v1",

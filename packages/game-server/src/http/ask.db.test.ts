@@ -8,7 +8,7 @@ import {
 import { decodePromiseOffer } from "@the-town-remembers/rules";
 import type { SecurityConfig } from "@the-town-remembers/runtime-config/security";
 import {
-  createDisposableDatabase,
+  useSharedTestDatabase,
   shouldRunDatabaseTests,
   type DisposableDatabase,
 } from "@the-town-remembers/test-support/database";
@@ -45,7 +45,7 @@ describe.skipIf(!shouldRunDatabaseTests())("POST /actions — ask", () => {
   let selectionCalls = 0;
 
   beforeAll(async () => {
-    database = await createDisposableDatabase();
+    database = await useSharedTestDatabase();
     inviteToken = randomUUID();
     const seeded = await materializeTown(database.pool, {
       contentVersion: "bell-mystery-v1",

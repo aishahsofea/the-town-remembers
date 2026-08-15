@@ -8,6 +8,7 @@ import {
   withUser,
 } from "@the-town-remembers/test-support/database";
 
+import { acquire } from "./scripts/db-suite-lock.mjs";
 import { applyLocalDefaults } from "./scripts/local-env.mjs";
 import {
   DISPOSABLE_DB_STATE_FILE,
@@ -58,10 +59,12 @@ const isWorkerProcess = process.env["TEST_WORKER_INDEX"] !== undefined;
 const disposableDbState: DisposableDbState = isWorkerProcess
   ? (JSON.parse(readFileSync(DISPOSABLE_DB_STATE_FILE, "utf8")) as DisposableDbState)
   : await (async () => {
+      const lock = acquire("test:e2e");
       const disposableDb = await createDisposableDatabase();
       const state: DisposableDbState = {
         name: disposableDb.name,
         adminUrl: disposableDb.url,
+        lock,
       };
       writeFileSync(DISPOSABLE_DB_STATE_FILE, JSON.stringify(state), "utf8");
       await disposableDb.pool.end();

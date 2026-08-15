@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import { materializeTown } from "@the-town-remembers/town-seed";
 import {
-  createDisposableDatabase,
+  useSharedTestDatabase,
   shouldRunDatabaseTests,
   type DisposableDatabase,
 } from "@the-town-remembers/test-support/database";
@@ -19,7 +19,7 @@ describe.skipIf(!shouldRunDatabaseTests())("invite preview", () => {
   const tokenHash = createHash("sha256").update(token).digest();
 
   beforeAll(async () => {
-    handle = await createDisposableDatabase();
+    handle = await useSharedTestDatabase();
     const result = await materializeTown(handle.pool, {
       contentVersion: "bell-mystery-v1",
       createdAt: CREATED_AT,

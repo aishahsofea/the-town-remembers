@@ -4,7 +4,7 @@ import type { BedrockConverseClient } from "@the-town-remembers/model-runtime";
 import { PRICE_CATALOG_VERSION } from "@the-town-remembers/model-runtime";
 import type { ModelConfig } from "@the-town-remembers/runtime-config/model";
 import {
-  createDisposableDatabase,
+  useSharedTestDatabase,
   insertNpc,
   insertPlayer,
   insertStoryEntity,
@@ -93,7 +93,7 @@ describe.skipIf(!shouldRunDatabaseTests())("normalize_claim model selection", ()
   let database: DisposableDatabase | undefined;
 
   beforeAll(async () => {
-    database = await createDisposableDatabase();
+    database = await useSharedTestDatabase();
   }, 180_000);
 
   afterAll(async () => {

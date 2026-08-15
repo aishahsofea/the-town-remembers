@@ -9,7 +9,7 @@ import { BELL_MYSTERY_V1 } from "@the-town-remembers/content";
 import { planAsk, type ExternalSelectionRequired } from "@the-town-remembers/rules";
 import type { ModelConfig } from "@the-town-remembers/runtime-config/model";
 import {
-  createDisposableDatabase,
+  useSharedTestDatabase,
   insertPlayer,
   insertTown,
   shouldRunDatabaseTests,
@@ -51,7 +51,7 @@ describe.skipIf(!shouldRunDatabaseTests())("Ask model selection and repair", () 
   let database: DisposableDatabase | undefined;
 
   beforeAll(async () => {
-    database = await createDisposableDatabase();
+    database = await useSharedTestDatabase();
   }, 180_000);
 
   afterAll(async () => {

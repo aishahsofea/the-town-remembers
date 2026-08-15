@@ -6,7 +6,7 @@ import {
   type Vector256,
 } from "@the-town-remembers/database";
 import {
-  createDisposableDatabase,
+  useSharedTestDatabase,
   insertNpc,
   insertStoryEntity,
   insertTown,
@@ -42,7 +42,7 @@ describe.skipIf(!shouldRunDatabaseTests())("episodes lifecycle", () => {
   let handle: DisposableDatabase | undefined;
 
   beforeAll(async () => {
-    handle = await createDisposableDatabase();
+    handle = await useSharedTestDatabase();
   }, 180_000);
 
   afterAll(async () => {

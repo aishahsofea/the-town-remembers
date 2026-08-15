@@ -13,7 +13,7 @@ import { randomUUID } from "node:crypto";
 import type { ActionKind } from "@the-town-remembers/http-contracts";
 import { planAsk, type AskInputs } from "@the-town-remembers/rules";
 import {
-  createDisposableDatabase,
+  useSharedTestDatabase,
   insertPlayer,
   insertTown,
   shouldRunDatabaseTests,
@@ -30,7 +30,7 @@ describe.skipIf(!shouldRunDatabaseTests())("executeModelAction", () => {
   let handle: DisposableDatabase | undefined;
 
   beforeAll(async () => {
-    handle = await createDisposableDatabase();
+    handle = await useSharedTestDatabase();
   }, 180_000);
 
   afterAll(async () => {
