@@ -10,7 +10,7 @@ import {
   type RelationshipContribution,
   type RelationshipSnapshot,
 } from "../beliefs/relationships.js";
-import type { EffectPlanEntry } from "../kernel/effects.js";
+import type { EffectPlanEntry, PlanRef } from "../kernel/effects.js";
 
 /**
  * One conditional state change per relationship this event actually moved,
@@ -19,7 +19,7 @@ import type { EffectPlanEntry } from "../kernel/effects.js";
 export function relationshipStateChangeEffects(
   snapshots: readonly RelationshipSnapshot[],
   contributions: readonly RelationshipContribution[],
-  updatedEventId: string,
+  updatedEventId: string | PlanRef,
 ): readonly EffectPlanEntry[] {
   return aggregateRelationshipUpdates(snapshots, contributions).map((aggregate) => ({
     kind: "conditional_state_change",

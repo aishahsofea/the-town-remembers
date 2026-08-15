@@ -19,13 +19,10 @@ import { buildWebPath } from "../routing/routes.js";
 import { computeGuardRedirect } from "../routing/guards.js";
 import type { RouteMatch } from "../routing/routes.js";
 import { Away } from "./Away.js";
+import { Encounter } from "./Encounter.js";
 import { Location } from "./Location.js";
 import { Map } from "./Map.js";
-import {
-  BoardPlaceholder,
-  EncounterPlaceholder,
-  ResolutionPlaceholder,
-} from "./Placeholder.js";
+import { BoardPlaceholder, ResolutionPlaceholder } from "./Placeholder.js";
 
 export interface ShellProps {
   readonly match: RouteMatch;
@@ -92,7 +89,7 @@ export function Shell({ match }: ShellProps) {
         ) : match.name === "location" ? (
           <Location view={view} action={action} />
         ) : match.name === "encounter" ? (
-          <EncounterPlaceholder />
+          <Encounter view={view} action={action} npcId={match.params["npcId"]!} />
         ) : match.name === "board" ? (
           <BoardPlaceholder />
         ) : match.name === "betweenVisits" ? (

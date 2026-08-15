@@ -14,6 +14,7 @@
     "@the-town-remembers/content": "workspace:*",
     "@the-town-remembers/database": "workspace:*",
     "@the-town-remembers/http-contracts": "workspace:*",
+    "@the-town-remembers/model-runtime": "workspace:*",
     "@the-town-remembers/rules": "workspace:*",
     "@the-town-remembers/runtime-config": "workspace:*",
     "@the-town-remembers/serialization": "workspace:*",

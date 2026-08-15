@@ -18,8 +18,20 @@
  * threading a value through an `as`-widened type instead of a real one.
  */
 
-import type { RateLimitBucketKind } from "@the-town-remembers/database";
+import {
+  AGENT_RUN_OUTCOMES,
+  AGENT_RUN_PURPOSES,
+  type AgentRunOutcome,
+  type AgentRunPurpose,
+  type RateLimitBucketKind,
+} from "@the-town-remembers/database";
 import type { ActionKind } from "@the-town-remembers/http-contracts";
+import {
+  COST_MODES,
+  type CostMode,
+  type PricingModelKey,
+  type WarmupPairResult,
+} from "@the-town-remembers/model-runtime";
 
 import { logEvent, type LoggableRouteTemplate } from "./events.js";
 
@@ -82,4 +94,85 @@ export function recordRateLimitDecision(params: {
 /** Counted separately from the general processing metric: this is the terminal-failure case docs/007 bounds by rate, not by latency. */
 export function recordActionProcessingExhausted(actionKind: ActionKind): void {
   logEvent({ event: "metric_action_processing_exhausted", actionKind });
+}
+
+/** One `model_cost_reservations` admission decision, aggregatable into an admit/reject rate per purpose and cost mode — never a dollar amount (`P4-05` acceptance 8). */
+export function recordModelCostAdmission(params: {
+  readonly purpose: AgentRunPurpose;
+  readonly admitted: boolean;
+  readonly mode: CostMode;
+}): void {
+  assertMember(AGENT_RUN_PURPOSES, params.purpose, "purpose");
+  assertMember(COST_MODES, params.mode, "mode");
+  logEvent({ event: "metric_model_cost_admission", ...params });
+}
+
+const MODEL_RUN_MODEL_KEYS: readonly PricingModelKey[] = ["haiku", "sonnet", "titan"];
+
+/**
+ * One resolved model call, aggregatable into latency, token, and cost
+ * distributions per purpose/model/outcome. `outcome` alone already carries
+ * `"repaired"` and `"fallback"` as distinct values (`AGENT_RUN_OUTCOMES`), so
+ * segmenting by outcome is segmenting by repair/fallback rate; the embedding
+ * purposes (`episode_embedding`/`query_embedding`) flow through this same
+ * function, so segmenting by purpose+outcome also covers an embedding
+ * failure rate — no separate embedding-specific metric exists (`P4-23`).
+ */
+export function recordModelRun(params: {
+  readonly purpose: AgentRunPurpose;
+  readonly model: PricingModelKey;
+  readonly outcome: AgentRunOutcome;
+  readonly latencyMs: number;
+  readonly estimatedCostMicroUsd: number;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  /** The stable code a rejected/repaired attempt failed on, if any — never the raw output (`P4-22`). */
+  readonly validationErrorCode: string | null;
+}): void {
+  assertMember(AGENT_RUN_PURPOSES, params.purpose, "purpose");
+  assertMember(MODEL_RUN_MODEL_KEYS, params.model, "model");
+  assertMember(AGENT_RUN_OUTCOMES, params.outcome, "outcome");
+  logEvent({ event: "metric_model_run", ...params });
+}
+
+/**
+ * Recall candidates assembled for one dialogue call — how much of each
+ * source (vector similarity vs. structured anchor) contributed, and how
+ * many survived ranking. Counts only, never an episode id (`P4-23`).
+ */
+export function recordRecallCandidates(params: {
+  readonly vectorCandidateCount: number;
+  readonly anchorCandidateCount: number;
+  readonly rankedCandidateCount: number;
+  readonly embeddingAvailable: boolean;
+}): void {
+  logEvent({ event: "metric_recall_candidates", ...params });
+}
+
+const RESERVATION_TERMINAL_STATUSES = ["settled", "released"] as const;
+
+/** One reservation reaching a terminal state, aggregatable into a clamp rate — how often real cost exceeds the worst-case estimate that reserved for it. */
+export function recordModelCostSettlement(params: {
+  readonly status: "settled" | "released";
+  readonly clamped: boolean;
+}): void {
+  assertMember(RESERVATION_TERMINAL_STATUSES, params.status, "status");
+  logEvent({ event: "metric_model_cost_settlement", ...params });
+}
+
+const WARMUP_MODEL_ROLES = ["haiku", "sonnet"] as const;
+const WARMUP_OUTCOMES = ["success", "failure"] as const;
+
+/** One `(model role, schema)` warmup pair's outcome, aggregatable into a success rate and a latency/cost distribution per pair. */
+export function recordWarmupResult(result: WarmupPairResult): void {
+  assertMember(WARMUP_MODEL_ROLES, result.modelRole, "modelRole");
+  assertMember(WARMUP_OUTCOMES, result.outcome, "outcome");
+  logEvent({
+    event: "metric_warmup_result",
+    modelRole: result.modelRole,
+    schema: result.schema,
+    outcome: result.outcome,
+    latencyMs: result.latencyMs,
+    estimatedCostMicroUsd: result.estimatedCostMicroUsd,
+  });
 }

@@ -14,12 +14,22 @@
 
 import process from "node:process";
 
-import type { RateLimitBucketKind, Uuid } from "@the-town-remembers/database";
+import type {
+  AgentRunOutcome,
+  AgentRunPurpose,
+  RateLimitBucketKind,
+  Uuid,
+} from "@the-town-remembers/database";
 import type {
   ActionKind,
   RouteTemplate,
   UNMATCHED_ROUTE_TEMPLATE,
 } from "@the-town-remembers/http-contracts";
+import type {
+  CostMode,
+  PricingModelKey,
+  WarmupPairResult,
+} from "@the-town-remembers/model-runtime";
 
 export type LoggableRouteTemplate = RouteTemplate | typeof UNMATCHED_ROUTE_TEMPLATE;
 
@@ -51,6 +61,20 @@ export const ACTION_LIFECYCLE_STATUSES = [
   "takeover",
   "processing_exhausted",
   "ambiguous_resolved",
+  // `P4-10`: a model-backed action's town-revision snapshot moved between
+  // the pre-model read and either the post-model re-read or the final
+  // commit's own guard — the model's already-selected dialogue is
+  // discarded (never committed), and the whole plan-and-select sequence
+  // reruns from a fresh reload, up to `MODEL_RETRIES.townRevisionRerunLimit`
+  // times. Never terminal on its own — exhausting the budget still stores
+  // the identical `conflict_exhausted`/`ACTION_CONFLICT` a deterministic
+  // action's own exhaustion path stores.
+  "superseded",
+  // `P4-12`: a model-backed kind with no safe authored fallback (only
+  // `normalize_claim` today) stayed invalid through repair. Always terminal
+  // — `storeTerminalFailure` (`D4-O`) writes the `failed` row in the same
+  // call that raises this status.
+  "model_unavailable",
 ] as const;
 export type ActionLifecycleStatus = (typeof ACTION_LIFECYCLE_STATUSES)[number];
 
@@ -59,6 +83,7 @@ export const ACTION_LIFECYCLE_ERROR_CODES = [
   "ACTION_CONFLICT",
   "ACTION_SUPERSEDED",
   "ACTION_PROCESSING_EXHAUSTED",
+  "MODEL_UNAVAILABLE_RETRY_ACTION",
 ] as const;
 export type ActionLifecycleErrorCode = (typeof ACTION_LIFECYCLE_ERROR_CODES)[number];
 
@@ -93,6 +118,57 @@ export interface RateLimitDecisionLogEvent {
 }
 
 /**
+ * One `model_cost_reservations` admission decision (`P4-05`). Never carries a
+ * dollar amount — `mode` is the cost-ladder rung the projected total landed
+ * on, which is enough to alert and dashboard from without exposing a figure
+ * in a channel `test-support/redaction.ts` does not itself redact.
+ */
+export interface ModelCostAdmissionLogEvent {
+  readonly event: "model_cost_admission";
+  readonly purpose: AgentRunPurpose;
+  readonly attemptOrdinal: number;
+  readonly admitted: boolean;
+  readonly mode: CostMode;
+}
+
+/**
+ * A reservation's terminal outcome (`P4-05`): settled (with `clamped` true
+ * when the real cost exceeded the reservation and was capped rather than
+ * rejected at the database,
+ * `ck_model_cost_reservations__settlement_within_reservation`) or released
+ * (a proven non-call). Never the reservation's own dollar figures — `clamped`
+ * is enough to alert on without a figure in a channel
+ * `test-support/redaction.ts` does not itself redact.
+ */
+export interface ModelCostSettlementLogEvent {
+  readonly event: "model_cost_settlement";
+  readonly reservationId: Uuid;
+  readonly status: "settled" | "released";
+  readonly clamped: boolean;
+}
+
+/** One `agent_runs` row successfully recorded (`P4-05`) — never the prompt, the model's raw output, or player-authored text, only identity, versions, and measures. */
+export interface ModelRunRecordedLogEvent {
+  readonly event: "model_run_recorded";
+  readonly runId: Uuid;
+  readonly purpose: AgentRunPurpose;
+  readonly model: PricingModelKey;
+  readonly outcome: AgentRunOutcome;
+  readonly latencyMs: number;
+  readonly estimatedCostMicroUsd: number;
+}
+
+/** One `(model role, schema)` warmup pair's outcome (`P4-06`) — never persisted to `agent_runs`, since prewarm writes no database row at all. */
+export interface WarmupResultLogEvent {
+  readonly event: "warmup_result";
+  readonly modelRole: WarmupPairResult["modelRole"];
+  readonly schema: WarmupPairResult["schema"];
+  readonly outcome: WarmupPairResult["outcome"];
+  readonly latencyMs: number;
+  readonly estimatedCostMicroUsd: number;
+}
+
+/**
  * The four `metrics.ts` (`P3-18`) event kinds. Defined here, not in
  * `metrics.ts`, so `metrics.ts` can import both the types and `logEvent`
  * from this one module without a circular dependency back the other way.
@@ -124,14 +200,67 @@ export interface ActionProcessingExhaustedMetricLogEvent {
   readonly actionKind: ActionKind;
 }
 
+export interface ModelCostAdmissionMetricLogEvent {
+  readonly event: "metric_model_cost_admission";
+  readonly purpose: AgentRunPurpose;
+  readonly admitted: boolean;
+  readonly mode: CostMode;
+}
+
+export interface ModelRunMetricLogEvent {
+  readonly event: "metric_model_run";
+  readonly purpose: AgentRunPurpose;
+  readonly model: PricingModelKey;
+  readonly outcome: AgentRunOutcome;
+  readonly latencyMs: number;
+  readonly estimatedCostMicroUsd: number;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  /** The stable code a rejected/repaired attempt failed on, if any (`P4-22`: never the raw output). */
+  readonly validationErrorCode: string | null;
+}
+
+/** Recall candidates assembled for one dialogue call (`P4-23`) — counts only, never an episode id or its summary. */
+export interface RecallCandidatesMetricLogEvent {
+  readonly event: "metric_recall_candidates";
+  readonly vectorCandidateCount: number;
+  readonly anchorCandidateCount: number;
+  readonly rankedCandidateCount: number;
+  readonly embeddingAvailable: boolean;
+}
+
+export interface ModelCostSettlementMetricLogEvent {
+  readonly event: "metric_model_cost_settlement";
+  readonly status: "settled" | "released";
+  readonly clamped: boolean;
+}
+
+export interface WarmupResultMetricLogEvent {
+  readonly event: "metric_warmup_result";
+  readonly modelRole: WarmupPairResult["modelRole"];
+  readonly schema: WarmupPairResult["schema"];
+  readonly outcome: WarmupPairResult["outcome"];
+  readonly latencyMs: number;
+  readonly estimatedCostMicroUsd: number;
+}
+
 export type GameServerLogEvent =
   | UnexpectedErrorLogEvent
   | ActionLifecycleLogEvent
   | RateLimitDecisionLogEvent
+  | ModelCostAdmissionLogEvent
+  | ModelCostSettlementLogEvent
+  | ModelRunRecordedLogEvent
+  | WarmupResultLogEvent
   | HttpLatencyMetricLogEvent
   | ActionProcessingMetricLogEvent
   | RateLimitMetricLogEvent
-  | ActionProcessingExhaustedMetricLogEvent;
+  | ActionProcessingExhaustedMetricLogEvent
+  | ModelCostAdmissionMetricLogEvent
+  | ModelRunMetricLogEvent
+  | ModelCostSettlementMetricLogEvent
+  | WarmupResultMetricLogEvent
+  | RecallCandidatesMetricLogEvent;
 
 /**
  * Writes exactly one JSON object per line directly to stdout, matching

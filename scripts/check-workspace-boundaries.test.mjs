@@ -210,6 +210,47 @@ test("accepts security configuration imported by game-api", () => {
   assert.deepEqual(validateWorkspace(rootDir), []);
 });
 
+test("rejects model configuration imported outside its allowed packages", () => {
+  const rootDir = createValidFixture();
+  mutateManifest(rootDir, "infrastructure", (manifest) => {
+    manifest.dependencies = {
+      "@the-town-remembers/runtime-config": "workspace:*",
+    };
+  });
+  const sourcePath = path.join(rootDir, "infrastructure/src/config.ts");
+  fs.mkdirSync(path.dirname(sourcePath), { recursive: true });
+  fs.writeFileSync(sourcePath, 'import "@the-town-remembers/runtime-config/model";\n');
+
+  assertViolation(rootDir, "forbidden_model_config_import");
+});
+
+test("accepts model configuration imported by game-server and the ambient worker", () => {
+  const rootDir = createValidFixture();
+  mutateManifest(rootDir, "packages/game-server", (manifest) => {
+    manifest.dependencies = {
+      "@the-town-remembers/runtime-config": "workspace:*",
+    };
+  });
+  fs.mkdirSync(path.join(rootDir, "packages/game-server/src"), { recursive: true });
+  fs.writeFileSync(
+    path.join(rootDir, "packages/game-server/src/config.ts"),
+    'import "@the-town-remembers/runtime-config/model";\n',
+  );
+
+  mutateManifest(rootDir, "apps/ambient-worker", (manifest) => {
+    manifest.dependencies = {
+      "@the-town-remembers/runtime-config": "workspace:*",
+    };
+  });
+  fs.mkdirSync(path.join(rootDir, "apps/ambient-worker/src"), { recursive: true });
+  fs.writeFileSync(
+    path.join(rootDir, "apps/ambient-worker/src/config.ts"),
+    'import "@the-town-remembers/runtime-config/model";\n',
+  );
+
+  assert.deepEqual(validateWorkspace(rootDir), []);
+});
+
 test("rejects a missing library export map", () => {
   const rootDir = createValidFixture();
   mutateManifest(rootDir, "packages/http-contracts", (manifest) => {

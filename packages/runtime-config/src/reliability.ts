@@ -80,3 +80,19 @@ export const MODEL_RETRIES = {
   semanticRepairLimit: 1,
   processingTakeoverAttemptLimit: 3,
 } as const;
+
+/**
+ * Phase 4 `D4-L`: per-purpose Bedrock/Titan call deadlines, tunable only
+ * after the first instrumented vertical slice. Worst case for `ask` is
+ * 1.5 + 8 + 5 = 14.5s of model time, leaving headroom in the 24s
+ * application budget for reads, validation, and one transport retry before
+ * `PLAYER_API_TIMING.reservedCommitWindowMs`.
+ */
+export const MODEL_DEADLINES = {
+  titanQueryEmbeddingMs: 1500,
+  titanEpisodeEmbeddingMs: 1500,
+  haikuNormalizationMs: 6000,
+  sonnetDialogueMs: 8000,
+  haikuDialogueRepairMs: 5000,
+  haikuAmbientChoiceMs: 4000,
+} as const;

@@ -113,5 +113,78 @@ export function ResultCard({ result }: ResultCardProps) {
     );
   }
 
+  if (result.kind === "ask") {
+    const ask = result.result as ActionResultByKind["ask"];
+    return (
+      <div className="result-card">
+        <NpcDialogueResult dialogue={ask.dialogue} />
+      </div>
+    );
+  }
+
+  if (result.kind === "tell") {
+    const tell = result.result as ActionResultByKind["tell"];
+    return (
+      <div className="result-card">
+        <NpcDialogueResult dialogue={tell.dialogue} />
+      </div>
+    );
+  }
+
+  if (result.kind === "show") {
+    const show = result.result as ActionResultByKind["show"];
+    return (
+      <div className="result-card">
+        <p>
+          {show.structuredEffect === "applied"
+            ? "The town takes note of what you showed."
+            : "Nothing changed."}
+        </p>
+        <NpcDialogueResult dialogue={show.dialogue} />
+      </div>
+    );
+  }
+
+  if (result.kind === "give") {
+    const give = result.result as ActionResultByKind["give"];
+    return (
+      <div className="result-card">
+        <p>
+          {give.custody === "transferred" ? "It changes hands." : "It stays with you."}
+        </p>
+        <NpcDialogueResult dialogue={give.dialogue} />
+      </div>
+    );
+  }
+
+  if (result.kind === "accept_promise") {
+    const accepted = result.result as ActionResultByKind["accept_promise"];
+    return (
+      <div className="result-card">
+        <article aria-label="Promise accepted">
+          <p>{accepted.promise.summary}</p>
+        </article>
+        {accepted.dialogue ? <NpcDialogueResult dialogue={accepted.dialogue} /> : null}
+      </div>
+    );
+  }
+
   return null;
+}
+
+/**
+ * `selected`, `repaired`, and `fallback` render byte-for-byte identically —
+ * `responseMode` is diagnostic metadata only, never a visual signal
+ * (Decision 011 §"5. NPC encounter").
+ */
+function NpcDialogueResult({
+  dialogue,
+}: {
+  readonly dialogue: ActionResultByKind["ask"]["dialogue"];
+}) {
+  return (
+    <article aria-label={`${dialogue.npcId}'s reply`}>
+      <p>{dialogue.text}</p>
+    </article>
+  );
 }

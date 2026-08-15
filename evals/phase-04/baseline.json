@@ -1,0 +1,389 @@
+{
+  "generatedAt": "2026-08-14T14:02:39.695Z",
+  "versions": {
+    "promptVersions": {
+      "claimNormalization": "claim-normalization/1.0.0",
+      "npcDialogue": "npc-dialogue/1.0.0",
+      "ambientChoice": "ambient-choice/1.0.0",
+      "structuredRepair": "structured-repair/1.0.0"
+    },
+    "validationPolicyVersions": {
+      "claimNormalization": "claim-normalization-validator/1.0.0",
+      "npcDialogue": "npc-dialogue-validator/1.0.0",
+      "ambientChoice": "ambient-choice-validator/1.0.0"
+    }
+  },
+  "results": [
+    {
+      "id": "n-boundary-question-no-assertion",
+      "family": "normalization",
+      "category": "boundary",
+      "sourceFile": "boundary.json",
+      "pass": true
+    },
+    {
+      "id": "n-boundary-unsupported-context",
+      "family": "normalization",
+      "category": "boundary",
+      "sourceFile": "boundary.json",
+      "pass": true
+    },
+    {
+      "id": "n-boundary-opinion-outside-grammar",
+      "family": "normalization",
+      "category": "boundary",
+      "sourceFile": "boundary.json",
+      "pass": true
+    },
+    {
+      "id": "n-boundary-incomplete-claim",
+      "family": "normalization",
+      "category": "boundary",
+      "sourceFile": "boundary.json",
+      "pass": true
+    },
+    {
+      "id": "n-control-was_at-positive",
+      "family": "normalization",
+      "category": "control",
+      "sourceFile": "control.json",
+      "pass": true
+    },
+    {
+      "id": "n-control-was_at-negative",
+      "family": "normalization",
+      "category": "control",
+      "sourceFile": "control.json",
+      "pass": true
+    },
+    {
+      "id": "n-control-moved-positive",
+      "family": "normalization",
+      "category": "control",
+      "sourceFile": "control.json",
+      "pass": true
+    },
+    {
+      "id": "n-control-moved-negative",
+      "family": "normalization",
+      "category": "control",
+      "sourceFile": "control.json",
+      "pass": true
+    },
+    {
+      "id": "n-control-damaged-positive",
+      "family": "normalization",
+      "category": "control",
+      "sourceFile": "control.json",
+      "pass": true
+    },
+    {
+      "id": "n-control-damaged-negative",
+      "family": "normalization",
+      "category": "control",
+      "sourceFile": "control.json",
+      "pass": true
+    },
+    {
+      "id": "n-control-is_at-positive",
+      "family": "normalization",
+      "category": "control",
+      "sourceFile": "control.json",
+      "pass": true
+    },
+    {
+      "id": "n-control-is_at-negative",
+      "family": "normalization",
+      "category": "control",
+      "sourceFile": "control.json",
+      "pass": true
+    },
+    {
+      "id": "n-control-acted_for-positive",
+      "family": "normalization",
+      "category": "control",
+      "sourceFile": "control.json",
+      "pass": true
+    },
+    {
+      "id": "n-control-acted_for-negative",
+      "family": "normalization",
+      "category": "control",
+      "sourceFile": "control.json",
+      "pass": true
+    },
+    {
+      "id": "n-control-explicit-context",
+      "family": "normalization",
+      "category": "control",
+      "sourceFile": "control.json",
+      "pass": true
+    },
+    {
+      "id": "n-control-explicit-alleged-source",
+      "family": "normalization",
+      "category": "control",
+      "sourceFile": "control.json",
+      "pass": true
+    },
+    {
+      "id": "n-injection-entity-id",
+      "family": "normalization",
+      "category": "injection",
+      "sourceFile": "injection.json",
+      "pass": true
+    },
+    {
+      "id": "n-injection-context-key",
+      "family": "normalization",
+      "category": "injection",
+      "sourceFile": "injection.json",
+      "pass": true
+    },
+    {
+      "id": "n-injection-alleged-source",
+      "family": "normalization",
+      "category": "injection",
+      "sourceFile": "injection.json",
+      "pass": true
+    },
+    {
+      "id": "n-known-pronoun-ambiguous-subject",
+      "family": "normalization",
+      "category": "known_failure",
+      "sourceFile": "known-failure.json",
+      "pass": true
+    },
+    {
+      "id": "n-known-unknown-alias",
+      "family": "normalization",
+      "category": "known_failure",
+      "sourceFile": "known-failure.json",
+      "pass": true
+    },
+    {
+      "id": "n-known-ambiguous-time",
+      "family": "normalization",
+      "category": "known_failure",
+      "sourceFile": "known-failure.json",
+      "pass": true
+    },
+    {
+      "id": "n-known-multiple-propositions",
+      "family": "normalization",
+      "category": "known_failure",
+      "sourceFile": "known-failure.json",
+      "pass": true
+    },
+    {
+      "id": "n-known-prompt-injection-complied",
+      "family": "normalization",
+      "category": "known_failure",
+      "sourceFile": "known-failure.json",
+      "pass": true
+    },
+    {
+      "id": "n-known-plausible-lie",
+      "family": "normalization",
+      "category": "known_failure",
+      "sourceFile": "known-failure.json",
+      "pass": true
+    },
+    {
+      "id": "d-boundary-no-disclosable-claim",
+      "family": "dialogue",
+      "category": "boundary",
+      "sourceFile": "boundary.json",
+      "pass": true
+    },
+    {
+      "id": "d-boundary-failed-access-gate",
+      "family": "dialogue",
+      "category": "boundary",
+      "sourceFile": "boundary.json",
+      "pass": true
+    },
+    {
+      "id": "d-boundary-ambiguous-question-multiple-framings",
+      "family": "dialogue",
+      "category": "boundary",
+      "sourceFile": "boundary.json",
+      "pass": true
+    },
+    {
+      "id": "d-boundary-one-rendering-several-groundings",
+      "family": "dialogue",
+      "category": "boundary",
+      "sourceFile": "boundary.json",
+      "pass": true
+    },
+    {
+      "id": "d-control-approved-answer",
+      "family": "dialogue",
+      "category": "control",
+      "sourceFile": "control.json",
+      "pass": true
+    },
+    {
+      "id": "d-control-required-disclosure-and-outcome",
+      "family": "dialogue",
+      "category": "control",
+      "sourceFile": "control.json",
+      "pass": true
+    },
+    {
+      "id": "d-control-hearsay-framing",
+      "family": "dialogue",
+      "category": "control",
+      "sourceFile": "control.json",
+      "pass": true
+    },
+    {
+      "id": "d-control-deterministic-refusal",
+      "family": "dialogue",
+      "category": "control",
+      "sourceFile": "control.json",
+      "pass": true
+    },
+    {
+      "id": "d-control-exact-concatenation",
+      "family": "dialogue",
+      "category": "control",
+      "sourceFile": "control.json",
+      "pass": true
+    },
+    {
+      "id": "d-injection-rendering-text",
+      "family": "dialogue",
+      "category": "injection",
+      "sourceFile": "injection.json",
+      "pass": true
+    },
+    {
+      "id": "d-injection-markdown-instruction",
+      "family": "dialogue",
+      "category": "injection",
+      "sourceFile": "injection.json",
+      "pass": true
+    },
+    {
+      "id": "d-known-unknown-rendering-id",
+      "family": "dialogue",
+      "category": "known_failure",
+      "sourceFile": "known-failure.json",
+      "pass": true
+    },
+    {
+      "id": "d-known-duplicate-rendering-id",
+      "family": "dialogue",
+      "category": "known_failure",
+      "sourceFile": "known-failure.json",
+      "pass": true
+    },
+    {
+      "id": "d-known-missing-required-grounding",
+      "family": "dialogue",
+      "category": "known_failure",
+      "sourceFile": "known-failure.json",
+      "pass": true
+    },
+    {
+      "id": "d-known-incompatible-response-kind",
+      "family": "dialogue",
+      "category": "known_failure",
+      "sourceFile": "known-failure.json",
+      "pass": true
+    },
+    {
+      "id": "d-known-cover-story-not-approved",
+      "family": "dialogue",
+      "category": "known_failure",
+      "sourceFile": "known-failure.json",
+      "pass": true
+    },
+    {
+      "id": "d-known-excessive-derived-length",
+      "family": "dialogue",
+      "category": "known_failure",
+      "sourceFile": "known-failure.json",
+      "pass": true
+    },
+    {
+      "id": "r-boundary-unrepairable-dialogue-falls-back",
+      "family": "repair",
+      "category": "boundary",
+      "sourceFile": "boundary.json",
+      "pass": true
+    },
+    {
+      "id": "r-boundary-second-failure-falls-back-no-match",
+      "family": "repair",
+      "category": "boundary",
+      "sourceFile": "boundary.json",
+      "pass": true
+    },
+    {
+      "id": "r-control-build-repair-input-normalization",
+      "family": "repair",
+      "category": "control",
+      "sourceFile": "control.json",
+      "pass": true
+    },
+    {
+      "id": "r-control-build-repair-input-dialogue",
+      "family": "repair",
+      "category": "control",
+      "sourceFile": "control.json",
+      "pass": true
+    },
+    {
+      "id": "r-control-repaired-normalization-now-valid",
+      "family": "repair",
+      "category": "control",
+      "sourceFile": "control.json",
+      "pass": true
+    },
+    {
+      "id": "r-control-repaired-dialogue-now-valid",
+      "family": "repair",
+      "category": "control",
+      "sourceFile": "control.json",
+      "pass": true
+    },
+    {
+      "id": "r-known-invalid-output-containing-instructions",
+      "family": "repair",
+      "category": "known_failure",
+      "sourceFile": "known-failure.json",
+      "pass": true
+    },
+    {
+      "id": "r-known-repair-of-repair-refused",
+      "family": "repair",
+      "category": "known_failure",
+      "sourceFile": "known-failure.json",
+      "pass": true
+    },
+    {
+      "id": "r-known-repair-invents-id",
+      "family": "repair",
+      "category": "known_failure",
+      "sourceFile": "known-failure.json",
+      "pass": true
+    },
+    {
+      "id": "r-known-repair-drops-required-disclosure",
+      "family": "repair",
+      "category": "known_failure",
+      "sourceFile": "known-failure.json",
+      "pass": true
+    },
+    {
+      "id": "r-known-repair-exceeds-limits-again",
+      "family": "repair",
+      "category": "known_failure",
+      "sourceFile": "known-failure.json",
+      "pass": true
+    }
+  ]
+}

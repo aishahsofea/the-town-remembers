@@ -24,7 +24,6 @@ import {
   CASE_ATTEMPT_ID,
   CASE_SOLUTION_REFERENCE,
   CORRECT_GUESS,
-  EVIDENCE_SHOWN_EVENT_ID,
   FESTIVAL_SQUARE_LOCATION_ID,
   INCORRECT_GUESS,
   PLAYER_ID,
@@ -203,6 +202,7 @@ function bothEndings(): readonly ScenarioStepRecord[] {
 
 function showEvidenceFlow(): readonly ScenarioStepRecord[] {
   const pending = planShow({
+    npcPresent: true,
     evidenceKind: "clue",
     clueDiscoveredInTown: true,
     itemCurrentlyHeldByPlayer: false,
@@ -211,7 +211,9 @@ function showEvidenceFlow(): readonly ScenarioStepRecord[] {
       { clueId: "bent_clapper_pin", claimId: "lark_damaged_bell", signedWeight: 70 },
     ],
     alreadyRecordedEvidence: [],
-    claimBeliefs: [{ claimId: "lark_damaged_bell", score: 0, revision: 0 }],
+    claimBeliefs: [
+      { claimId: "lark_damaged_bell", exists: true, score: 0, revision: 0 },
+    ],
     relationshipReasons: [
       {
         reasonKind: "verified_testimony",
@@ -224,7 +226,6 @@ function showEvidenceFlow(): readonly ScenarioStepRecord[] {
     relationship: { trustScore: 0, suspicionScore: 0, revision: 0 },
     npcId: "mara_venn",
     playerId: PLAYER_ID,
-    evidenceShownEventId: EVIDENCE_SHOWN_EVENT_ID,
     disclosureCandidates: [],
     requiredDisclosureIds: [],
     approvedOutcomes: [],

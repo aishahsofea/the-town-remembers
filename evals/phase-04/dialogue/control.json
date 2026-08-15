@@ -1,0 +1,84 @@
+{
+  "promptFamily": "dialogue",
+  "cases": [
+    {
+      "id": "d-control-approved-answer",
+      "category": "control",
+      "description": "a single rendering covering the one required disclosure",
+      "trustedContext": "BASE",
+      "output": { "response_kind": "answer", "rendering_ids": ["r1"] },
+      "expect": { "valid": true, "expressedDisclosureIds": ["d1"] }
+    },
+    {
+      "id": "d-control-required-disclosure-and-outcome",
+      "category": "control",
+      "description": "one selection satisfying a required disclosure and a required outcome together",
+      "trustedContext": {
+        "$base": "BASE",
+        "required_disclosure_ids": ["d1"],
+        "required_outcome_ids": ["o1"],
+        "approved_outcomes": [
+          {
+            "outcome_id": "o1",
+            "kind": "requested_item_received",
+            "summary": "Mara accepts the account."
+          }
+        ],
+        "approved_renderings": [
+          {
+            "rendering_id": "r_both",
+            "text": "That matches what I saw, and I am glad you told me plainly.",
+            "response_kind": "answer",
+            "disclosure_ids": ["d1"],
+            "outcome_ids": ["o1"],
+            "episode_ids": ["e1"],
+            "entity_ids": [],
+            "actor_ids": [],
+            "style_tags": []
+          }
+        ]
+      },
+      "output": { "response_kind": "answer", "rendering_ids": ["r_both"] },
+      "expect": {
+        "valid": true,
+        "expressedDisclosureIds": ["d1"],
+        "expressedOutcomeIds": ["o1"]
+      }
+    },
+    {
+      "id": "d-control-hearsay-framing",
+      "category": "control",
+      "description": "a disclosure carrying a parent_transmission_id (hearsay) selects and expresses cleanly",
+      "trustedContext": { "$base": "BASE", "required_disclosure_ids": ["d_hearsay"] },
+      "output": { "response_kind": "answer", "rendering_ids": ["r_hearsay"] },
+      "expect": { "valid": true, "expressedDisclosureIds": ["d_hearsay"] }
+    },
+    {
+      "id": "d-control-deterministic-refusal",
+      "category": "control",
+      "description": "a deflection is accepted when the gate result denied the request",
+      "trustedContext": {
+        "$base": "BASE",
+        "dialogue_directive": {
+          "required_act": "answer_question",
+          "gate_result": "denied_access"
+        },
+        "required_disclosure_ids": [],
+        "allowed_response_kinds": ["deflect"]
+      },
+      "output": { "response_kind": "deflect", "rendering_ids": ["r3"] },
+      "expect": { "valid": true }
+    },
+    {
+      "id": "d-control-exact-concatenation",
+      "category": "control",
+      "description": "two renderings concatenate in the model's chosen order with one space",
+      "trustedContext": "BASE",
+      "output": { "response_kind": "answer", "rendering_ids": ["r2", "r1"] },
+      "expect": {
+        "valid": true,
+        "concatenatedText": "He asked me to keep Lark inside while he sorted the bell out himself. Corin came through before dawn, quiet about it."
+      }
+    }
+  ]
+}

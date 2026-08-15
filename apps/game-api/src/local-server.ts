@@ -11,10 +11,17 @@ import { createServer, type IncomingMessage, type Server } from "node:http";
 import process from "node:process";
 
 import {
+  createProductionAcceptPromiseActionHandler,
+  createProductionAskActionHandler,
+  createProductionGiveActionHandler,
+  createProductionNormalizeClaimActionHandler,
+  createProductionShowActionHandler,
+  createProductionTellActionHandler,
   createRuntimePool,
   filterAllowlistedHeaders,
 } from "@the-town-remembers/game-server";
 import { loadGameConfig } from "@the-town-remembers/runtime-config/game";
+import { loadModelConfig } from "@the-town-remembers/runtime-config/model";
 import { loadSecurityConfig } from "@the-town-remembers/runtime-config/security";
 
 import { handleRequest, type RouterContext } from "./http/router.js";
@@ -87,12 +94,48 @@ export async function startLocalServer(options: LocalServerOptions): Promise<Ser
 export async function main(): Promise<void> {
   const config = loadGameConfig(process.env);
   const apiPort = config.apiPort;
+  const pool = createRuntimePool(process.env);
+  const now = (): Date => new Date();
   const context: RouterContext = {
     config,
     securityConfig: loadSecurityConfig(process.env),
-    pool: createRuntimePool(process.env),
-    now: () => new Date(),
+    pool,
+    now,
     monotonicMs: () => performance.now(),
+    ...(config.enableNpcMutations
+      ? {
+          askActionHandler: createProductionAskActionHandler({
+            pool,
+            modelConfig: loadModelConfig(process.env),
+            now,
+          }),
+          normalizeClaimActionHandler: createProductionNormalizeClaimActionHandler({
+            pool,
+            modelConfig: loadModelConfig(process.env),
+            now,
+          }),
+          tellActionHandler: createProductionTellActionHandler({
+            pool,
+            modelConfig: loadModelConfig(process.env),
+            now,
+          }),
+          showActionHandler: createProductionShowActionHandler({
+            pool,
+            modelConfig: loadModelConfig(process.env),
+            now,
+          }),
+          giveActionHandler: createProductionGiveActionHandler({
+            pool,
+            modelConfig: loadModelConfig(process.env),
+            now,
+          }),
+          acceptPromiseActionHandler: createProductionAcceptPromiseActionHandler({
+            pool,
+            modelConfig: loadModelConfig(process.env),
+            now,
+          }),
+        }
+      : {}),
   };
 
   const server = await startLocalServer({ port: apiPort, context });

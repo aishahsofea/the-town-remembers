@@ -10,10 +10,10 @@
  * yet (`accuse` is Phase 6) — a future phase that opens the gate inherits a
  * correct projection rather than one that silently assumed `locked`.
  *
- * Every `EncounterView.availableActionKinds` is empty: `D3-P`'s
- * `ENABLED_ACTION_KINDS` (`start_visit`, `travel`, `inspect`, `leave`) shares
- * no member with `ENCOUNTER_ACTION_KINDS`, so no encounter action is reachable
- * in Phase 3 regardless of stance.
+ * `EncounterView.availableActionKinds` is the full `ENCOUNTER_ACTION_KINDS`
+ * set while `enableNpcMutations` is `true`, and empty while it is `false` —
+ * `D4-R`'s gate, never a function of stance (`http/actions/enabled.ts`
+ * applies the identical gate at submission time).
  *
  * The returned `viewVersion` is the placeholder `""` — the caller always
  * routes this draft through `etag.ts#computePlayerViewVersion` and
@@ -30,13 +30,19 @@ import {
   NPC_ROLE_LABELS,
   TAGLINE,
   contentFor,
+  renderClaimSentence,
 } from "@the-town-remembers/content";
-import type { PlayerView } from "@the-town-remembers/http-contracts";
 import {
+  ENCOUNTER_ACTION_KINDS,
+  type PlayerView,
+} from "@the-town-remembers/http-contracts";
+import {
+  buildProvenancePath,
   isConfrontationGateOpen,
   projectAccusationOptions,
   projectPlayerView,
   stanceFor,
+  verificationStatusFor,
   type PlayerViewProjectionInputs,
 } from "@the-town-remembers/rules";
 import type { Pool } from "pg";
@@ -44,6 +50,8 @@ import type { Pool } from "pg";
 import { internalError } from "../../http/errors.js";
 import {
   readAccusationCandidateEntities,
+  readActivePromisesForPlayer,
+  readBoardClaimEntries,
   readCoLocatedNpcs,
   readConfrontationGateStatus,
   readDiscoveredClues,
@@ -52,7 +60,9 @@ import {
   readMapAccess,
   readPlayerAndVisit,
   readTownHeader,
+  readTransmissionProvenanceLinks,
   readVerifiedCaseBoardEntries,
+  type ActivePromiseClaimSubjectRow,
   type ClueDiscoveryRow,
   type StoryEntityRow,
 } from "../../persistence/view-queries.js";
@@ -61,6 +71,8 @@ import { normalizeDisplayName } from "../join.js";
 export interface BuildPlayerViewParams {
   readonly townId: string;
   readonly playerId: string;
+  /** `D4-R`: the six model-backed action kinds render as `availableActionKinds` only while this is `true` — never conditioned on stance. */
+  readonly enableNpcMutations: boolean;
 }
 
 /**
@@ -87,11 +99,25 @@ function groupByClue(
   return groups;
 }
 
+/** `renderClaimSentence` throws on an unknown key/context, which `required()`'s callers already treat as an invariant violation — let it propagate as-is. */
+function claimTextFor(
+  content: ReturnType<typeof contentFor>,
+  claim: ActivePromiseClaimSubjectRow,
+): string {
+  return renderClaimSentence(content, {
+    subjectEntityKey: claim.subjectEntityKey,
+    predicate: claim.predicate,
+    objectEntityKey: claim.objectEntityKey,
+    polarity: claim.polarity,
+    contextKey: claim.contextKey,
+  });
+}
+
 export async function buildPlayerView(
   pool: Pool,
   params: BuildPlayerViewParams,
 ): Promise<PlayerView> {
-  const { townId, playerId } = params;
+  const { townId, playerId, enableNpcMutations } = params;
 
   const [
     townHeader,
@@ -99,7 +125,10 @@ export async function buildPlayerView(
     mapAccess,
     inventory,
     discoveredClues,
-    caseBoardEntries,
+    verifiedCaseBoardEntries,
+    boardClaimEntries,
+    provenanceLinks,
+    activePromiseRows,
     gateStatus,
   ] = await Promise.all([
     readTownHeader(pool, townId),
@@ -108,6 +137,9 @@ export async function buildPlayerView(
     readInventory(pool, townId, playerId),
     readDiscoveredClues(pool, townId),
     readVerifiedCaseBoardEntries(pool, townId),
+    readBoardClaimEntries(pool, townId),
+    readTransmissionProvenanceLinks(pool, townId),
+    readActivePromisesForPlayer(pool, townId, playerId),
     readConfrontationGateStatus(pool, townId),
   ]);
 
@@ -121,6 +153,12 @@ export async function buildPlayerView(
   );
   const clueContentByKey = new Map(content.clues.map((clue) => [clue.clueKey, clue]));
   const npcContentByKey = new Map(content.npcs.map((npc) => [npc.npcKey, npc]));
+  const promiseSummaryByTermsVersion = new Map<string, string>(
+    Object.values(content.promiseTerms).map((terms) => [
+      terms.termsVersion,
+      terms.summary,
+    ]),
+  );
 
   const visit: PlayerView["player"]["visit"] =
     playerAndVisit.visitId === null || playerAndVisit.locationEntityId === null
@@ -145,8 +183,8 @@ export async function buildPlayerView(
 
   const gateOpen = isConfrontationGateOpen(gateStatus);
   const discoveredClueGroups = groupByClue(discoveredClues);
-  const caseBoard: PlayerViewProjectionInputs["caseBoard"] = caseBoardEntries.map(
-    (entry) => {
+  const verifiedEvidenceBoard: PlayerViewProjectionInputs["caseBoard"] =
+    verifiedCaseBoardEntries.map((entry) => {
       const authored = required(clueContentByKey.get(entry.clueKey));
       return {
         entryId: entry.entryId,
@@ -167,8 +205,93 @@ export async function buildPlayerView(
           },
         },
       };
+    });
+
+  const provenanceLinksById = new Map(
+    provenanceLinks.map((link) => [
+      link.transmissionId,
+      {
+        transmissionId: link.transmissionId,
+        parentTransmissionId: link.parentTransmissionId,
+        speakerActorId: link.speakerActorId,
+        speakerActorType: link.speakerActorType,
+      },
+    ]),
+  );
+  const actorDisplayNameById = new Map(
+    provenanceLinks.map((link) => [link.speakerActorId, link.speakerDisplayName]),
+  );
+  const claimBoard: PlayerViewProjectionInputs["caseBoard"] = boardClaimEntries.map(
+    (entry) => {
+      const attribution = {
+        contributedBy: {
+          id: entry.contributedByPlayerId,
+          actorType: "player" as const,
+          displayName: entry.contributedByDisplayName,
+        },
+        claim: {
+          claimId: entry.claim.claimId,
+          text: claimTextFor(content, entry.claim),
+        },
+        speaker: entry.speaker,
+        ...(entry.allegedSource === undefined
+          ? {}
+          : { allegedSource: entry.allegedSource }),
+        provenancePath: buildProvenancePath(
+          entry.transmissionId,
+          provenanceLinksById,
+        ).map((actor) => ({
+          id: actor.actorId,
+          actorType: actor.actorType,
+          displayName: required(actorDisplayNameById.get(actor.actorId)),
+        })),
+      };
+      return {
+        entryId: entry.entryId,
+        claimId: entry.claim.claimId,
+        createdAt: entry.createdAt,
+        view:
+          entry.entryKind === "testimony"
+            ? {
+                entryKind: "testimony" as const,
+                verificationStatus: verificationStatusFor("testimony"),
+                ...attribution,
+              }
+            : {
+                entryKind: "hearsay" as const,
+                verificationStatus: verificationStatusFor("hearsay"),
+                ...attribution,
+              },
+      };
     },
   );
+  const caseBoard: PlayerViewProjectionInputs["caseBoard"] = [
+    ...verifiedEvidenceBoard,
+    ...claimBoard,
+  ];
+
+  const activePromises: PlayerViewProjectionInputs["activePromises"] =
+    activePromiseRows.map((row) => ({
+      promiseId: row.promiseId,
+      acceptedAt: row.createdAt,
+      view: {
+        npc: { id: row.npcId, actorType: "npc", displayName: row.npcDisplayName },
+        kind: row.kind,
+        summary: required(promiseSummaryByTermsVersion.get(row.termsVersion)),
+        subject:
+          row.claim !== undefined
+            ? {
+                kind: "claim",
+                claimId: row.claim.claimId,
+                text: claimTextFor(content, row.claim),
+              }
+            : {
+                kind: "item",
+                itemId: required(row.item).itemId,
+                displayName: required(row.item).displayName,
+              },
+      },
+    }));
 
   const [characterEntities, motiveEntities]: [
     readonly StoryEntityRow[],
@@ -184,6 +307,9 @@ export async function buildPlayerView(
   );
   const motiveIdByKey = new Map(motiveEntities.map((row) => [row.entityKey, row.id]));
   const locationIdByKey = new Map(mapAccess.map((row) => [row.entityKey, row.id]));
+  const permittedActionKinds = new Set<(typeof ENCOUNTER_ACTION_KINDS)[number]>(
+    enableNpcMutations ? ENCOUNTER_ACTION_KINDS : [],
+  );
 
   const inputs: PlayerViewProjectionInputs = {
     viewVersion: "",
@@ -231,7 +357,7 @@ export async function buildPlayerView(
         openingLine: authored.openingGreeting,
         stance: stanceFor(npc.trustScore, npc.suspicionScore),
         normalizedName: normalizeDisplayName(npc.displayName),
-        permittedActionKinds: new Set(),
+        permittedActionKinds,
       };
     }),
     inventory: inventory.map((item) => ({
@@ -258,7 +384,7 @@ export async function buildPlayerView(
         })),
       };
     }),
-    activePromises: [],
+    activePromises,
     caseBoard,
     caseBoardContradictionsInput: { visibleEntries: [], contradictingClaimPairs: [] },
     caseAttempts: [],

@@ -56,6 +56,18 @@ describe("the authored registry", () => {
     expect(content.npcs.some((npc) => npc.characterKey === "lark_venn")).toBe(false);
   });
 
+  it("gives every story entity at least one normalized alias (D4-J)", () => {
+    for (const entity of content.storyEntities) {
+      expect(entity.aliases.length).toBeGreaterThan(0);
+      for (const alias of entity.aliases) {
+        expect(alias).toBe(
+          alias.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase(),
+        );
+        expect(alias.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
   it("keeps the private solution exactly as Decision 009 states it", () => {
     expect(content.caseSolution).toStrictEqual({
       culpritKey: "corin_hale",
@@ -254,6 +266,23 @@ describe("content validation catches the mistakes this data invites", () => {
       corrupted({ claims: [...content.claims, content.claims[0]!] }),
     );
     expect(issues.map((issue) => issue.code)).toContain("duplicate_key");
+  });
+
+  it("rejects two different entities claiming the same alias", () => {
+    // entityTypes/entityKeys and this alias check both read storyEntities
+    // directly, not items/characters/etc., so the corruption has to land there.
+    const collidingItem = {
+      ...content.items[0]!,
+      aliases: content.characters[0]!.aliases,
+    };
+    const issues = validateContent(
+      corrupted({
+        storyEntities: content.storyEntities.map((entity) =>
+          entity.entityKey === collidingItem.entityKey ? collidingItem : entity,
+        ),
+      }),
+    );
+    expect(issues.map((issue) => issue.code)).toContain("alias_collision");
   });
 
   it("rejects a claim that breaks the predicate matrix", () => {

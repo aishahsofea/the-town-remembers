@@ -38,8 +38,10 @@ import {
   type ActionRecordStatus,
   type BlockingActionRow,
   type ExistingActionRow,
+  type LedgerDecision,
 } from "../application/actions/ledger.js";
 import { isDatabaseUuid } from "./identifiers.js";
+import { admitRateLimitsAtomically, RATE_LIMIT_BUCKETS } from "./rate-limits.js";
 
 /** Docs/007: player processing claims last 35 seconds and do not renew. */
 const CLAIM_MS = 35_000;
@@ -158,11 +160,23 @@ function toBlockerRow(raw: RawBlockerRow): BlockingActionRow {
   return { id: raw.id, processingExpiresAt: raw.processing_expires_at };
 }
 
+/** Ledger decisions that will start fresh work and therefore consume model capacity. */
+function decisionChargesRateLimit(decision: LedgerDecision): boolean {
+  return (
+    decision.kind === "create" ||
+    decision.kind === "reclaim" ||
+    decision.kind === "takeover" ||
+    decision.kind === "supersedeThenCreate"
+  );
+}
+
 export type ClaimDecision =
   | {
       readonly outcome: "claimed";
       readonly actionId: string;
       readonly processingToken: string;
+      /** Zero-based durable execution ordinal, derived from attempt_count. */
+      readonly executionAttempt: number;
     }
   | {
       readonly outcome: "processing";
@@ -178,7 +192,8 @@ export type ClaimDecision =
       readonly retryAfterSeconds: number | null;
     }
   | { readonly outcome: "key_reused" }
-  | { readonly outcome: "blocked"; readonly blockingActionId: string };
+  | { readonly outcome: "blocked"; readonly blockingActionId: string }
+  | { readonly outcome: "rate_limited"; readonly retryAfterSeconds: number };
 
 export function retryAfterSecondsFrom(
   retryAfterAt: Date | null,
@@ -215,6 +230,15 @@ export interface ClaimActionParams {
   readonly now: () => Date;
   readonly deadlineAt: number;
   readonly requestId: string;
+  /**
+   * Present only for the six model-backed kinds. Both buckets are admitted
+   * atomically in the claim transaction after replay/block resolution but
+   * before any action row is created or reclaimed (`D4-S`).
+   */
+  readonly modelRateLimit?: {
+    readonly playerScopeKey: Buffer;
+    readonly townScopeKey: Buffer;
+  };
   readonly sleep?: (milliseconds: number) => Promise<void>;
 }
 
@@ -377,6 +401,29 @@ async function attemptOnce(
       now,
     });
 
+    if (params.modelRateLimit && decisionChargesRateLimit(decision)) {
+      const admission = await admitRateLimitsAtomically(
+        transaction,
+        [
+          {
+            bucket: RATE_LIMIT_BUCKETS.modelActionPlayer,
+            scopeKey: params.modelRateLimit.playerScopeKey,
+          },
+          {
+            bucket: RATE_LIMIT_BUCKETS.modelActionTown,
+            scopeKey: params.modelRateLimit.townScopeKey,
+          },
+        ],
+        now,
+      );
+      if (!admission.admitted) {
+        return {
+          outcome: "rate_limited",
+          retryAfterSeconds: admission.retryAfterSeconds,
+        } as const satisfies SingleAttemptOutcome;
+      }
+    }
+
     switch (decision.kind) {
       case "create": {
         const actionId = randomUUID();
@@ -386,6 +433,7 @@ async function attemptOnce(
           outcome: "claimed",
           actionId,
           processingToken,
+          executionAttempt: 0,
         } as const satisfies SingleAttemptOutcome;
       }
       case "respondProcessing":
@@ -418,6 +466,7 @@ async function attemptOnce(
           outcome: "claimed",
           actionId: existing!.id,
           processingToken,
+          executionAttempt: existing!.attemptCount,
         } as const satisfies SingleAttemptOutcome;
       }
       case "takeover": {
@@ -434,6 +483,7 @@ async function attemptOnce(
           outcome: "claimed",
           actionId: existing!.id,
           processingToken,
+          executionAttempt: existing!.attemptCount,
         } as const satisfies SingleAttemptOutcome;
       }
       case "exhaust": {
@@ -459,6 +509,7 @@ async function attemptOnce(
           outcome: "claimed",
           actionId,
           processingToken,
+          executionAttempt: 0,
         } as const satisfies SingleAttemptOutcome;
       }
     }
@@ -637,6 +688,64 @@ export async function completeAction(
 
   const status = await readStatusByIdViaPool(pool, params.townId, params.actionId);
   if (status === "completed") return;
+  throw new StaleProcessingClaimError();
+}
+
+export interface StoreTerminalFailureParams {
+  readonly townId: string;
+  readonly actionId: string;
+  readonly processingToken: string;
+  readonly responseStatus: number;
+  readonly problemBody: StoredProblemBody;
+  readonly now: () => Date;
+}
+
+/**
+ * `D4-O`: writes the terminal `failed` state a model-backed action reaches
+ * when its output is invalid and repair also fails — Decision 006's `503
+ * MODEL_UNAVAILABLE_RETRY_ACTION`, which has no safe authored fallback
+ * (unlike NPC dialogue, `normalize_claim` cannot substitute presentation
+ * text for a proposition it never validated). This is the only writer of a
+ * terminal model failure. `decideAction`'s `failed` branch always replays
+ * the saved body unconditionally, so the same idempotency key never retries
+ * — Decision 006's "an intentional retry uses a new key" is enforced by the
+ * ledger table already having that row, not by anything here.
+ */
+export async function storeTerminalFailure(
+  pool: Pool,
+  deadlineAt: number,
+  params: StoreTerminalFailureParams,
+): Promise<void> {
+  const result = await runSerializable(pool, { deadlineAt }, async (transaction) => {
+    const now = params.now();
+    const updated = await transaction.query<{ id: string }>(
+      `UPDATE public.player_actions
+          SET status = 'failed', response_status = $3, error_code = $4,
+              response_payload = $5, processing_token = NULL,
+              processing_expires_at = NULL, completed_at = $6, updated_at = $6
+        WHERE town_id = $1 AND id = $2 AND status = 'processing'
+          AND processing_token = $7
+        RETURNING id`,
+      [
+        params.townId,
+        params.actionId,
+        params.responseStatus,
+        params.problemBody.code,
+        JSON.stringify(params.problemBody),
+        now,
+        params.processingToken,
+      ],
+    );
+    return { matched: updated.length > 0 };
+  });
+
+  if (result.outcome === "committed") {
+    if (result.value.matched) return;
+    throw new StaleProcessingClaimError();
+  }
+
+  const status = await readStatusByIdViaPool(pool, params.townId, params.actionId);
+  if (status === "failed") return;
   throw new StaleProcessingClaimError();
 }
 

@@ -6,14 +6,58 @@
  * `Omit<Insertable<XTable>, "id" | "town_id" | "created_at">`: the three
  * columns only the caller (which owns identity generation, tenancy, and the
  * transaction clock) can supply.
+ *
+ * `D4-F`: a plan may need to insert two rows in one table, or one row that
+ * references another row the same plan just inserted (a `tell` plan's claim,
+ * transmission, and episode, for instance) — impossible to express with only
+ * `commitEffectPlan`'s pre-allocated `insertIds` map, which is keyed by table
+ * name. {@link InsertEffect.ref} names such an insert; {@link PlanRef} is the
+ * placeholder any later effect's `row`/`change` may use in place of a real id
+ * to point back at it. `commitEffectPlan` resolves every `PlanRef` in plan
+ * order and fails loudly on an unknown or forward reference. An insert may
+ * also reference its own handle when the database row must name its own
+ * generated id (for example an originating claim transmission's
+ * `root_transmission_id`) — this package only defines the shape, not the
+ * resolver.
+ *
+ * {@link EventOriginEffect.ref} extends the same handle mechanism to the
+ * event a plan originates: a `tell` plan's guarded update to an existing
+ * `npc_beliefs` row must overwrite `updated_event_id` with this plan's own
+ * event id, and no id exists for that event until `commitEffectPlan` creates
+ * it (unlike an insert's id, which the caller could pre-allocate). Naming the
+ * `event_origin` effect lets a later `conditional_state_change`'s `change`
+ * reference `{ $planRef: ref }` the identical way an insert's `ref` is
+ * referenced.
  */
 
 import type { EventType } from "@the-town-remembers/database/domains";
+
+/**
+ * A plan-local placeholder for an insert effect's not-yet-allocated id, used
+ * in place of a real id inside that insert's own `row` or a later effect's
+ * `row`/`change`.
+ * Never persisted and never derived from a database id — resolved to the
+ * real id by `commitEffectPlan` before any statement runs.
+ */
+export interface PlanRef {
+  readonly $planRef: string;
+}
+
+export function isPlanRef(value: unknown): value is PlanRef {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "$planRef" in value &&
+    typeof (value as { readonly $planRef: unknown }).$planRef === "string"
+  );
+}
 
 export interface InsertEffect<TTable extends string = string, TRow = unknown> {
   readonly kind: "insert";
   readonly table: TTable;
   readonly row: TRow;
+  /** Plan-local handle this insert or a later effect may reference via `{ $planRef: ref }`. */
+  readonly ref?: string;
 }
 
 /**
@@ -42,6 +86,24 @@ export interface EventOriginEffect {
   readonly kind: "event_origin";
   readonly eventType: EventType;
   readonly effectIndex: number;
+  /** Plan-local handle a later effect's `row`/`change` may reference via `{ $planRef: ref }` to name this event's just-created id. */
+  readonly ref?: string;
+  /**
+   * Per-event causal metadata. Values may name an earlier plan-local insert;
+   * this is required when a plan creates a claim before originating the event
+   * that refers to it, and when one player action originates more than one
+   * semantically distinct event (for example `tell` plus `promise_broken`).
+   */
+  readonly metadata?: Readonly<{
+    actorId?: string | null | PlanRef;
+    targetActorId?: string | null | PlanRef;
+    subjectEntityId?: string | null | PlanRef;
+    locationEntityId?: string | null | PlanRef;
+    claimId?: string | null | PlanRef;
+    clueId?: string | null | PlanRef;
+    promiseId?: string | null | PlanRef;
+    payload?: Readonly<Record<string, unknown>>;
+  }>;
 }
 
 export type EffectPlanEntry<

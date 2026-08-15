@@ -2,20 +2,9 @@
  * Temporary stand-ins for the routes not yet built for real. Kept to one
  * file since none of them carry real behavior yet — each will be replaced
  * outright, not extended, when its own task lands. `Map`/`Location` moved
- * out in `P3-14`, `BetweenVisitsPlaceholder` out in `P3-16`; the rest
- * remain here.
+ * out in `P3-14`, `BetweenVisitsPlaceholder` out in `P3-16`, `Encounter` out
+ * in `P4-18`; the rest remain here.
  */
-
-export function EncounterPlaceholder() {
-  return (
-    <main>
-      <h1>Encounter</h1>
-      <p role="status">
-        Not reachable in Phase 3 — no enabled action targets an NPC yet.
-      </p>
-    </main>
-  );
-}
 
 export function BoardPlaceholder() {
   return (

@@ -1,0 +1,35 @@
+{
+  "promptFamily": "repair",
+  "cases": [
+    {
+      "id": "r-boundary-unrepairable-dialogue-falls-back",
+      "category": "boundary",
+      "description": "an unrepairable dialogue attempt resolves to the real authored fallback line for (npc, action, response kind, gate result)",
+      "mode": "fallback",
+      "contentVersion": "bell-mystery-v1",
+      "lookup": {
+        "npcKey": "mara_venn",
+        "actionKind": "ask",
+        "responseKind": "deflect",
+        "gateResult": "passed",
+        "requiredOutcomeIds": []
+      },
+      "expect": { "throws": null, "textNotEmpty": true }
+    },
+    {
+      "id": "r-boundary-second-failure-falls-back-no-match",
+      "category": "boundary",
+      "description": "no authored line covers this (npc, action, response kind, gate result, outcome) combination, so the second failure has nothing to fall back to and the gap is surfaced rather than silently swallowed",
+      "mode": "fallback",
+      "contentVersion": "bell-mystery-v1",
+      "lookup": {
+        "npcKey": "npc_that_does_not_exist",
+        "actionKind": "ask",
+        "responseKind": "deflect",
+        "gateResult": "passed",
+        "requiredOutcomeIds": []
+      },
+      "expect": { "throws": "FallbackNotFoundError" }
+    }
+  ]
+}

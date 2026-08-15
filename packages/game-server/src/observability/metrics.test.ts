@@ -15,7 +15,9 @@ import {
   recordActionProcessing,
   recordActionProcessingExhausted,
   recordHttpLatency,
+  recordModelRun,
   recordRateLimitDecision,
+  recordRecallCandidates,
   type HttpMetricMethod,
 } from "./metrics.js";
 
@@ -119,5 +121,70 @@ describe("the other three metrics emit their own closed event kind", () => {
     expect(captured.events).toStrictEqual([
       { event: "metric_action_processing_exhausted", actionKind: "inspect" },
     ]);
+  });
+
+  it("recordRecallCandidates", async () => {
+    const captured = await captureStdout(() => {
+      recordRecallCandidates({
+        vectorCandidateCount: 12,
+        anchorCandidateCount: 3,
+        rankedCandidateCount: 8,
+        embeddingAvailable: true,
+      });
+    });
+    expect(captured.events).toStrictEqual([
+      {
+        event: "metric_recall_candidates",
+        vectorCandidateCount: 12,
+        anchorCandidateCount: 3,
+        rankedCandidateCount: 8,
+        embeddingAvailable: true,
+      },
+    ]);
+  });
+});
+
+describe("recordModelRun validates its closed dimensions at runtime and segments by purpose/model/outcome (P4-23)", () => {
+  it("emits every dimension it was given, once accepted", async () => {
+    const captured = await captureStdout(() => {
+      recordModelRun({
+        purpose: "dialogue_selection",
+        model: "sonnet",
+        outcome: "repaired",
+        latencyMs: 120,
+        estimatedCostMicroUsd: 60,
+        inputTokens: 400,
+        outputTokens: 30,
+        validationErrorCode: "unknown_rendering_id",
+      });
+    });
+    expect(captured.events).toStrictEqual([
+      {
+        event: "metric_model_run",
+        purpose: "dialogue_selection",
+        model: "sonnet",
+        outcome: "repaired",
+        latencyMs: 120,
+        estimatedCostMicroUsd: 60,
+        inputTokens: 400,
+        outputTokens: 30,
+        validationErrorCode: "unknown_rendering_id",
+      },
+    ]);
+  });
+
+  it("rejects a model outside the declared set", () => {
+    expect(() =>
+      recordModelRun({
+        purpose: "dialogue_selection",
+        model: "gpt4" as unknown as "haiku",
+        outcome: "accepted",
+        latencyMs: 1,
+        estimatedCostMicroUsd: 1,
+        inputTokens: 1,
+        outputTokens: 1,
+        validationErrorCode: null,
+      }),
+    ).toThrow(/not a member of its declared closed set/);
   });
 });

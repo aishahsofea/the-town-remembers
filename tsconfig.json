@@ -27,6 +27,9 @@
       "path": "./packages/rules"
     },
     {
+      "path": "./packages/model-runtime"
+    },
+    {
       "path": "./packages/database-admin"
     },
     {

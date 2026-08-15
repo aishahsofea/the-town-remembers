@@ -38,6 +38,43 @@ import {
   executeAction,
   type ExecuteActionOutcome,
 } from "../application/actions/executor.js";
+import {
+  executeModelAction,
+  type ExecuteModelActionOutcome,
+  type ModelActionHandler,
+} from "../application/actions/model-executor.js";
+import {
+  resolveAskTarget,
+  type AskLoadedInputs,
+} from "../application/actions/inputs/ask.js";
+import {
+  resolveNormalizeClaimTarget,
+  type NormalizeClaimLoadedInputs,
+  type NormalizeClaimSelection,
+} from "../application/actions/inputs/normalize-claim.js";
+import {
+  resolveTellTarget,
+  type TellLoadedInputs,
+} from "../application/actions/inputs/tell.js";
+import {
+  resolveShowTarget,
+  type ShowLoadedInputs,
+} from "../application/actions/inputs/show.js";
+import {
+  resolveGiveTarget,
+  type GiveLoadedInputs,
+} from "../application/actions/inputs/give.js";
+import {
+  resolveAcceptPromiseTarget,
+  type AcceptPromiseLoadedInputs,
+} from "../application/actions/inputs/accept-promise.js";
+import type {
+  AcceptPromiseDialogueSelection,
+  AskDialogueSelection,
+  GiveDialogueSelection,
+  ShowDialogueSelection,
+  TellDialogueSelection,
+} from "@the-town-remembers/rules";
 import { inspectActionHandler } from "../application/actions/inputs/inspect.js";
 import { leaveActionHandler } from "../application/actions/inputs/leave.js";
 import { startVisitActionHandler } from "../application/actions/inputs/start-visit.js";
@@ -103,6 +140,44 @@ export interface RouterConfig {
   readonly now: () => Date;
   readonly pool: Pool;
   readonly securityConfig: SecurityConfig;
+  /** `D4-R`: gates the six model-backed action kinds. Defaults to `false` when omitted, matching `TTR_ENABLE_NPC_MUTATIONS`'s own default. */
+  readonly enableNpcMutations?: boolean;
+  /** Present only when Ask is enabled; tests may inject a no-network handler. */
+  readonly askActionHandler?: ModelActionHandler<
+    "ask",
+    AskLoadedInputs,
+    AskDialogueSelection
+  >;
+  /** Present only when normalize_claim is enabled; tests may inject a no-network handler. */
+  readonly normalizeClaimActionHandler?: ModelActionHandler<
+    "normalize_claim",
+    NormalizeClaimLoadedInputs,
+    NormalizeClaimSelection
+  >;
+  /** Present only when tell is enabled; tests may inject a no-network handler. */
+  readonly tellActionHandler?: ModelActionHandler<
+    "tell",
+    TellLoadedInputs,
+    TellDialogueSelection
+  >;
+  /** Present only when show is enabled; tests may inject a no-network handler. */
+  readonly showActionHandler?: ModelActionHandler<
+    "show",
+    ShowLoadedInputs,
+    ShowDialogueSelection
+  >;
+  /** Present only when give is enabled; tests may inject a no-network handler. */
+  readonly giveActionHandler?: ModelActionHandler<
+    "give",
+    GiveLoadedInputs,
+    GiveDialogueSelection
+  >;
+  /** Present only when accept_promise is enabled; tests may inject a no-network handler. */
+  readonly acceptPromiseActionHandler?: ModelActionHandler<
+    "accept_promise",
+    AcceptPromiseLoadedInputs,
+    AcceptPromiseDialogueSelection
+  >;
 }
 
 export interface RouteHandlerContext {
@@ -329,6 +404,7 @@ async function handlePlayerView(context: RouteHandlerContext): Promise<HttpRespo
   const draft = await buildPlayerView(context.config.pool, {
     townId,
     playerId: outcome.session.playerId,
+    enableNpcMutations: context.config.enableNpcMutations ?? false,
   });
   const viewVersion = computePlayerViewVersion(draft);
   const ifNoneMatch = readHeader(headers, "if-none-match");
@@ -462,7 +538,7 @@ async function handleActionStatus(context: RouteHandlerContext): Promise<HttpRes
  */
 function respondToExecuteOutcome<K extends ActionKind>(
   townId: string,
-  outcome: ExecuteActionOutcome<K>,
+  outcome: ExecuteActionOutcome<K> | ExecuteModelActionOutcome<K>,
 ): Omit<HttpResponse, "cookies"> {
   switch (outcome.kind) {
     case "executed":
@@ -532,6 +608,8 @@ function respondToExecuteOutcome<K extends ActionKind>(
           ...locationHeader(actionStatusPath(townId, outcome.blockingActionId)),
         },
       });
+    case "rate_limited":
+      throw rateLimited(outcome.retryAfterSeconds);
   }
 }
 
@@ -572,7 +650,7 @@ async function handleSubmitAction(context: RouteHandlerContext): Promise<HttpRes
   const cookiesOut = reissued ? [buildSessionCookie(townId, token)] : [];
 
   const request = parseJsonBody(ActionRequestSchema, context.request.body);
-  requireEnabledActionKind(request.kind);
+  requireEnabledActionKind(request.kind, context.config.enableNpcMutations ?? false);
 
   const pool = context.config.pool;
   const playerId = authOutcome.session.playerId;
@@ -648,6 +726,124 @@ async function handleSubmitAction(context: RouteHandlerContext): Promise<HttpRes
       targetEntityId: null,
       requestPayload: {},
       handler: leaveActionHandler,
+      now: context.config.now,
+      requestId: context.requestId,
+    });
+    response = respondToExecuteOutcome(townId, outcome);
+  } else if (request.kind === "ask") {
+    const handler = context.config.askActionHandler;
+    if (handler === undefined) throw internalError();
+    const outcome = await executeModelAction({
+      pool,
+      deadline,
+      townId,
+      playerId,
+      idempotencyKey,
+      actionKind: "ask",
+      targetActorId: await resolveAskTarget(pool, townId, request.npcId),
+      targetEntityId: null,
+      requestPayload: { npcId: request.npcId, question: request.question },
+      handler,
+      now: context.config.now,
+      requestId: context.requestId,
+    });
+    response = respondToExecuteOutcome(townId, outcome);
+  } else if (request.kind === "normalize_claim") {
+    const handler = context.config.normalizeClaimActionHandler;
+    if (handler === undefined) throw internalError();
+    const outcome = await executeModelAction({
+      pool,
+      deadline,
+      townId,
+      playerId,
+      idempotencyKey,
+      actionKind: "normalize_claim",
+      targetActorId: await resolveNormalizeClaimTarget(pool, townId, request.npcId),
+      targetEntityId: null,
+      requestPayload: { npcId: request.npcId, text: request.text },
+      handler,
+      now: context.config.now,
+      requestId: context.requestId,
+    });
+    response = respondToExecuteOutcome(townId, outcome);
+  } else if (request.kind === "tell") {
+    const handler = context.config.tellActionHandler;
+    if (handler === undefined) throw internalError();
+    const outcome = await executeModelAction({
+      pool,
+      deadline,
+      townId,
+      playerId,
+      idempotencyKey,
+      actionKind: "tell",
+      targetActorId: await resolveTellTarget(
+        pool,
+        townId,
+        request.claimDraftId,
+        playerId,
+      ),
+      targetEntityId: null,
+      requestPayload: { claimDraftId: request.claimDraftId },
+      handler,
+      now: context.config.now,
+      requestId: context.requestId,
+    });
+    response = respondToExecuteOutcome(townId, outcome);
+  } else if (request.kind === "show") {
+    const handler = context.config.showActionHandler;
+    if (handler === undefined) throw internalError();
+    const outcome = await executeModelAction({
+      pool,
+      deadline,
+      townId,
+      playerId,
+      idempotencyKey,
+      actionKind: "show",
+      targetActorId: await resolveShowTarget(pool, townId, request.npcId),
+      targetEntityId: null,
+      requestPayload: { npcId: request.npcId, evidenceRef: request.evidenceRef },
+      handler,
+      now: context.config.now,
+      requestId: context.requestId,
+    });
+    response = respondToExecuteOutcome(townId, outcome);
+  } else if (request.kind === "give") {
+    const handler = context.config.giveActionHandler;
+    if (handler === undefined) throw internalError();
+    const outcome = await executeModelAction({
+      pool,
+      deadline,
+      townId,
+      playerId,
+      idempotencyKey,
+      actionKind: "give",
+      targetActorId: await resolveGiveTarget(pool, townId, request.npcId),
+      targetEntityId: null,
+      requestPayload: { npcId: request.npcId, itemId: request.itemId },
+      handler,
+      now: context.config.now,
+      requestId: context.requestId,
+    });
+    response = respondToExecuteOutcome(townId, outcome);
+  } else if (request.kind === "accept_promise") {
+    const handler = context.config.acceptPromiseActionHandler;
+    if (handler === undefined) throw internalError();
+    const outcome = await executeModelAction({
+      pool,
+      deadline,
+      townId,
+      playerId,
+      idempotencyKey,
+      actionKind: "accept_promise",
+      targetActorId: await resolveAcceptPromiseTarget(
+        pool,
+        townId,
+        playerId,
+        request.offerId,
+      ),
+      targetEntityId: null,
+      requestPayload: { offerId: request.offerId },
+      handler,
       now: context.config.now,
       requestId: context.requestId,
     });

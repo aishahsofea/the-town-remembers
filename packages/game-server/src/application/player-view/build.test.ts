@@ -15,6 +15,8 @@ import type { Pool } from "pg";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
+  ActivePromiseRow,
+  BoardClaimEntryRow,
   ClueDiscoveryRow,
   CoLocatedNpcRow,
   ConfrontationGateStatusRow,
@@ -34,6 +36,9 @@ const {
   readInventory,
   readDiscoveredClues,
   readVerifiedCaseBoardEntries,
+  readBoardClaimEntries,
+  readTransmissionProvenanceLinks,
+  readActivePromisesForPlayer,
   readConfrontationGateStatus,
   readInspectables,
   readCoLocatedNpcs,
@@ -45,6 +50,9 @@ const {
   readInventory: vi.fn(),
   readDiscoveredClues: vi.fn(),
   readVerifiedCaseBoardEntries: vi.fn(),
+  readBoardClaimEntries: vi.fn(),
+  readTransmissionProvenanceLinks: vi.fn(),
+  readActivePromisesForPlayer: vi.fn(),
   readConfrontationGateStatus: vi.fn(),
   readInspectables: vi.fn(),
   readCoLocatedNpcs: vi.fn(),
@@ -58,6 +66,9 @@ vi.mock("../../persistence/view-queries.js", () => ({
   readInventory,
   readDiscoveredClues,
   readVerifiedCaseBoardEntries,
+  readBoardClaimEntries,
+  readTransmissionProvenanceLinks,
+  readActivePromisesForPlayer,
   readConfrontationGateStatus,
   readInspectables,
   readCoLocatedNpcs,
@@ -105,6 +116,9 @@ function baseMocks(): void {
   readVerifiedCaseBoardEntries.mockResolvedValue(
     [] satisfies VerifiedCaseBoardEntryRow[],
   );
+  readBoardClaimEntries.mockResolvedValue([] satisfies BoardClaimEntryRow[]);
+  readTransmissionProvenanceLinks.mockResolvedValue([]);
+  readActivePromisesForPlayer.mockResolvedValue([] satisfies ActivePromiseRow[]);
   readConfrontationGateStatus.mockResolvedValue(zeroGateStatus());
   readInspectables.mockResolvedValue([] satisfies InspectableRow[]);
   readCoLocatedNpcs.mockResolvedValue([] satisfies CoLocatedNpcRow[]);
@@ -121,6 +135,7 @@ describe("visit status", () => {
     const view = await buildPlayerView(UNUSED_POOL, {
       townId: TOWN_ID,
       playerId: PLAYER_ID,
+      enableNpcMutations: false,
     });
     expect(view.player.visit).toStrictEqual({ status: "away" });
     expect(view.currentLocation).toBeNull();
@@ -139,6 +154,7 @@ describe("visit status", () => {
     const view = await buildPlayerView(UNUSED_POOL, {
       townId: TOWN_ID,
       playerId: PLAYER_ID,
+      enableNpcMutations: false,
     });
     expect(view.player.visit).toStrictEqual({
       status: "active",
@@ -161,6 +177,7 @@ describe("visit status", () => {
     const view = await buildPlayerView(UNUSED_POOL, {
       townId: TOWN_ID,
       playerId: PLAYER_ID,
+      enableNpcMutations: false,
     });
     expect(view.player.visit).toStrictEqual({
       status: "frozen",
@@ -202,6 +219,7 @@ describe("current location, encounters, and inventory", () => {
     const view = await buildPlayerView(UNUSED_POOL, {
       townId: TOWN_ID,
       playerId: PLAYER_ID,
+      enableNpcMutations: false,
     });
 
     expect(view.currentLocation?.inspectables).toHaveLength(1);
@@ -211,6 +229,237 @@ describe("current location, encounters, and inventory", () => {
     expect(view.encounters[0]?.availableActionKinds).toStrictEqual([]);
     expect(view.inventory).toHaveLength(1);
     expect(view.inventory[0]?.description.length).toBeGreaterThan(0);
+  });
+
+  it("grants every model-backed action kind only while enableNpcMutations is true, regardless of stance", async () => {
+    readPlayerAndVisit.mockResolvedValue({
+      displayName: "Test Player",
+      visitId: "visit_1",
+      locationEntityId: "loc_festival_square",
+    } satisfies PlayerAndVisitRow);
+    readCoLocatedNpcs.mockResolvedValue([
+      {
+        npcId: "npc_corin",
+        characterKey: "corin_hale",
+        displayName: "Corin Hale",
+        trustScore: -80,
+        suspicionScore: 80,
+      },
+    ] satisfies CoLocatedNpcRow[]);
+
+    const disabled = await buildPlayerView(UNUSED_POOL, {
+      townId: TOWN_ID,
+      playerId: PLAYER_ID,
+      enableNpcMutations: false,
+    });
+    expect(disabled.encounters[0]?.availableActionKinds).toStrictEqual([]);
+
+    const enabled = await buildPlayerView(UNUSED_POOL, {
+      townId: TOWN_ID,
+      playerId: PLAYER_ID,
+      enableNpcMutations: true,
+    });
+    expect(enabled.encounters[0]?.availableActionKinds).toStrictEqual([
+      "ask",
+      "normalize_claim",
+      "tell",
+      "show",
+      "give",
+      "accept_promise",
+    ]);
+  });
+});
+
+describe("activePromises", () => {
+  it("projects a keep_secret promise's claim text and a return_item promise's item, summary from the terms lookup", async () => {
+    readActivePromisesForPlayer.mockResolvedValue([
+      {
+        promiseId: "promise_secret",
+        npcId: "npc_mara",
+        npcDisplayName: "Mara Venn",
+        kind: "keep_secret",
+        termsVersion: CONTENT.promiseTerms.keepLarkAccidentSecret.termsVersion,
+        createdAt: new Date("2026-08-01T00:00:00.000Z"),
+        claim: {
+          claimId: "claim_1",
+          subjectEntityKey: "lark_venn",
+          predicate: "damaged",
+          objectEntityKey: "festival_bell",
+          polarity: "positive",
+          contextKey: "festival_night",
+        },
+        item: undefined,
+      },
+      {
+        promiseId: "promise_item",
+        npcId: "npc_nessa",
+        npcDisplayName: "Nessa Reed",
+        kind: "return_item",
+        termsVersion: CONTENT.promiseTerms.returnChapelKey.termsVersion,
+        createdAt: new Date("2026-08-02T00:00:00.000Z"),
+        claim: undefined,
+        item: {
+          itemId: "item_key",
+          entityKey: "old_chapel_key",
+          displayName: "Old Chapel Key",
+        },
+      },
+    ] satisfies ActivePromiseRow[]);
+
+    const view = await buildPlayerView(UNUSED_POOL, {
+      townId: TOWN_ID,
+      playerId: PLAYER_ID,
+      enableNpcMutations: false,
+    });
+
+    expect(view.activePromises).toHaveLength(2);
+    const secret = view.activePromises.find((p) => p.promiseId === "promise_secret");
+    expect(secret).toMatchObject({
+      npc: { id: "npc_mara", actorType: "npc", displayName: "Mara Venn" },
+      kind: "keep_secret",
+      summary: CONTENT.promiseTerms.keepLarkAccidentSecret.summary,
+      subject: { kind: "claim", claimId: "claim_1" },
+    });
+    expect(secret?.subject.kind === "claim" ? secret.subject.text : "").toContain(
+      "Lark Venn",
+    );
+
+    const item = view.activePromises.find((p) => p.promiseId === "promise_item");
+    expect(item).toMatchObject({
+      npc: { id: "npc_nessa", actorType: "npc", displayName: "Nessa Reed" },
+      kind: "return_item",
+      summary: CONTENT.promiseTerms.returnChapelKey.summary,
+      subject: { kind: "item", itemId: "item_key", displayName: "Old Chapel Key" },
+    });
+  });
+
+  it("throws when a promise's termsVersion has no matching authored summary", async () => {
+    readActivePromisesForPlayer.mockResolvedValue([
+      {
+        promiseId: "promise_unknown",
+        npcId: "npc_mara",
+        npcDisplayName: "Mara Venn",
+        kind: "keep_secret",
+        termsVersion: "unknown-terms-v1",
+        createdAt: new Date("2026-08-01T00:00:00.000Z"),
+        claim: {
+          claimId: "claim_1",
+          subjectEntityKey: "lark_venn",
+          predicate: "damaged",
+          objectEntityKey: "festival_bell",
+          polarity: "positive",
+          contextKey: "festival_night",
+        },
+        item: undefined,
+      },
+    ] satisfies ActivePromiseRow[]);
+
+    await expect(
+      buildPlayerView(UNUSED_POOL, {
+        townId: TOWN_ID,
+        playerId: PLAYER_ID,
+        enableNpcMutations: false,
+      }),
+    ).rejects.toMatchObject({ status: 500 });
+  });
+});
+
+describe("testimony and hearsay board entries", () => {
+  it("classifies entryKind/verificationStatus, carries the alleged source, and orders the provenance path root-first", async () => {
+    readBoardClaimEntries.mockResolvedValue([
+      {
+        entryId: "entry_testimony",
+        entryKind: "testimony",
+        createdAt: new Date("2026-08-03T00:00:00.000Z"),
+        contributedByPlayerId: "player_a",
+        contributedByDisplayName: "Player A",
+        claim: {
+          claimId: "claim_1",
+          subjectEntityKey: "lark_venn",
+          predicate: "damaged",
+          objectEntityKey: "festival_bell",
+          polarity: "positive",
+          contextKey: "festival_night",
+        },
+        transmissionId: "t_child",
+        speaker: { id: "npc_mara", actorType: "npc", displayName: "Mara Venn" },
+        allegedSource: undefined,
+      },
+      {
+        entryId: "entry_hearsay",
+        entryKind: "hearsay",
+        createdAt: new Date("2026-08-04T00:00:00.000Z"),
+        contributedByPlayerId: "player_a",
+        contributedByDisplayName: "Player A",
+        claim: {
+          claimId: "claim_2",
+          subjectEntityKey: "corin_hale",
+          predicate: "was_at",
+          objectEntityKey: "lantern_inn",
+          polarity: "positive",
+          contextKey: "festival_night",
+        },
+        transmissionId: "t_other",
+        speaker: { id: "npc_nessa", actorType: "npc", displayName: "Nessa Reed" },
+        allegedSource: { id: "npc_mara", actorType: "npc", displayName: "Mara Venn" },
+      },
+    ] satisfies BoardClaimEntryRow[]);
+    readTransmissionProvenanceLinks.mockResolvedValue([
+      {
+        transmissionId: "t_root",
+        parentTransmissionId: null,
+        speakerActorId: "player_a",
+        speakerActorType: "player",
+        speakerDisplayName: "Player A",
+      },
+      {
+        transmissionId: "t_child",
+        parentTransmissionId: "t_root",
+        speakerActorId: "npc_mara",
+        speakerActorType: "npc",
+        speakerDisplayName: "Mara Venn",
+      },
+      {
+        transmissionId: "t_other",
+        parentTransmissionId: null,
+        speakerActorId: "npc_nessa",
+        speakerActorType: "npc",
+        speakerDisplayName: "Nessa Reed",
+      },
+    ]);
+
+    const view = await buildPlayerView(UNUSED_POOL, {
+      townId: TOWN_ID,
+      playerId: PLAYER_ID,
+      enableNpcMutations: false,
+    });
+
+    expect(view.caseBoard).toHaveLength(2);
+    const testimony = view.caseBoard.find(
+      (entry) => entry.entryId === "entry_testimony",
+    );
+    expect(testimony).toMatchObject({
+      entryKind: "testimony",
+      verificationStatus: "attributed_testimony",
+      contributedBy: { id: "player_a", displayName: "Player A" },
+      speaker: { id: "npc_mara", actorType: "npc", displayName: "Mara Venn" },
+    });
+    expect(testimony && "allegedSource" in testimony).toBe(false);
+    expect(
+      testimony?.entryKind === "testimony" || testimony?.entryKind === "hearsay"
+        ? testimony.provenancePath
+        : [],
+    ).toStrictEqual([
+      { id: "player_a", actorType: "player", displayName: "Player A" },
+      { id: "npc_mara", actorType: "npc", displayName: "Mara Venn" },
+    ]);
+
+    const hearsay = view.caseBoard.find((entry) => entry.entryId === "entry_hearsay");
+    expect(hearsay).toMatchObject({
+      entryKind: "hearsay",
+      verificationStatus: "attributed_hearsay",
+      allegedSource: { id: "npc_mara", actorType: "npc", displayName: "Mara Venn" },
+    });
   });
 });
 
@@ -237,6 +486,7 @@ describe("discoveredClues grouping", () => {
     const view = await buildPlayerView(UNUSED_POOL, {
       townId: TOWN_ID,
       playerId: PLAYER_ID,
+      enableNpcMutations: false,
     });
 
     expect(view.discoveredClues).toHaveLength(1);
@@ -262,6 +512,7 @@ describe("shared case board", () => {
     const view = await buildPlayerView(UNUSED_POOL, {
       townId: TOWN_ID,
       playerId: PLAYER_ID,
+      enableNpcMutations: false,
     });
 
     expect(view.caseBoard).toStrictEqual([
@@ -289,14 +540,22 @@ describe("invariant guards", () => {
   it("throws when the town header is missing", async () => {
     readTownHeader.mockResolvedValue(undefined);
     await expect(
-      buildPlayerView(UNUSED_POOL, { townId: TOWN_ID, playerId: PLAYER_ID }),
+      buildPlayerView(UNUSED_POOL, {
+        townId: TOWN_ID,
+        playerId: PLAYER_ID,
+        enableNpcMutations: false,
+      }),
     ).rejects.toMatchObject({ status: 500 });
   });
 
   it("throws when the player and visit row is missing", async () => {
     readPlayerAndVisit.mockResolvedValue(undefined);
     await expect(
-      buildPlayerView(UNUSED_POOL, { townId: TOWN_ID, playerId: PLAYER_ID }),
+      buildPlayerView(UNUSED_POOL, {
+        townId: TOWN_ID,
+        playerId: PLAYER_ID,
+        enableNpcMutations: false,
+      }),
     ).rejects.toMatchObject({ status: 500 });
   });
 
@@ -306,7 +565,11 @@ describe("invariant guards", () => {
       contentVersion: "bell-mystery-v1",
     } satisfies TownHeaderRow);
     await expect(
-      buildPlayerView(UNUSED_POOL, { townId: TOWN_ID, playerId: PLAYER_ID }),
+      buildPlayerView(UNUSED_POOL, {
+        townId: TOWN_ID,
+        playerId: PLAYER_ID,
+        enableNpcMutations: false,
+      }),
     ).rejects.toMatchObject({ status: 500 });
   });
 
@@ -320,7 +583,11 @@ describe("invariant guards", () => {
       },
     ] satisfies LocationAccessRow[]);
     await expect(
-      buildPlayerView(UNUSED_POOL, { townId: TOWN_ID, playerId: PLAYER_ID }),
+      buildPlayerView(UNUSED_POOL, {
+        townId: TOWN_ID,
+        playerId: PLAYER_ID,
+        enableNpcMutations: false,
+      }),
     ).rejects.toMatchObject({ status: 500 });
   });
 });
@@ -330,6 +597,7 @@ describe("the confrontation gate", () => {
     const view = await buildPlayerView(UNUSED_POOL, {
       townId: TOWN_ID,
       playerId: PLAYER_ID,
+      enableNpcMutations: false,
     });
     expect(view.resolution).toStrictEqual({
       state: "investigating",
@@ -370,6 +638,7 @@ describe("the confrontation gate", () => {
     const view = await buildPlayerView(UNUSED_POOL, {
       townId: TOWN_ID,
       playerId: PLAYER_ID,
+      enableNpcMutations: false,
     });
 
     expect(view.resolution.state).toBe("investigating");

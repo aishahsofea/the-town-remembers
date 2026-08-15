@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import {
   createDisposableDatabase,
+  insertNpc,
   insertPlayer,
   insertStoryEntity,
   insertTown,
@@ -14,7 +15,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { claimAction } from "../../persistence/actions.js";
 import { actionRequestHash } from "../../security/fingerprint.js";
-import { commitEffectPlan, RevisionConflictError } from "./commit.js";
+import {
+  commitEffectPlan,
+  RevisionConflictError,
+  UnknownPlanRefError,
+} from "./commit.js";
 
 describe.skipIf(!shouldRunDatabaseTests())("commitEffectPlan", () => {
   let handle: DisposableDatabase | undefined;
@@ -546,5 +551,308 @@ describe.skipIf(!shouldRunDatabaseTests())("commitEffectPlan", () => {
     expect(second.outcome).toBe("committed");
     if (second.outcome !== "committed") throw new Error("unreachable");
     expect(second.value.conflicted).toBe(true);
+  });
+
+  describe("PlanRef resolution (D4-F)", () => {
+    it("resolves an insert's self-reference to that row's generated id", async () => {
+      const fixture = await fixtureTownPlayerAndAction();
+      const npcId = await insertNpc(db().pool, fixture.townId);
+      const subjectId = await insertStoryEntity(db().pool, fixture.townId, {
+        entityType: "character",
+      });
+      const claimId = randomUUID();
+      await db().pool.query(
+        `INSERT INTO public.claims
+           (town_id, id, subject_entity_id, subject_entity_type, predicate,
+            object_entity_id, object_entity_type, polarity, context_key,
+            normalized_key, created_at)
+         VALUES ($1, $2, $3, 'character', 'was_at', $4, 'location', 'positive',
+                 'festival_night', $5, now())`,
+        [fixture.townId, claimId, subjectId, fixture.locationId, `claim:${claimId}`],
+      );
+      const sourceEventId = randomUUID();
+      await db().pool.query(
+        `UPDATE public.towns SET last_event_sequence = 1 WHERE id = $1`,
+        [fixture.townId],
+      );
+      await db().pool.query(
+        `INSERT INTO public.world_events
+           (town_id, id, sequence_no, event_type, ambient_eligible, occurred_at,
+            origin_kind, effect_index, effect_key, payload, created_at)
+         VALUES ($1, $2, 1, 'authored_observation', false, now(), 'system_seed',
+                 0, $3, '{}', now())`,
+        [fixture.townId, sourceEventId, `test:${sourceEventId}`],
+      );
+      const sourceEpisodeId = randomUUID();
+      await db().pool.query(
+        `INSERT INTO public.episodes
+           (town_id, id, npc_id, event_id, episode_kind, summary, importance,
+            occurred_at, embedding_status, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, 'direct_observation', 'Observed it.', 50,
+                 now(), 'pending', now(), now())`,
+        [fixture.townId, sourceEpisodeId, npcId, sourceEventId],
+      );
+
+      const result = await runSerializable(
+        db().pool,
+        { deadlineAt: Date.now() + 5_000 },
+        (transaction) =>
+          commitEffectPlan({
+            transaction,
+            townId: fixture.townId,
+            playerId: fixture.playerId,
+            actionId: fixture.actionId,
+            idempotencyKey: fixture.idempotencyKey,
+            effects: [
+              {
+                kind: "event_origin",
+                eventType: "npc_interaction",
+                effectIndex: 0,
+              },
+              {
+                kind: "insert",
+                table: "claim_transmissions",
+                ref: "root-transmission",
+                row: {
+                  claim_id: claimId,
+                  speaker_actor_id: npcId,
+                  recipient_actor_id: fixture.playerId,
+                  recipient_actor_type: "player",
+                  parent_transmission_id: null,
+                  parent_is_eligible: null,
+                  root_transmission_id: { $planRef: "root-transmission" },
+                  source_episode_id: sourceEpisodeId,
+                  alleged_source_actor_id: null,
+                  source_kind: "direct_observation",
+                  hop_count: 0,
+                  interaction_id: null,
+                  ordinal: 0,
+                },
+              },
+            ],
+            now: new Date(),
+          }),
+      );
+      expect(result.outcome).toBe("committed");
+
+      const transmission = await db().pool.query<{
+        readonly id: string;
+        readonly root_transmission_id: string;
+      }>(
+        `SELECT id, root_transmission_id
+           FROM public.claim_transmissions
+          WHERE town_id = $1 AND event_id IN (
+            SELECT id FROM public.world_events
+             WHERE town_id = $1 AND player_action_id = $2
+          )`,
+        [fixture.townId, fixture.actionId],
+      );
+      expect(transmission.rows[0]?.root_transmission_id).toBe(transmission.rows[0]?.id);
+    });
+
+    it("resolves a PlanRef in two later inserts to the earlier insert's real id", async () => {
+      const fixture = await fixtureTownPlayerAndAction();
+      const npcId = await insertNpc(db().pool, fixture.townId);
+      const itemEntityId = await insertStoryEntity(db().pool, fixture.townId, {
+        entityType: "item",
+      });
+
+      const effects: readonly EffectPlanEntry[] = [
+        { kind: "event_origin", eventType: "authored_observation", effectIndex: 0 },
+        {
+          kind: "insert",
+          table: "episodes",
+          ref: "episode",
+          row: {
+            npc_id: npcId,
+            episode_kind: "direct_observation",
+            summary: "test episode",
+            importance: 50,
+            occurred_at: new Date(),
+            embedding_status: "pending",
+            updated_at: new Date(),
+          },
+        },
+        {
+          kind: "insert",
+          table: "episode_references",
+          row: {
+            episode_id: { $planRef: "episode" },
+            reference_kind: "location",
+            entity_id: fixture.locationId,
+          },
+        },
+        {
+          kind: "insert",
+          table: "episode_references",
+          row: {
+            episode_id: { $planRef: "episode" },
+            reference_kind: "item",
+            entity_id: itemEntityId,
+          },
+        },
+      ];
+
+      const result = await runSerializable(
+        db().pool,
+        { deadlineAt: Date.now() + 5_000 },
+        (transaction) =>
+          commitEffectPlan({
+            transaction,
+            townId: fixture.townId,
+            playerId: fixture.playerId,
+            actionId: fixture.actionId,
+            idempotencyKey: fixture.idempotencyKey,
+            effects,
+            now: new Date(),
+          }),
+      );
+      expect(result.outcome).toBe("committed");
+
+      const episode = await db().pool.query<{ readonly id: string }>(
+        "SELECT id FROM public.episodes WHERE town_id = $1",
+        [fixture.townId],
+      );
+      const episodeId = episode.rows[0]?.id;
+      expect(episodeId).toBeTruthy();
+
+      const references = await db().pool.query<{ readonly episode_id: string }>(
+        "SELECT episode_id FROM public.episode_references WHERE town_id = $1 ORDER BY reference_kind",
+        [fixture.townId],
+      );
+      expect(references.rows).toHaveLength(2);
+      expect(references.rows.every((row) => row.episode_id === episodeId)).toBe(true);
+    });
+
+    it("throws before any statement runs when a PlanRef names an unknown or forward handle", async () => {
+      const fixture = await fixtureTownPlayerAndAction();
+      const npcId = await insertNpc(db().pool, fixture.townId);
+
+      const effects: readonly EffectPlanEntry[] = [
+        { kind: "event_origin", eventType: "authored_observation", effectIndex: 0 },
+        {
+          kind: "insert",
+          table: "episodes",
+          // No `ref` declared here — the reference below names a handle
+          // nothing in this plan ever declares.
+          row: {
+            npc_id: npcId,
+            episode_kind: "direct_observation",
+            summary: "test episode",
+            importance: 50,
+            occurred_at: new Date(),
+            embedding_status: "pending",
+            updated_at: new Date(),
+          },
+        },
+        {
+          kind: "insert",
+          table: "episode_references",
+          row: {
+            episode_id: { $planRef: "never_declared" },
+            reference_kind: "location",
+            entity_id: fixture.locationId,
+          },
+        },
+      ];
+
+      // `runSerializable` wraps any error escaping its callback into a
+      // generic `DatabaseError` (`transaction.ts`'s own deliberate
+      // redaction — a real production hazard for this specific assertion,
+      // not this feature's bug), so the error is caught and returned as
+      // plain data instead of asserted via `.rejects`, matching this file's
+      // existing convention for the same situation two tests up.
+      const caught = await runSerializable(
+        db().pool,
+        { deadlineAt: Date.now() + 5_000 },
+        async (transaction) => {
+          try {
+            await commitEffectPlan({
+              transaction,
+              townId: fixture.townId,
+              playerId: fixture.playerId,
+              actionId: fixture.actionId,
+              idempotencyKey: fixture.idempotencyKey,
+              effects,
+              now: new Date(),
+            });
+            return { isUnknownPlanRefError: false };
+          } catch (error) {
+            return { isUnknownPlanRefError: error instanceof UnknownPlanRefError };
+          }
+        },
+      );
+      expect(caught.outcome).toBe("committed");
+      if (caught.outcome === "committed") {
+        expect(caught.value.isUnknownPlanRefError).toBe(true);
+      }
+
+      // The whole plan is discarded, including the episode insert that
+      // preceded the bad reference in plan order.
+      const episodes = await db().pool.query(
+        "SELECT id FROM public.episodes WHERE town_id = $1",
+        [fixture.townId],
+      );
+      expect(episodes.rows).toHaveLength(0);
+    });
+
+    it("throws when a PlanRef names a handle declared later in the same plan (a forward reference)", async () => {
+      const fixture = await fixtureTownPlayerAndAction();
+      const npcId = await insertNpc(db().pool, fixture.townId);
+
+      const effects: readonly EffectPlanEntry[] = [
+        { kind: "event_origin", eventType: "authored_observation", effectIndex: 0 },
+        {
+          kind: "insert",
+          table: "episode_references",
+          row: {
+            // References "episode", but that ref is declared by the insert
+            // below — later in plan order, so not yet resolvable here.
+            episode_id: { $planRef: "episode" },
+            reference_kind: "location",
+            entity_id: fixture.locationId,
+          },
+        },
+        {
+          kind: "insert",
+          table: "episodes",
+          ref: "episode",
+          row: {
+            npc_id: npcId,
+            episode_kind: "direct_observation",
+            summary: "test episode",
+            importance: 50,
+            occurred_at: new Date(),
+            embedding_status: "pending",
+            updated_at: new Date(),
+          },
+        },
+      ];
+
+      const caught = await runSerializable(
+        db().pool,
+        { deadlineAt: Date.now() + 5_000 },
+        async (transaction) => {
+          try {
+            await commitEffectPlan({
+              transaction,
+              townId: fixture.townId,
+              playerId: fixture.playerId,
+              actionId: fixture.actionId,
+              idempotencyKey: fixture.idempotencyKey,
+              effects,
+              now: new Date(),
+            });
+            return { isUnknownPlanRefError: false };
+          } catch (error) {
+            return { isUnknownPlanRefError: error instanceof UnknownPlanRefError };
+          }
+        },
+      );
+      expect(caught.outcome).toBe("committed");
+      if (caught.outcome === "committed") {
+        expect(caught.value.isUnknownPlanRefError).toBe(true);
+      }
+    });
   });
 });

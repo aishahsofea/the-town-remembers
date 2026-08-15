@@ -11,13 +11,22 @@
  * separates story entities from actors.
  */
 
+import { normalizeAliases } from "./alias.js";
+
 export type EntityType = "character" | "location" | "item" | "motive";
+
+/**
+ * `D4-J`: an NPC has no alias list of its own — it derives one transitively
+ * from its `characterKey`'s entity, so the same name never has to be
+ * authored twice.
+ */
 
 export interface AuthoredEntity {
   readonly entityKey: string;
   readonly entityType: EntityType;
   readonly displayName: string;
   readonly contentKey: string;
+  readonly aliases: readonly string[];
 }
 
 export interface AuthoredLocation extends AuthoredEntity {
@@ -41,24 +50,32 @@ export const CHARACTERS: readonly AuthoredEntity[] = Object.freeze([
     entityType: "character",
     displayName: "Mara Venn",
     contentKey: "character.mara_venn",
+    aliases: normalizeAliases(["Mara", "the innkeeper"]),
   },
   {
     entityKey: "corin_hale",
     entityType: "character",
     displayName: "Corin Hale",
     contentKey: "character.corin_hale",
+    aliases: normalizeAliases(["Corin", "the guard"]),
   },
   {
     entityKey: "nessa_reed",
     entityType: "character",
     displayName: "Nessa Reed",
     contentKey: "character.nessa_reed",
+    aliases: normalizeAliases(["Nessa", "the herbalist"]),
   },
   {
     entityKey: "lark_venn",
     entityType: "character",
     displayName: "Lark Venn",
     contentKey: "character.lark_venn",
+    aliases: normalizeAliases([
+      "Lark",
+      "the apprentice",
+      "the bell-ringer's apprentice",
+    ]),
   },
 ] as const);
 
@@ -71,6 +88,7 @@ export const LOCATIONS: readonly AuthoredLocation[] = Object.freeze([
     mapOrder: 0,
     initiallyOpen: true,
     description: "Bright bunting hangs over an empty bell frame and a halted festival.",
+    aliases: normalizeAliases(["the square", "festival square"]),
   },
   {
     entityKey: "lantern_inn",
@@ -80,6 +98,7 @@ export const LOCATIONS: readonly AuthoredLocation[] = Object.freeze([
     mapOrder: 1,
     initiallyOpen: true,
     description: "A warm public room where whispers travel faster than trays.",
+    aliases: normalizeAliases(["the inn", "the lantern inn"]),
   },
   {
     entityKey: "reeds_garden",
@@ -89,6 +108,7 @@ export const LOCATIONS: readonly AuthoredLocation[] = Object.freeze([
     mapOrder: 2,
     initiallyOpen: true,
     description: "Orderly herb beds border the narrow lane to the Old Chapel.",
+    aliases: normalizeAliases(["the garden", "reed's garden", "reeds garden"]),
   },
   {
     entityKey: "old_chapel",
@@ -98,6 +118,7 @@ export const LOCATIONS: readonly AuthoredLocation[] = Object.freeze([
     mapOrder: 3,
     initiallyOpen: false,
     description: "A disused stone chapel above the eastern lane.",
+    aliases: normalizeAliases(["the chapel", "old chapel"]),
   },
 ] as const);
 
@@ -110,18 +131,21 @@ export const MOTIVES: readonly AuthoredEntity[] = Object.freeze([
     entityType: "motive",
     displayName: "Protecting Lark",
     contentKey: "motive.protect_lark",
+    aliases: normalizeAliases(["protecting lark"]),
   },
   {
     entityKey: "public_safety",
     entityType: "motive",
     displayName: "Preventing a public accident",
     contentKey: "motive.public_safety",
+    aliases: normalizeAliases(["public safety", "safety"]),
   },
   {
     entityKey: "personal_profit",
     entityType: "motive",
     displayName: "Selling the bell for personal profit",
     contentKey: "motive.personal_profit",
+    aliases: normalizeAliases(["personal profit", "money", "profit"]),
   },
 ] as const);
 
@@ -133,6 +157,7 @@ export const ITEMS: readonly AuthoredItem[] = Object.freeze([
     contentKey: "item.festival_bell",
     portable: false,
     initialLocationKey: "old_chapel",
+    aliases: normalizeAliases(["the bell", "festival bell"]),
   },
   {
     entityKey: "old_chapel_key",
@@ -141,6 +166,7 @@ export const ITEMS: readonly AuthoredItem[] = Object.freeze([
     contentKey: "item.old_chapel_key",
     portable: true,
     initialHolderKey: "nessa_reed",
+    aliases: normalizeAliases(["the key", "chapel key", "old chapel key"]),
   },
   {
     entityKey: "nessas_field_lens",
@@ -149,6 +175,7 @@ export const ITEMS: readonly AuthoredItem[] = Object.freeze([
     contentKey: "item.nessas_field_lens",
     portable: true,
     initialLocationKey: "festival_square",
+    aliases: normalizeAliases(["the lens", "field lens", "nessa's lens"]),
   },
   {
     entityKey: "guard_dispatch_seal",
@@ -157,6 +184,7 @@ export const ITEMS: readonly AuthoredItem[] = Object.freeze([
     contentKey: "item.guard_dispatch_seal",
     portable: true,
     initialLocationKey: "reeds_garden",
+    aliases: normalizeAliases(["the seal", "dispatch seal", "guard seal"]),
   },
 ] as const);
 

@@ -361,6 +361,243 @@ export async function readDiscoveredClues(
   }));
 }
 
+// --- active promises, all NPCs, one player ----------------------------------------------
+
+export interface ActivePromiseClaimSubjectRow {
+  readonly claimId: string;
+  readonly subjectEntityKey: string;
+  readonly predicate: "was_at" | "moved" | "damaged" | "is_at" | "acted_for";
+  readonly objectEntityKey: string;
+  readonly polarity: "positive" | "negative";
+  readonly contextKey: string;
+}
+
+export interface ActivePromiseItemSubjectRow {
+  readonly itemId: string;
+  readonly entityKey: string;
+  readonly displayName: string;
+}
+
+export interface ActivePromiseRow {
+  readonly promiseId: string;
+  readonly npcId: string;
+  readonly npcDisplayName: string;
+  readonly kind: "keep_secret" | "return_item";
+  readonly termsVersion: string;
+  readonly createdAt: Date;
+  readonly claim: ActivePromiseClaimSubjectRow | undefined;
+  readonly item: ActivePromiseItemSubjectRow | undefined;
+}
+
+/** Every active promise across all NPCs for one player, subject fields fully joined. */
+export async function readActivePromisesForPlayer(
+  pool: Pool,
+  townId: string,
+  playerId: string,
+): Promise<readonly ActivePromiseRow[]> {
+  const result = await pool.query<{
+    promise_id: string;
+    npc_id: string;
+    npc_display_name: string;
+    kind: "keep_secret" | "return_item";
+    terms_version: string;
+    created_at: Date;
+    claim_id: string | null;
+    claim_subject_key: string | null;
+    predicate: ActivePromiseClaimSubjectRow["predicate"] | null;
+    claim_object_key: string | null;
+    polarity: ActivePromiseClaimSubjectRow["polarity"] | null;
+    context_key: string | null;
+    item_id: string | null;
+    item_entity_key: string | null;
+    item_display_name: string | null;
+  }>(
+    `SELECT p.id AS promise_id, p.npc_id, npc_actor.display_name AS npc_display_name,
+            p.kind, p.terms_version, p.created_at,
+            c.id AS claim_id, subj.entity_key AS claim_subject_key, c.predicate,
+            obj.entity_key AS claim_object_key, c.polarity, c.context_key,
+            item_entity.id AS item_id, item_entity.entity_key AS item_entity_key,
+            item_entity.display_name AS item_display_name
+       FROM public.promises p
+       JOIN public.actors npc_actor ON npc_actor.town_id = p.town_id AND npc_actor.id = p.npc_id
+       LEFT JOIN public.claims c ON c.town_id = p.town_id AND c.id = p.protected_claim_id
+       LEFT JOIN public.story_entities subj
+         ON subj.town_id = c.town_id AND subj.id = c.subject_entity_id
+       LEFT JOIN public.story_entities obj
+         ON obj.town_id = c.town_id AND obj.id = c.object_entity_id
+       LEFT JOIN public.story_entities item_entity
+         ON item_entity.town_id = p.town_id AND item_entity.id = p.item_id
+      WHERE p.town_id = $1 AND p.player_id = $2 AND p.status = 'active'`,
+    [townId, playerId],
+  );
+  return result.rows.map((row) => ({
+    promiseId: row.promise_id,
+    npcId: row.npc_id,
+    npcDisplayName: row.npc_display_name,
+    kind: row.kind,
+    termsVersion: row.terms_version,
+    createdAt: row.created_at,
+    claim:
+      row.claim_id === null
+        ? undefined
+        : {
+            claimId: row.claim_id,
+            subjectEntityKey: row.claim_subject_key!,
+            predicate: row.predicate!,
+            objectEntityKey: row.claim_object_key!,
+            polarity: row.polarity!,
+            contextKey: row.context_key!,
+          },
+    item:
+      row.item_id === null
+        ? undefined
+        : {
+            itemId: row.item_id,
+            entityKey: row.item_entity_key!,
+            displayName: row.item_display_name!,
+          },
+  }));
+}
+
+// --- testimony / hearsay board entries, town-wide -------------------------------------
+
+export interface BoardClaimEntryRow {
+  readonly entryId: string;
+  readonly entryKind: "testimony" | "hearsay";
+  readonly createdAt: Date;
+  readonly contributedByPlayerId: string;
+  readonly contributedByDisplayName: string;
+  readonly claim: ActivePromiseClaimSubjectRow;
+  readonly transmissionId: string;
+  readonly speaker: {
+    readonly id: string;
+    readonly actorType: "player" | "npc";
+    readonly displayName: string;
+  };
+  readonly allegedSource:
+    | {
+        readonly id: string;
+        readonly actorType: "player" | "npc";
+        readonly displayName: string;
+      }
+    | undefined;
+}
+
+/** Every board entry attributed to a transmission (`testimony`/`hearsay`), town-wide. */
+export async function readBoardClaimEntries(
+  pool: Pool,
+  townId: string,
+): Promise<readonly BoardClaimEntryRow[]> {
+  const result = await pool.query<{
+    entry_id: string;
+    entry_kind: "testimony" | "hearsay";
+    created_at: Date;
+    contributor_id: string;
+    contributor_display_name: string;
+    claim_id: string;
+    claim_subject_key: string;
+    predicate: ActivePromiseClaimSubjectRow["predicate"];
+    claim_object_key: string;
+    polarity: ActivePromiseClaimSubjectRow["polarity"];
+    context_key: string;
+    transmission_id: string;
+    speaker_id: string;
+    speaker_actor_type: "player" | "npc";
+    speaker_display_name: string;
+    alleged_id: string | null;
+    alleged_actor_type: "player" | "npc" | null;
+    alleged_display_name: string | null;
+  }>(
+    `SELECT cbe.id AS entry_id, cbe.entry_kind, cbe.created_at,
+            contributor.id AS contributor_id, contributor.display_name AS contributor_display_name,
+            c.id AS claim_id, subj.entity_key AS claim_subject_key, c.predicate,
+            obj.entity_key AS claim_object_key, c.polarity, c.context_key,
+            t.id AS transmission_id,
+            speaker.id AS speaker_id, speaker.actor_type AS speaker_actor_type,
+            speaker.display_name AS speaker_display_name,
+            alleged.id AS alleged_id, alleged.actor_type AS alleged_actor_type,
+            alleged.display_name AS alleged_display_name
+       FROM public.case_board_entries cbe
+       JOIN public.actors contributor
+         ON contributor.town_id = cbe.town_id AND contributor.id = cbe.contributed_by_player_id
+       JOIN public.claims c ON c.town_id = cbe.town_id AND c.id = cbe.claim_id
+       JOIN public.story_entities subj ON subj.town_id = c.town_id AND subj.id = c.subject_entity_id
+       JOIN public.story_entities obj ON obj.town_id = c.town_id AND obj.id = c.object_entity_id
+       JOIN public.claim_transmissions t
+         ON t.town_id = cbe.town_id AND t.id = cbe.transmission_id
+       JOIN public.actors speaker ON speaker.town_id = t.town_id AND speaker.id = t.speaker_actor_id
+       LEFT JOIN public.actors alleged
+         ON alleged.town_id = t.town_id AND alleged.id = t.alleged_source_actor_id
+      WHERE cbe.town_id = $1 AND cbe.entry_kind IN ('testimony', 'hearsay')`,
+    [townId],
+  );
+  return result.rows.map((row) => ({
+    entryId: row.entry_id,
+    entryKind: row.entry_kind,
+    createdAt: row.created_at,
+    contributedByPlayerId: row.contributor_id,
+    contributedByDisplayName: row.contributor_display_name,
+    claim: {
+      claimId: row.claim_id,
+      subjectEntityKey: row.claim_subject_key,
+      predicate: row.predicate,
+      objectEntityKey: row.claim_object_key,
+      polarity: row.polarity,
+      contextKey: row.context_key,
+    },
+    transmissionId: row.transmission_id,
+    speaker: {
+      id: row.speaker_id,
+      actorType: row.speaker_actor_type,
+      displayName: row.speaker_display_name,
+    },
+    allegedSource:
+      row.alleged_id === null
+        ? undefined
+        : {
+            id: row.alleged_id,
+            actorType: row.alleged_actor_type!,
+            displayName: row.alleged_display_name!,
+          },
+  }));
+}
+
+/** Every transmission's provenance link, town-wide — the raw material `board/provenance.ts#buildProvenancePath` walks. */
+export async function readTransmissionProvenanceLinks(
+  pool: Pool,
+  townId: string,
+): Promise<
+  readonly {
+    readonly transmissionId: string;
+    readonly parentTransmissionId: string | null;
+    readonly speakerActorId: string;
+    readonly speakerActorType: "player" | "npc";
+    readonly speakerDisplayName: string;
+  }[]
+> {
+  const result = await pool.query<{
+    id: string;
+    parent_transmission_id: string | null;
+    speaker_actor_id: string;
+    speaker_actor_type: "player" | "npc";
+    speaker_display_name: string;
+  }>(
+    `SELECT t.id, t.parent_transmission_id, t.speaker_actor_id,
+            speaker.actor_type AS speaker_actor_type, speaker.display_name AS speaker_display_name
+       FROM public.claim_transmissions t
+       JOIN public.actors speaker ON speaker.town_id = t.town_id AND speaker.id = t.speaker_actor_id
+      WHERE t.town_id = $1`,
+    [townId],
+  );
+  return result.rows.map((row) => ({
+    transmissionId: row.id,
+    parentTransmissionId: row.parent_transmission_id,
+    speakerActorId: row.speaker_actor_id,
+    speakerActorType: row.speaker_actor_type,
+    speakerDisplayName: row.speaker_display_name,
+  }));
+}
+
 // --- shared verified-evidence board ----------------------------------------------------
 
 export interface VerifiedCaseBoardEntryRow {

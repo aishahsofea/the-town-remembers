@@ -503,8 +503,15 @@ Return only a complete object conforming to the target schema supplied by Bedroc
 
 ## Prompt evaluation gate
 
-No prompt evaluation harness exists in the repository yet. These fixtures are
-required before a prompt or model change is deployable.
+`P4-21` implements this harness for claim normalization, NPC dialogue, and
+structured repair: fixtures under `evals/phase-04/{normalization,dialogue,
+repair}/*.json`, run deterministically by `pnpm prompts:eval`
+(`scripts/prompts-eval.mjs`) against the real `model-runtime` semantic
+validators, with `evals/phase-04/baseline.json` pinning each fixture's
+pass/fail to the prompt/schema/validator versions in effect. Ambient choice
+has no fixtures yet — NPC-to-NPC transmission and ambient ticks are Phase 5
+scope. These fixtures are required before a prompt or model change is
+deployable.
 
 | Prompt | Control cases | Known failure and edge cases | Boundary cases |
 |---|---|---|---|

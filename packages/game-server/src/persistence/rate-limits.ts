@@ -60,7 +60,19 @@ export interface RateLimitBucketConfig {
 const MINUTE_MS = 60_000;
 const FIFTEEN_MINUTES_MS = 15 * MINUTE_MS;
 
-/** The three buckets Phase 3 checks. `model_action` stays unused until Phase 4. */
+/**
+ * The five buckets this phase checks. `D4-S`: a `model_action` admission
+ * uses **both** `modelActionPlayer` and `modelActionTown` together — the
+ * per-player bucket bounds one player's own burst, the per-town bucket
+ * bounds the town's shared model spend regardless of which player is
+ * asking. Both share `bucket_kind: "model_action"` but differ in
+ * `scope_kind` (`"player"` vs `"town"`), so they occupy distinct
+ * `api_rate_limits` rows under the table's own `(scope_kind, scope_key,
+ * bucket_kind)` primary key — no schema change needed. Charging both, in
+ * the same transaction as the action claim, before the `player_actions`
+ * row is created, is `model-executor.ts`'s job (`P4-10`); this module only
+ * defines the bucket shapes.
+ */
 export const RATE_LIMIT_BUCKETS = {
   playerView: {
     bucketKind: "player_view",
@@ -81,6 +93,20 @@ export const RATE_LIMIT_BUCKETS = {
     scopeKind: "ip_hash",
     ratePerWindow: 10,
     windowMs: FIFTEEN_MINUTES_MS,
+    burst: 10,
+  },
+  modelActionPlayer: {
+    bucketKind: "model_action",
+    scopeKind: "player",
+    ratePerWindow: 6,
+    windowMs: MINUTE_MS,
+    burst: 3,
+  },
+  modelActionTown: {
+    bucketKind: "model_action",
+    scopeKind: "town",
+    ratePerWindow: 30,
+    windowMs: MINUTE_MS,
     burst: 10,
   },
 } as const satisfies Record<string, RateLimitBucketConfig>;
@@ -199,6 +225,41 @@ export async function admitRateLimit(
       now,
     ),
   };
+}
+
+export interface RateLimitAdmissionRequest {
+  readonly bucket: RateLimitBucketConfig;
+  readonly scopeKey: Buffer;
+}
+
+/**
+ * Consume several buckets as one admission. A savepoint lets a rejection
+ * return its useful `Retry-After` while undoing any earlier bucket charge;
+ * the caller's surrounding transaction remains open and can return the
+ * rejection without creating its ledger row. This is used by `D4-S`'s
+ * player + town model-action gate.
+ */
+export async function admitRateLimitsAtomically(
+  transaction: TransactionContext,
+  requests: readonly RateLimitAdmissionRequest[],
+  now: Date,
+): Promise<RateLimitDecision> {
+  await transaction.query("SAVEPOINT rate_limit_admission");
+  for (const request of requests) {
+    const decision = await admitRateLimit(
+      transaction,
+      request.bucket,
+      request.scopeKey,
+      now,
+    );
+    if (!decision.admitted) {
+      await transaction.query("ROLLBACK TO SAVEPOINT rate_limit_admission");
+      await transaction.query("RELEASE SAVEPOINT rate_limit_admission");
+      return decision;
+    }
+  }
+  await transaction.query("RELEASE SAVEPOINT rate_limit_admission");
+  return { admitted: true };
 }
 
 /**
