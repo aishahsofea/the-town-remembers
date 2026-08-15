@@ -4,7 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, test } from "node:test";
 
-import { classifyDatabaseTests } from "./database-test-classification.mjs";
+import {
+  classifyDatabaseTests,
+  countDatabaseCreations,
+} from "./database-test-classification.mjs";
 
 const temporaryDirectories = [];
 
@@ -79,5 +82,15 @@ test("no real database test file is unclassified", () => {
   assert.ok(
     classified.length >= 55,
     `expected at least 55 files, got ${classified.length}`,
+  );
+});
+
+test("the default gate creates no more than 10 databases (VPR-08 exit target)", () => {
+  const count = countDatabaseCreations();
+  assert.ok(
+    count <= 10,
+    `expected at most 10 database creations (isolated files + 1 shared), got ${count} -- ` +
+      "either an isolated file gained an extra createDisposableDatabase() call, or a " +
+      "shared-migrated file was reclassified as isolated without checking the budget",
   );
 });

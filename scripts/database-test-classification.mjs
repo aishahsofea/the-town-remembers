@@ -109,6 +109,26 @@ function touchesLiveDatabase(rootDir, relativePath) {
 }
 
 /**
+ * The default `pnpm validate` gate's total database creation/migration
+ * count (`VPR-08`): every `createDisposableDatabase()` call the isolated
+ * files still make, plus the one suite-owned database
+ * `scripts/vitest-database-setup.mjs`'s globalSetup creates for every
+ * `shared-migrated` file to share (`VPR-07`). Down from 53 before VPR-06
+ * through VPR-08 (49 files each creating their own database, 4 of them
+ * twice) -- comfortably inside the "no more than 10" exit target without
+ * grouping any isolated file merely to hit the number.
+ */
+export function countDatabaseCreations(rootDir = REPOSITORY_ROOT) {
+  const SUITE_OWNED_DATABASE_COUNT = 1;
+  let isolatedCreations = 0;
+  for (const file of Object.keys(ISOLATED_FILES)) {
+    const contents = fs.readFileSync(path.join(rootDir, file), "utf8");
+    isolatedCreations += (contents.match(/createDisposableDatabase\(/g) ?? []).length;
+  }
+  return isolatedCreations + SUITE_OWNED_DATABASE_COUNT;
+}
+
+/**
  * Classifies every database-project test file found on disk, and checks
  * that classification against what the file's source actually does:
  * `pure` files must never call `createDisposableDatabase()` or
