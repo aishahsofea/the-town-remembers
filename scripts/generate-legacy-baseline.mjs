@@ -108,7 +108,9 @@ export function buildBaseline(rootDir = REPOSITORY_ROOT, claimsPath = CLAIMS_PAT
       declarations.push({ file, test });
     }
   }
-  declarations.sort((a, b) => `${a.file} ${a.test}`.localeCompare(`${b.file} ${b.test}`));
+  declarations.sort((a, b) =>
+    `${a.file} ${a.test}`.localeCompare(`${b.file} ${b.test}`),
+  );
   return {
     schemaVersion: 1,
     generatedBy: "node scripts/generate-legacy-baseline.mjs --write",
