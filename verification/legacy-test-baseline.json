@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "generatedBy": "node scripts/generate-legacy-baseline.mjs --write",
-  "declarationCount": 1751,
+  "declarationCount": 1760,
   "declarations": [
     {
       "file": "apps/ambient-worker/src/handler.test.ts",
@@ -6926,6 +6926,42 @@
     {
       "file": "scripts/sync-agent-test-policy.test.mjs",
       "test": "syncAdapterContent replaces only the existing block, preserving surrounding content"
+    },
+    {
+      "file": "scripts/test-policy-eval.test.mjs",
+      "test": "scoreDecision does not constrain a field the scenario leaves null"
+    },
+    {
+      "file": "scripts/test-policy-eval.test.mjs",
+      "test": "scoreDecision fails on a wrong action even with plausible prose elsewhere"
+    },
+    {
+      "file": "scripts/test-policy-eval.test.mjs",
+      "test": "scoreDecision fails when isolationReason is required but missing"
+    },
+    {
+      "file": "scripts/test-policy-eval.test.mjs",
+      "test": "scoreDecision fails when uniqueProof is required but missing"
+    },
+    {
+      "file": "scripts/test-policy-eval.test.mjs",
+      "test": "scoreDecision hard-passes and flags human review when uniqueProof is present"
+    },
+    {
+      "file": "scripts/test-policy-eval.test.mjs",
+      "test": "scoreDecision passes when every constrained field matches"
+    },
+    {
+      "file": "scripts/test-policy-eval.test.mjs",
+      "test": "scoreDecision requires a matching claimId when the scenario names one"
+    },
+    {
+      "file": "scripts/test-policy-eval.test.mjs",
+      "test": "scoreDecision treats a missing decision as failing every constrained field"
+    },
+    {
+      "file": "scripts/test-policy-eval.test.mjs",
+      "test": "scoreRun is deterministic across repeated calls on the same input"
     },
     {
       "file": "scripts/test-policy-evals.test.mjs",
