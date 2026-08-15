@@ -70,15 +70,19 @@ describe("no network or dependency call inside a runSerializable transaction", (
     expect(total.length).toBeGreaterThan(0);
   });
 
-  for (const file of SOURCE_FILES) {
-    it(`keeps every runSerializable body in ${path.relative(process.cwd(), file)} free of network calls`, () => {
+  it("keeps every runSerializable body free of network calls", () => {
+    const offenders: string[] = [];
+    for (const file of SOURCE_FILES) {
       const contents = fs.readFileSync(file, "utf8");
-      const bodies = extractSerializableCallbackBodies(contents);
-      for (const body of bodies) {
+      const relativePath = path.relative(process.cwd(), file);
+      for (const body of extractSerializableCallbackBodies(contents)) {
         for (const pattern of FORBIDDEN_PATTERNS) {
-          expect(body).not.toMatch(pattern);
+          if (pattern.test(body)) {
+            offenders.push(`${relativePath}: matched ${pattern}`);
+          }
         }
       }
-    });
-  }
+    }
+    expect(offenders).toEqual([]);
+  });
 });

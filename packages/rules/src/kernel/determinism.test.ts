@@ -40,27 +40,27 @@ const FORBIDDEN_DATABASE_SPECIFIERS: readonly RegExp[] = [
   /["']@the-town-remembers\/database\/errors["']/,
 ];
 
-describe("determinism: no ambient time, identity, or environment reads", () => {
-  it.each(NON_TEST_SOURCE_FILES)("keeps %s free of ambient calls", (filePath) => {
-    const contents = fs.readFileSync(filePath, "utf8");
-    for (const pattern of FORBIDDEN_CALL_PATTERNS) {
-      expect(contents).not.toMatch(pattern);
-    }
-  });
-
+describe("determinism: no ambient reads and no real database client import", () => {
   it("scanned at least one non-test source file", () => {
     expect(NON_TEST_SOURCE_FILES.length).toBeGreaterThan(0);
   });
-});
 
-describe("determinism: no real database client import", () => {
-  it.each(NON_TEST_SOURCE_FILES)(
-    "keeps %s free of a database client import",
-    (filePath) => {
+  it("keeps every non-test source file free of ambient calls and database client imports", () => {
+    const offenders: string[] = [];
+    for (const filePath of NON_TEST_SOURCE_FILES) {
       const contents = fs.readFileSync(filePath, "utf8");
-      for (const pattern of FORBIDDEN_DATABASE_SPECIFIERS) {
-        expect(contents).not.toMatch(pattern);
+      const relativePath = path.relative(SRC_ROOT, filePath);
+      for (const pattern of FORBIDDEN_CALL_PATTERNS) {
+        if (pattern.test(contents)) {
+          offenders.push(`${relativePath}: ambient call matching ${pattern}`);
+        }
       }
-    },
-  );
+      for (const pattern of FORBIDDEN_DATABASE_SPECIFIERS) {
+        if (pattern.test(contents)) {
+          offenders.push(`${relativePath}: database client import matching ${pattern}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
 });
