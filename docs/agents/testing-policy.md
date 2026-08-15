@@ -5,9 +5,8 @@
   add, extend, reuse, or refuse a test in this repository.
 - **Audience:** Coding agents (Claude, Codex, Copilot, and any later
   supported agent) and human reviewers.
-- **Relationship to adapters:** `AGENTS.md`, `CLAUDE.md`, and
-  `.github/copilot-instructions.md` each carry a generated block copied
-  verbatim from the `CORE` section below, delimited by
+- **Relationship to adapters:** `AGENTS.md` and `CLAUDE.md` carry a generated
+  block copied verbatim from the `CORE` section below, delimited by
   `<!-- test-policy:start checksum=... -->` / `<!-- test-policy:end -->`
   markers. `scripts/sync-agent-test-policy.mjs` generates and checks that
   block. Do not hand-edit the generated block in an adapter file — edit this
@@ -49,63 +48,40 @@ from the search — stop and ask a human rather than guessing).
 ## Core rules for coding agents
 
 <!-- test-policy:core:start -->
-Before writing a test, search `verification/test-claims.json` and the
-relevant test suites for the behavior. State in your implementation summary
-whether you extended an existing owner, added a new claim, reused an
-existing test unchanged, or are asking because ownership is ambiguous.
+Before adding or materially changing a test, search
+`verification/test-claims.json` and relevant suites. Choose and report
+`add`, `extend`, `reuse`, or `ask`.
 
-1. **TG-01 Search before adding.** Search the ledger and relevant suites
-   first. State the decision (`add` / `extend` / `reuse` / `ask`) in your
-   summary.
-2. **TG-02 One primary owner.** Exactly one primary test owns a claim.
-   Different input values are not different claims when they exercise the
-   same branch and assert the same outcome — that is a parameter row, not a
-   new claim.
-3. **TG-03 Cheapest correct boundary.** Default to the cheapest boundary on
-   the ladder that can observe the failure. Selecting a higher boundary
-   requires recording what the lower boundary cannot prove.
-4. **TG-04 Distinct secondary proof.** A second test for an already-owned
-   claim MUST record `uniqueProof`: the specific property the first test's
-   boundary cannot observe. "Extra confidence" and "comprehensive coverage"
-   are not valid `uniqueProof` values.
-5. **TG-05 Non-vacuous preconditions.** Prove the condition under test
-   exists before asserting its absence or safety. A static scan must prove
-   it found at least one relevant target; a non-leak test must prove the
-   secret exists in the permitted source before checking forbidden
-   surfaces.
-6. **TG-06 Equivalence classes, not input counts.** Parameterized rows must
-   each hit a distinct branch, contract boundary, or known regression — not
-   repeat ordinary values through the same branch. Decision-required
-   boundary matrices are exempt even when adjacent rows share code.
-7. **TG-07 Compile-time claims stay compile-time.** Type assignability,
-   narrowing, and exhaustiveness use `tsc` or a compile-time fixture, never
-   a runtime assertion that only proves a line typechecks.
-8. **TG-08 Expensive setup is shared by default.** New database tests use
-   `db-shared` unless schema mutation, grants, database-global state, or
-   concurrency isolation require `db-isolated`. Every `db-isolated`,
-   `browser`, `model-live`, or `cloud-live` claim records an
-   isolation/cost reason.
-9. **TG-09 Browser ownership is browser-specific.** A Playwright test must
-   assert at least one property the component/application layer cannot see:
-   address bar, navigation lifecycle, storage, cookies, focus/selection,
-   real server wiring, multi-page behavior, or a persisted cross-layer
-   journey.
-10. **TG-10 Validation stages execute once.** A command added to
-    `pnpm validate` must not repeat a subset an earlier stage already runs.
-    Targeted developer scripts may exist without joining the aggregate gate.
-11. **TG-11 Meta-tests are not behavioral proof.** A test that only checks
-    that another file exists, a name appears in source, a doc has a
-    heading, a list is nonempty, or code does not throw cannot be the
-    primary proof of runtime behavior. It may accompany the real assertion.
-12. **TG-12 Test cost is part of the change.** Report the delta in named
-    tests/rows, shared and isolated database lifecycles, browser
-    journeys, prompt/live-model evaluations, and validation stages. An
-    increase is fine when it proves a new claim; it must never be
-    implicit.
+1. **TG-01 Search first.** Report decision, claim IDs, and suites searched.
+2. **TG-02 One primary owner.** Same branch and outcome with new inputs means
+   one parameterized owner, not another claim.
+3. **TG-03 Cheapest correct boundary.** Higher boundaries must record what a
+   lower boundary cannot prove.
+4. **TG-04 Distinct secondary proof.** Secondary owners require a concrete
+   `uniqueProof`; “extra confidence” is invalid.
+5. **TG-05 Non-vacuous preconditions.** Prove the target or permitted secret
+   exists before asserting absence, safety, or non-leakage.
+6. **TG-06 Equivalence classes.** Each parameter row must hit a distinct
+   branch, contract boundary, or regression unless a decision requires a
+   boundary matrix.
+7. **TG-07 Compile-time claims stay compile-time.** Use `tsc` or a compile-time
+   fixture, not a runtime assertion.
+8. **TG-08 Share expensive setup.** Default DB tests to `db-shared`.
+   `db-isolated`, `browser`, `model-live`, and `cloud-live` require a recorded
+   isolation or cost reason.
+9. **TG-09 Browser tests prove browser behavior.** Assert browser-only state or
+   lifecycle: URL/navigation, storage/cookies, focus/selection, real wiring,
+   multi-page behavior, or a persisted cross-layer journey.
+10. **TG-10 Validation stages execute once.** Never add a `pnpm validate`
+    stage that repeats an earlier stage's work.
+11. **TG-11 Meta-tests are not behavioral proof.** File/name/heading/nonempty
+    scans or “does not throw” checks cannot be primary runtime proof.
+12. **TG-12 Report test cost.** State deltas for named tests/rows, shared and
+    isolated DB lifecycles, browser journeys, model evaluations, and validation
+    stages.
 
-**Uncertainty rule:** inspect first. If distinct ownership still cannot be
-determined after searching, stop and ask — do not silently add an expensive
-secondary test to be safe.
+If ownership remains ambiguous after inspection, choose `ask`; never add an
+expensive secondary test speculatively.
 <!-- test-policy:core:end -->
 
 ## Rule examples
