@@ -60,6 +60,12 @@ const projects: TestProjectConfiguration[] = [
   },
   {
     test: {
+      // Files here need a live CockroachDB node. `database-unit.test.ts`
+      // classifies every file in the four globs below by what its setup and
+      // assertions actually mutate (`VPR-06`); the six files that never
+      // touch a live database moved out to the `database-unit` project so
+      // they run in parallel with the other pure projects instead of behind
+      // this one's serialized migration queue.
       name: "database",
       environment: "node",
       setupFiles: [NETWORK_TRAP],
@@ -75,8 +81,36 @@ const projects: TestProjectConfiguration[] = [
         "packages/town-seed/src/**/*.test.ts",
         "packages/game-server/src/**/*.db.test.ts",
       ],
+      exclude: [
+        "packages/database/src/domains.test.ts",
+        "packages/database/src/runtime.test.ts",
+        "packages/database/src/schema.test.ts",
+        "packages/database/src/transaction.test.ts",
+        "packages/database-admin/src/introspection.test.ts",
+        "packages/database-admin/src/operator-client.test.ts",
+      ],
       testTimeout: 30_000,
       hookTimeout: 120_000,
+    },
+  },
+  {
+    test: {
+      // The six database/database-admin files that assert against fakes,
+      // mocks, or pure functions and never call `createDisposableDatabase()`
+      // -- classified `pure` by `database-unit.test.ts`. They ran serialized
+      // behind the real-database project purely because of where their
+      // source files live, not because of anything they do.
+      name: "database-unit",
+      environment: "node",
+      setupFiles: [NETWORK_TRAP],
+      include: [
+        "packages/database/src/domains.test.ts",
+        "packages/database/src/runtime.test.ts",
+        "packages/database/src/schema.test.ts",
+        "packages/database/src/transaction.test.ts",
+        "packages/database-admin/src/introspection.test.ts",
+        "packages/database-admin/src/operator-client.test.ts",
+      ],
     },
   },
   {
