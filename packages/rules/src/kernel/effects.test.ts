@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 import {
   isConditionalStateChangeEffect,
@@ -78,11 +78,15 @@ describe("plan-local reference handles (D4-F)", () => {
   });
 
   it("leaves ref optional so every existing insert effect still typechecks", () => {
+    // Compile-time only (VPR-10): this object literal omitting `ref` failing
+    // to satisfy InsertEffect would fail this file's own typecheck, not just
+    // the type assertion below -- and pnpm typecheck already runs over every
+    // *.test.ts.
     const withoutRef: InsertEffect = {
       kind: "insert",
       table: "belief_evidence",
       row: {},
     };
-    expect(withoutRef.ref).toBeUndefined();
+    expectTypeOf(withoutRef.ref).toEqualTypeOf<string | undefined>();
   });
 });

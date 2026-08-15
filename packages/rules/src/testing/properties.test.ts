@@ -1,15 +1,19 @@
 import { describe, expect, it } from "vitest";
 
-import { isRepeatContribution } from "../beliefs/evidence.js";
-import { clampScore, sumEventContributions } from "../kernel/numeric.js";
+import { sumEventContributions } from "../kernel/numeric.js";
 import { compareRecallResults } from "../kernel/ordering.js";
-import { computeAmbientEligible } from "../world/visits.js";
 
 /**
- * Consolidates the four property categories the phase plan names for
- * `P2-20`, gathering one explicit, clearly-labeled proof of each here even
- * where an individual module's own test suite already exercises the
- * underlying property incidentally.
+ * Consolidates the property categories the phase plan names for `P2-20`
+ * that no owning module's own test suite already proves (`VPR-10`):
+ * permutation independence and no-input-mutation. The other two
+ * categories, repeat protection and bounded scores/ambient eligibility,
+ * used to live here too, but `beliefs/evidence.test.ts`, `kernel/
+ * numeric.test.ts`'s own `clampScore` cases, and `world/visits.test.ts`'s
+ * exhaustive `computeAmbientEligible` case already prove the same
+ * invariants more strongly (exact expected values across every
+ * `EVENT_TYPES` value, not just "does not throw"), so keeping a second,
+ * weaker copy here added no coverage.
  */
 
 describe("property: permutation independence", () => {
@@ -45,65 +49,6 @@ describe("property: permutation independence", () => {
     const sortedForward = [...results].toSorted(compareRecallResults);
     const sortedFromReversed = [...results].toReversed().toSorted(compareRecallResults);
     expect(sortedFromReversed).toStrictEqual(sortedForward);
-  });
-});
-
-describe("property: idempotent repeat protection", () => {
-  it("attempting the same contribution any number of times is always rejected the same way", () => {
-    const candidate = {
-      npcId: "npc-1",
-      claimId: "claim-1",
-      evidenceKind: "physical_clue" as const,
-      clueId: "clue-1",
-    };
-    const active = [candidate];
-    for (let attempt = 0; attempt < 10; attempt++) {
-      expect(isRepeatContribution(active, candidate)).toBe(true);
-    }
-  });
-});
-
-describe("property: bounded scores, actions, and hops", () => {
-  it("clampScore never produces a value outside [-100, 100] for any input", () => {
-    for (const value of [-1_000_000, -101, -100, 0, 100, 101, 1_000_000]) {
-      const clamped = clampScore(value);
-      expect(clamped).toBeGreaterThanOrEqual(-100);
-      expect(clamped).toBeLessThanOrEqual(100);
-    }
-  });
-
-  it("computeAmbientEligible never throws for any EVENT_TYPES value regardless of options", () => {
-    const eventTypes = [
-      "authored_observation",
-      "visit_started",
-      "travelled",
-      "inspected",
-      "clue_discovered",
-      "npc_interaction",
-      "claim_transmitted",
-      "evidence_shown",
-      "item_transferred",
-      "item_relocated",
-      "promise_accepted",
-      "promise_fulfilled",
-      "promise_broken",
-      "capability_changed",
-      "note_added",
-      "visit_ended",
-      "relationship_changed",
-      "source_discredited",
-      "case_attempted",
-      "case_resolved",
-    ] as const;
-    for (const eventType of eventTypes) {
-      expect(() => computeAmbientEligible(eventType)).not.toThrow();
-      expect(() =>
-        computeAmbientEligible(eventType, {
-          hasStructuredEffect: true,
-          isEvidentiary: true,
-        }),
-      ).not.toThrow();
-    }
   });
 });
 
