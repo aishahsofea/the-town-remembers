@@ -24,6 +24,13 @@
  * -- they keep calling `createDisposableDatabase()` for their own database.
  * Dropped once, in this same teardown, after every file in the run has
  * finished with it.
+ *
+ * Also drops the cyclic foreign keys `0009_deferred_keys.sql` adds
+ * (`dropDeferredKeyConstraints`), once, right after migrating -- the schema
+ * has genuine FK cycles that make no linear `DELETE` order otherwise
+ * possible, and this one database is thrown away wholesale at teardown
+ * regardless. See the doc comment on `DEFERRED_KEY_CONSTRAINTS` in
+ * harness.ts for why.
  */
 
 import process from "node:process";
@@ -52,9 +59,10 @@ export default async function setup(project) {
   let suiteDatabase;
   try {
     await start({ log: () => undefined });
-    const { createDisposableDatabase } =
+    const { createDisposableDatabase, dropDeferredKeyConstraints } =
       await import("@the-town-remembers/test-support/database");
     suiteDatabase = await createDisposableDatabase();
+    await dropDeferredKeyConstraints(suiteDatabase.pool);
     project.provide("suiteDatabaseName", suiteDatabase.name);
     project.provide("suiteDatabaseAdminUrl", suiteDatabase.url);
   } catch (error) {
