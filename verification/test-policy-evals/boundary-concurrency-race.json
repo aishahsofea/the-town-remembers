@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "boundary-concurrency-race",
+  "category": "boundary",
+  "title": "Concurrency race whose lower unit boundary cannot prove the database outcome",
+  "context": "Two players may attempt to claim the same unique item in the same visit. The rule that only one custody transfer may succeed is enforced by a CockroachDB SERIALIZABLE transaction retry, not by application-level locking that a pure function could simulate.",
+  "request": "Prove that two concurrent claim attempts for the same unique item result in exactly one successful custody transfer and one retried-then-rejected attempt.",
+  "expected": {
+    "action": "add",
+    "claimId": null,
+    "boundary": "database",
+    "setup": "db-shared",
+    "uniqueProofRequired": false,
+    "isolationReasonRequired": false,
+    "violatedRules": [],
+    "rationale": "A pure-function or application-layer test cannot observe real transaction serialization; only a real CockroachDB transaction can prove the race resolves to exactly one winner (TG-03: higher boundary justified because the lower boundary cannot prove it). The concurrent transactions target disjoint rows scoped to this test's own town and item, so the shared fixture is sufficient and db-isolated is not required."
+  }
+}

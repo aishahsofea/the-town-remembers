@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "agent": "claude",
+  "model": "claude-sonnet-5",
+  "policyChecksum": "9142f61a103d",
+  "capturedBy": "Claude (Sonnet 5), reasoning directly through each scenario in the same session that authored the corpus and canonical policy — see docs/agents/test-policy-pilot.md for the methodology caveat this implies.",
+  "decisions": {
+    "control-new-pure-branch": {
+      "action": "add",
+      "boundary": "pure function",
+      "setup": "none",
+      "rationale": "New deterministic branch with no existing owner; cheapest boundary that can observe it is a pure function, no I/O involved."
+    },
+    "control-new-required-boundary-row": {
+      "action": "extend",
+      "claimId": "V-CHAPEL-ACCESS",
+      "boundary": "API/application",
+      "setup": "db-shared",
+      "rationale": "The crypt passage is a new case on an already-owned claim at the same boundary, not a new claim (TG-02); it doesn't need its own database lifecycle beyond the shared fixture."
+    },
+    "control-extend-existing-claim": {
+      "action": "extend",
+      "claimId": "V-INVITE-EXPIRY",
+      "boundary": "API/application",
+      "setup": "db-shared",
+      "rationale": "Consumed-token and time-expired-token are the same claim with a distinct branch; add a case to the existing owner."
+    },
+    "known-failure-e2e-duplicates-component": {
+      "action": "ask",
+      "claimId": "V-JOIN-SECRET-NONLEAK",
+      "boundary": "browser",
+      "setup": "browser",
+      "rationale": "Re-checking DOM absence in a browser proves nothing new over the existing component test; 'extra confidence' is not a valid uniqueProof (TG-04), and it doesn't assert any browser-only property (TG-09)."
+    },
+    "known-failure-fresh-db-when-shared-sufficient": {
+      "action": "ask",
+      "boundary": "database",
+      "setup": "db-shared",
+      "rationale": "Read-only query with no schema mutation or isolation need; TG-08 requires db-shared, not a fresh createDisposableDatabase() call."
+    },
+    "known-failure-vacuous-assertion": {
+      "action": "ask",
+      "boundary": "pure function",
+      "setup": "filesystem",
+      "rationale": "A 'does not throw' assertion proves nothing about the actual leak; must first prove the scan found a relevant target, then assert none match the forbidden pattern (TG-05, TG-11)."
+    },
+    "known-failure-duplicate-validate-stage": {
+      "action": "ask",
+      "rationale": "The rules project already runs inside pnpm test, which validate already calls; a second stage re-running it violates TG-10 unless it covers a genuinely distinct subset."
+    },
+    "boundary-defense-in-depth": {
+      "action": "extend",
+      "claimId": "V-JOIN-SECRET-NONLEAK",
+      "boundary": "API/application",
+      "setup": "db-shared",
+      "uniqueProof": "Proves the secret never reaches a structured server log line, a surface the DOM-focused component test cannot observe at all.",
+      "rationale": "Legitimate defense-in-depth over a genuinely different attack surface (server logs vs. DOM)."
+    },
+    "boundary-schema-grant-isolation": {
+      "action": "add",
+      "boundary": "database",
+      "setup": "db-isolated",
+      "isolationReason": "Mutates a shared database role's grants, which is database-global state a concurrently running db-shared test would observe and be corrupted by.",
+      "rationale": "Role privilege mutation is exactly the isolated-schema case TG-08 carves out."
+    },
+    "boundary-concurrency-race": {
+      "action": "add",
+      "boundary": "database",
+      "setup": "db-shared",
+      "rationale": "Only a real CockroachDB transaction can prove the serialization outcome; the concurrent transactions target this test's own scoped rows, so the shared fixture is sufficient."
+    },
+    "boundary-human-review-only": {
+      "action": "ask",
+      "rationale": "Prose tone/pacing is not a machine-checkable claim; no boundary observes it. State a zero-test change rather than inventing a fake assertion."
+    }
+  }
+}

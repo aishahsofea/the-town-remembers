@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "control-new-pure-branch",
+  "category": "control",
+  "title": "New pure branch requires one unit claim",
+  "context": "packages/rules/src/belief.ts exports calculateBelief(claim, evidence). No existing claim in verification/test-claims.json mentions a confidence-decay branch.",
+  "request": "Add a confidence-decay path to calculateBelief so belief strength halves after 7 in-game days without corroboration, and cover it with a test.",
+  "expected": {
+    "action": "add",
+    "claimId": null,
+    "boundary": "pure function",
+    "setup": "none",
+    "uniqueProofRequired": false,
+    "isolationReasonRequired": false,
+    "violatedRules": [],
+    "rationale": "This is a genuinely new deterministic branch with no existing owner. TG-03 places it at the cheapest boundary that can observe it (pure function, no I/O), so a unit test with setup 'none' is correct and sufficient; nothing else on the ladder is needed."
+  }
+}

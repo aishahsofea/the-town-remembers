@@ -152,10 +152,18 @@ async function main() {
   const scratch = scratchDatabaseName();
   let results;
   let buildTag;
+  let orphanCount;
 
   try {
     const version = await serverPool.query("SELECT version() AS version");
     buildTag = /CockroachDB \S+ (v\d+\.\d+\.\d+)/.exec(version.rows[0].version)?.[1];
+
+    const { selectOrphanNames } = await import("./db-cleanup-orphans.mjs");
+    const databases = await serverPool.query("SHOW DATABASES");
+    orphanCount = selectOrphanNames(
+      databases.rows.map((row) => row.database_name),
+    ).length;
+
     await serverPool.query(`CREATE DATABASE ${scratch}`);
 
     const scratchUrl = new URL(adminUrl);
@@ -198,6 +206,20 @@ async function main() {
       `Missing required capability: ${failures.map((f) => f.name).join(", ")}.`,
     );
     process.exitCode = 1;
+  }
+
+  /** A killed test run or validate gate cannot run its own database
+   * cleanup, so orphans accumulate silently until something notices — this
+   * is that something. The threshold is a nudge, not a hard failure: a
+   * handful of orphans from a crash mid-development is normal, but dozens
+   * measurably slow every schema-touching operation cluster-wide. */
+  const ORPHAN_WARNING_THRESHOLD = 5;
+  if (orphanCount > ORPHAN_WARNING_THRESHOLD) {
+    console.warn(
+      `Warning: ${orphanCount} orphaned scratch/disposable database(s) found (a killed ` +
+        "test run or validate gate likely couldn't clean up after itself). Run " +
+        "`pnpm db:cleanup-orphans` to drop them before they slow down every query.",
+    );
   }
 }
 

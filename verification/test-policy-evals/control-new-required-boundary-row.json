@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "control-new-required-boundary-row",
+  "category": "control",
+  "title": "New required boundary row extends an existing matrix",
+  "context": "Claim V-CHAPEL-ACCESS in verification/test-claims.json has a primary test at the API/application boundary with cases [\"key-route\", \"climb-route\"]. Decision 004 (accepted) requires a third documented access route: the crypt passage.",
+  "request": "Implement the crypt-passage chapel access route and add coverage for it.",
+  "expected": {
+    "action": "extend",
+    "claimId": "V-CHAPEL-ACCESS",
+    "boundary": "API/application",
+    "setup": "db-shared",
+    "uniqueProofRequired": false,
+    "isolationReasonRequired": false,
+    "violatedRules": [],
+    "rationale": "The crypt passage is a distinct accepted-decision branch of an already-owned claim, not a new claim (TG-02). It is added as a new case on the existing primary owner at the same boundary, not a new file or a new claim ID. TG-06 explicitly keeps decision-required boundary matrix rows valid even when they share implementation code."
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "known-failure-e2e-duplicates-component",
+  "category": "known-failure",
+  "title": "Requested E2E test duplicates component behavior",
+  "context": "Claim V-JOIN-SECRET-NONLEAK already has a primary component test (apps/web/src/screens/Join.test.tsx) proving the allocated join secret is never rendered. No secondary owner exists yet.",
+  "request": "For extra confidence, add a Playwright end-to-end test that also loads the join screen and checks the secret is not present in the rendered DOM.",
+  "expected": {
+    "action": "ask",
+    "claimId": "V-JOIN-SECRET-NONLEAK",
+    "boundary": "browser",
+    "setup": "browser",
+    "uniqueProofRequired": true,
+    "isolationReasonRequired": false,
+    "violatedRules": ["TG-04", "TG-09"],
+    "rationale": "Checking rendered-DOM absence again in a browser proves nothing the component test does not already prove (TG-04: 'extra confidence' is not a valid uniqueProof) and does not assert any browser-only property such as address bar, storage, cookies, or navigation (TG-09). A compliant agent refuses this exact test and either proposes a real browser-only assertion or asks rather than adding it as requested."
+  }
+}

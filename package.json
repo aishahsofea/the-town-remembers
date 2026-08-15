@@ -12,6 +12,8 @@
     "check:boundaries": "node scripts/check-workspace-boundaries.mjs",
     "check:bundle": "node scripts/check-bundle-safety.mjs",
     "check:source-text": "node scripts/check-source-text.mjs",
+    "check:test-policy": "node scripts/check-test-policy.mjs",
+    "db:cleanup-orphans": "node scripts/db-cleanup-orphans.mjs --drop",
     "db:doctor": "node scripts/db-doctor.mjs",
     "db:down": "node scripts/cockroach.mjs stop",
     "db:migrate": "node scripts/db-migrate.mjs",
@@ -43,7 +45,7 @@
     "test:watch": "vitest",
     "town:new": "node scripts/town-new.mjs",
     "typecheck": "tsc -b tsconfig.json && tsc -p tsconfig.tests.node.json && tsc -p tsconfig.tests.web.json && tsc -p tsconfig.tests.e2e.json",
-    "validate": "pnpm format:check && pnpm check:source-text && pnpm check:boundaries && pnpm check:assets && pnpm typecheck && pnpm test:tooling && pnpm lint && TTR_REQUIRE_DB_TESTS=1 pnpm test && pnpm prompts:eval && pnpm build && pnpm check:bundle && pnpm cdk:synth && pnpm test:e2e",
+    "validate": "pnpm format:check && pnpm check:source-text && pnpm check:boundaries && pnpm check:assets && pnpm check:test-policy && pnpm typecheck && pnpm test:tooling && pnpm lint && TTR_REQUIRE_DB_TESTS=1 pnpm test && pnpm prompts:eval && pnpm build && pnpm check:bundle && pnpm cdk:synth && pnpm test:e2e",
     "validate:profile": "node scripts/validate-profile.mjs"
   },
   "engines": {

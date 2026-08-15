@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "boundary-defense-in-depth",
+  "category": "boundary",
+  "title": "Defense-in-depth security checks at two distinct surfaces",
+  "context": "Claim V-JOIN-SECRET-NONLEAK has a primary component test proving the secret is not rendered in the DOM. A separate concern: the secret must also never appear in a structured server log line, which the component test cannot observe at all.",
+  "request": "Add a test asserting the join-secret allocation log entry never includes the raw secret value, only its allocation ID.",
+  "expected": {
+    "action": "extend",
+    "claimId": "V-JOIN-SECRET-NONLEAK",
+    "boundary": "API/application",
+    "setup": "db-shared",
+    "uniqueProofRequired": true,
+    "isolationReasonRequired": false,
+    "violatedRules": [],
+    "rationale": "This is legitimate defense-in-depth (TG-04 example: a genuinely different attack surface — structured logs, not the DOM). It is added as a secondary owner on the same claim with uniqueProof stating it covers the server log surface, which the existing component test cannot observe at all."
+  }
+}
