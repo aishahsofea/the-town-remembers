@@ -315,7 +315,26 @@ Every detailed phase plan uses the same structure:
 6. Verification matrix and commands
 7. Risks, decisions, and fallback strategy
 8. Exit checklist and handoff to the next phase
+9. Test-delta table (see below)
 
 All phases now have task-level plans. During implementation, refine the active
 phase when new evidence appears and propagate any changed dependency or
 contract assumption into affected later plans before proceeding.
+
+### Test-delta table
+
+Required for every task in section 4 that adds or changes behavior — see
+[docs/agents/testing-policy.md](../docs/agents/testing-policy.md) for the
+full cross-agent test-ownership policy this table exists to satisfy (TG-12).
+A task that adds only human-review-only or documentation-only work states
+that explicitly instead of filling every column.
+
+| Claim | Existing owner | Proposed owner | Boundary | Unique failure | Setup | Decision |
+| ----- | --------------- | --------------- | -------- | --------------- | ----- | -------- |
+| `V-...` (new or existing claim ID) | file/test, or "none" for a new claim | file/test that will own it | cheapest boundary from the ladder | what only this boundary can observe (secondary owners only) | `none`/`typecheck`/`filesystem`/`dom`/`socket`/`db-shared`/`db-isolated`/`browser`/`model-live`/`cloud-live` | `add`/`extend`/`reuse`/`ask` |
+
+Each phase's exit checklist (section 8) also reports the aggregate delta
+this table implies: named tests/rows added, and any change to shared vs.
+isolated database lifecycles, browser journeys, or prompt/live-model
+evaluations. An increase is fine when it proves a new claim; it must never be
+implicit.
