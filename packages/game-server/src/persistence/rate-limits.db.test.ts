@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { runSerializable } from "@the-town-remembers/database";
 import {
-  createDisposableDatabase,
+  useSharedTestDatabase,
   shouldRunDatabaseTests,
   type DisposableDatabase,
 } from "@the-town-remembers/test-support/database";
@@ -22,7 +22,7 @@ describe.skipIf(!shouldRunDatabaseTests())("api_rate_limits token bucket", () =>
   let handle: DisposableDatabase | undefined;
 
   beforeAll(async () => {
-    handle = await createDisposableDatabase();
+    handle = await useSharedTestDatabase();
   }, 180_000);
 
   afterAll(async () => {

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import {
-  createDisposableDatabase,
+  useSharedTestDatabase,
   insertPlayer,
   insertTown,
   shouldRunDatabaseTests,
@@ -31,7 +31,7 @@ describe.skipIf(!shouldRunDatabaseTests())("player_actions claim state machine",
   let handle: DisposableDatabase | undefined;
 
   beforeAll(async () => {
-    handle = await createDisposableDatabase();
+    handle = await useSharedTestDatabase();
   }, 180_000);
 
   afterAll(async () => {

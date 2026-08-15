@@ -94,16 +94,26 @@ function walk(dir, rootDir, out, suffixPattern = /\.test\.ts$/) {
   }
 }
 
+/**
+ * `createDisposableDatabase()` is how an isolated-schema/isolated-concurrency
+ * file gets its own database; `useSharedTestDatabase()` is how a
+ * shared-migrated file gets the one suite-owned database instead (`VPR-07`).
+ * Either one is evidence a file actually talks to a live database.
+ */
 function touchesLiveDatabase(rootDir, relativePath) {
   const contents = fs.readFileSync(path.join(rootDir, relativePath), "utf8");
-  return contents.includes("createDisposableDatabase(");
+  return (
+    contents.includes("createDisposableDatabase(") ||
+    contents.includes("useSharedTestDatabase(")
+  );
 }
 
 /**
  * Classifies every database-project test file found on disk, and checks
  * that classification against what the file's source actually does:
- * `pure` files must never call `createDisposableDatabase()`, and every
- * `isolated-*`/`shared-migrated` file must.
+ * `pure` files must never call `createDisposableDatabase()` or
+ * `useSharedTestDatabase()`, and every `isolated-*`/`shared-migrated` file
+ * must call one of them.
  */
 export function classifyDatabaseTests(rootDir = REPOSITORY_ROOT) {
   const files = listTestFiles(rootDir);

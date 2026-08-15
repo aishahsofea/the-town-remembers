@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import {
-  createDisposableDatabase,
+  useSharedTestDatabase,
   insertNpc,
   insertPlayer,
   insertStoryEntity,
@@ -25,7 +25,7 @@ describe.skipIf(!shouldRunDatabaseTests())("commitEffectPlan", () => {
   let handle: DisposableDatabase | undefined;
 
   beforeAll(async () => {
-    handle = await createDisposableDatabase();
+    handle = await useSharedTestDatabase();
   }, 180_000);
 
   afterAll(async () => {

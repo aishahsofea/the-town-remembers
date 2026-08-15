@@ -16,7 +16,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { CompletedActionResponseSchema } from "@the-town-remembers/http-contracts";
 import type { SecurityConfig } from "@the-town-remembers/runtime-config/security";
 import {
-  createDisposableDatabase,
+  useSharedTestDatabase,
   shouldRunDatabaseTests,
   type DisposableDatabase,
 } from "@the-town-remembers/test-support/database";
@@ -90,7 +90,7 @@ describe.skipIf(!shouldRunDatabaseTests())("POST /actions — leave", () => {
   let seedFinalSequence: number;
 
   beforeAll(async () => {
-    handle = await createDisposableDatabase();
+    handle = await useSharedTestDatabase();
     config = {
       buildId: "test-build",
       appOrigin: APP_ORIGIN,

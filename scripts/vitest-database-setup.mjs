@@ -15,6 +15,15 @@
  * inside `pnpm test` cannot silently migrate against the same local node at
  * once — one of them now fails fast with a diagnostic instead of both
  * stalling into a timeout.
+ *
+ * `VPR-07`: also creates the one suite-owned, already-migrated database that
+ * `useSharedTestDatabase()` (packages/test-support/src/database/harness.ts)
+ * gives every `shared-migrated` test file, and publishes its identity via
+ * `provide`/`inject` so every test file in this project can read it without
+ * an environment variable. Isolated-schema/concurrency files are unaffected
+ * -- they keep calling `createDisposableDatabase()` for their own database.
+ * Dropped once, in this same teardown, after every file in the run has
+ * finished with it.
  */
 
 import process from "node:process";
@@ -23,7 +32,7 @@ import { start } from "./cockroach.mjs";
 import { acquire, release } from "./db-suite-lock.mjs";
 import { applyLocalDefaults } from "./local-env.mjs";
 
-export default async function setup() {
+export default async function setup(project) {
   applyLocalDefaults();
 
   const skip = process.env.TTR_SKIP_DB_TESTS === "1";
@@ -40,14 +49,30 @@ export default async function setup() {
   }
 
   const owner = acquire(process.env.npm_lifecycle_event ?? "vitest:database");
+  let suiteDatabase;
   try {
     await start({ log: () => undefined });
+    const { createDisposableDatabase } =
+      await import("@the-town-remembers/test-support/database");
+    suiteDatabase = await createDisposableDatabase();
+    project.provide("suiteDatabaseName", suiteDatabase.name);
+    project.provide("suiteDatabaseAdminUrl", suiteDatabase.url);
   } catch (error) {
     release(owner);
     throw error;
   }
 
-  return () => {
-    release(owner);
+  return async () => {
+    try {
+      await suiteDatabase.dispose();
+    } catch (error) {
+      console.error(
+        `Failed to drop the suite database ${suiteDatabase.name}. Drop it manually: ` +
+          `DROP DATABASE IF EXISTS ${suiteDatabase.name} CASCADE;`,
+      );
+      throw error;
+    } finally {
+      release(owner);
+    }
   };
 }

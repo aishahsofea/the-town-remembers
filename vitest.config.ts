@@ -60,20 +60,30 @@ const projects: TestProjectConfiguration[] = [
   },
   {
     test: {
-      // Files here need a live CockroachDB node. `database-unit.test.ts`
-      // classifies every file in the four globs below by what its setup and
-      // assertions actually mutate (`VPR-06`); the six files that never
-      // touch a live database moved out to the `database-unit` project so
-      // they run in parallel with the other pure projects instead of behind
-      // this one's serialized migration queue.
+      // Files here need a live CockroachDB node.
+      // scripts/database-test-classification.mjs classifies every file in
+      // the four globs below by what its setup and assertions actually
+      // mutate (`VPR-06`); the six files that never touch a live database
+      // moved out to the `database-unit` project below so they run in
+      // parallel with the other pure projects instead of behind this one's
+      // serialized migration queue.
+      //
+      // globalSetup creates and migrates one suite-owned database
+      // (`VPR-07`): `shared-migrated` files call `useSharedTestDatabase()`
+      // to get it, reset, instead of creating their own; `isolated-schema`/
+      // `isolated-concurrency` files keep calling `createDisposableDatabase()`
+      // for a database of their own (`VPR-08`).
       name: "database",
       environment: "node",
       setupFiles: [NETWORK_TRAP],
       globalSetup: ["./scripts/vitest-database-setup.mjs"],
-      // One file at a time. Each file migrates its own disposable
+      // One file at a time. An isolated file migrates its own disposable
       // database, CockroachDB serializes schema changes anyway, and a
-      // single local node under six concurrent migration runs turns a
-      // fast suite into a timeout.
+      // single local node under six concurrent migration runs turns a fast
+      // suite into a timeout. Shared-migrated files reset the one suite
+      // database instead of migrating, but stay serial too until reset
+      // determinism under file-order is proved (VPR-07's non-negotiable
+      // constraint 7).
       fileParallelism: false,
       include: [
         "packages/database/src/**/*.test.ts",
@@ -97,9 +107,9 @@ const projects: TestProjectConfiguration[] = [
     test: {
       // The six database/database-admin files that assert against fakes,
       // mocks, or pure functions and never call `createDisposableDatabase()`
-      // -- classified `pure` by `database-unit.test.ts`. They ran serialized
-      // behind the real-database project purely because of where their
-      // source files live, not because of anything they do.
+      // -- classified `pure` by scripts/database-test-classification.mjs.
+      // They ran serialized behind the real-database project purely because
+      // of where their source files live, not because of anything they do.
       name: "database-unit",
       environment: "node",
       setupFiles: [NETWORK_TRAP],

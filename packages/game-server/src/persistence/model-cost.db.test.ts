@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { DatabaseError } from "@the-town-remembers/database";
 import { microUsdToDecimalString } from "@the-town-remembers/model-runtime";
 import {
-  createDisposableDatabase,
+  useSharedTestDatabase,
   insertPlayer,
   insertTown,
   shouldRunDatabaseTests,
@@ -26,7 +26,7 @@ describe.skipIf(!shouldRunDatabaseTests())("model_cost_reservations ledger", () 
   let handle: DisposableDatabase | undefined;
 
   beforeAll(async () => {
-    handle = await createDisposableDatabase();
+    handle = await useSharedTestDatabase();
   }, 180_000);
 
   afterAll(async () => {

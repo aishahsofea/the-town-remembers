@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 
 import {
-  createDisposableDatabase,
+  useSharedTestDatabase,
   shouldRunDatabaseTests,
   type DisposableDatabase,
 } from "@the-town-remembers/test-support/database";
@@ -19,7 +19,7 @@ describe.skipIf(!shouldRunDatabaseTests())("creation ledger claim", () => {
   let handle: DisposableDatabase | undefined;
 
   beforeAll(async () => {
-    handle = await createDisposableDatabase();
+    handle = await useSharedTestDatabase();
   }, 180_000);
 
   afterAll(async () => {

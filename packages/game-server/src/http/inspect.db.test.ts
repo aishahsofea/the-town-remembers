@@ -11,7 +11,7 @@ import {
 } from "@the-town-remembers/http-contracts";
 import type { SecurityConfig } from "@the-town-remembers/runtime-config/security";
 import {
-  createDisposableDatabase,
+  useSharedTestDatabase,
   shouldRunDatabaseTests,
   type DisposableDatabase,
 } from "@the-town-remembers/test-support/database";
@@ -109,7 +109,7 @@ describe.skipIf(!shouldRunDatabaseTests())("POST /actions — inspect", () => {
   let oldChapelKeyId: string;
 
   beforeAll(async () => {
-    handle = await createDisposableDatabase();
+    handle = await useSharedTestDatabase();
     config = {
       buildId: "test-build",
       appOrigin: APP_ORIGIN,

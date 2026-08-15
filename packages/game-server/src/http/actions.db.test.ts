@@ -12,7 +12,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { CompletedActionResponseSchema } from "@the-town-remembers/http-contracts";
 import type { SecurityConfig } from "@the-town-remembers/runtime-config/security";
 import {
-  createDisposableDatabase,
+  useSharedTestDatabase,
   shouldRunDatabaseTests,
   SHA256_PLACEHOLDER,
   type DisposableDatabase,
@@ -196,7 +196,7 @@ describe.skipIf(!shouldRunDatabaseTests())(
     let otherTownLocationId: string;
 
     beforeAll(async () => {
-      handle = await createDisposableDatabase();
+      handle = await useSharedTestDatabase();
       config = {
         buildId: "test-build",
         appOrigin: APP_ORIGIN,
@@ -560,7 +560,7 @@ describe.skipIf(!shouldRunDatabaseTests())(
     let inviteToken: string;
 
     beforeAll(async () => {
-      handle = await createDisposableDatabase();
+      handle = await useSharedTestDatabase();
       config = {
         buildId: "test-build",
         appOrigin: APP_ORIGIN,
