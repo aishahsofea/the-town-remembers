@@ -75,8 +75,9 @@ rather than silently changing what an existing ID means.
 Implementation-ready companions add repository-grounded module boundaries,
 commands, tests, and commit sequences without changing the stable task IDs:
 [Phase 3 execution detail](phase-03-execution-detail.md),
-[Phase 4 execution detail](phase-04-execution-detail.md), and
-[Phase 5 execution detail](phase-05-execution-detail.md).
+[Phase 4 execution detail](phase-04-execution-detail.md),
+[Phase 5 execution detail](phase-05-execution-detail.md), and
+[Phase 6 execution detail](phase-06-execution-detail.md).
 
 ## Effort estimate
 
