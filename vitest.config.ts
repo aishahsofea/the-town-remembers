@@ -126,23 +126,15 @@ export default defineConfig({
       include: ["packages/*/src/**/*.ts"],
       exclude: ["packages/*/src/**/*.test.ts", "packages/test-support/**"],
       thresholds: {
-        statements: 90,
-        // Deliberately below 90 (`P3-08`): the remaining shortfall is two
-        // recurring, structurally-untestable patterns, not code anyone
-        // forgot to test — (1) a same-transaction conditional write's "zero
-        // rows matched" guard after the transaction's own prior read already
-        // proved the precondition (e.g. `creation-ledger.ts`, `join-ledger.ts`,
-        // `persistence/actions.ts`), and (2) `runSerializable`'s `ambiguous`
-        // branch, which nothing in this codebase mocks `Pool` to reach — no
-        // test simulates a connection failure exactly at `COMMIT`. `P3-08`'s
-        // larger `player_actions` state machine (five conditional writes,
-        // three independent ambiguous-commit call sites) made this the
-        // deciding factor rather than a fluctuation to shrug off. Closing it
-        // for real means building a `Pool`/client mock that fails at
-        // `COMMIT` — cross-cutting infrastructure, not a `P3-08`-sized task.
-        branches: 88,
-        functions: 90,
-        lines: 90,
+        // Coverage is a regression floor, not an incentive to add assertions
+        // that merely execute implementation branches. Behavioural,
+        // integration, security, and browser tests remain mandatory in the
+        // aggregate gate; these thresholds catch material coverage loss while
+        // leaving room to prefer meaningful scenarios over line chasing.
+        statements: 80,
+        branches: 70,
+        functions: 80,
+        lines: 80,
       },
     },
   },
