@@ -12,10 +12,10 @@ requires more than finding clues: players must understand who observed what,
 who trusts whom, how rumours spread, and which parts of the public story are
 actually true.
 
-> **Project status:** the MVP product direction, system architecture, logical
-> schema, HTTP API, reliability, deterministic rules, and authored game content
-> are accepted. SQL migrations and application implementation are the next
-> phase.
+> **Project status:** Phases 0–4 are merged: workspace, CockroachDB persistence,
+> deterministic rules, playable HTTP/browser slice, and bounded NPC memory loop.
+> Phase 5 ambient propagation and recovery is in progress. See the
+> [phase map](implementation-plans/README.md) for current routing.
 
 ## The three-minute explanation
 
@@ -154,10 +154,9 @@ corepack pnpm build
 corepack pnpm dev
 ```
 
-Open `http://127.0.0.1:5173`. The page calls `/api/v1/health` through the Vite
-proxy and reports API liveness, build identity, and server time. It is a
-foundation diagnostic: the database, model, queue, and gameplay routes arrive
-in Phases 1 through 6, and no shell in this phase claims otherwise.
+Open `http://127.0.0.1:5173`. Current routes cover health, town creation,
+invite/join, player views, deterministic actions, and NPC encounters. Phase 5
+adds ambient queue processing and between-visit recovery.
 
 ## Run the database locally
 
