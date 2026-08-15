@@ -2,39 +2,77 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  checkCorpusShape,
   compareToBaseline,
-  evaluateAll,
   reducedCostDialogueAllowed,
 } from "./prompts-eval.mjs";
 
-test("every checked-in phase-04 prompt-evaluation fixture passes deterministically", async () => {
-  const evaluation = await evaluateAll();
-  const failures = evaluation.results.filter((result) => !result.pass);
-  assert.deepEqual(
-    failures.map((failure) => failure.id),
-    [],
-    `expected no fixture failures, got: ${JSON.stringify(failures, null, 2)}`,
-  );
-  assert.ok(evaluation.results.length > 0, "expected at least one fixture to run");
+/**
+ * These tests unit-test `prompts-eval.mjs`'s helpers against small, inline
+ * evaluations. They must not call `evaluateAll()` or otherwise traverse the
+ * real `evals/phase-04` corpus (`VPR-04`) -- that corpus is evaluated
+ * exactly once per `pnpm validate` run, by `pnpm prompts:eval` itself.
+ */
+
+function resultsFor(entries) {
+  return {
+    results: entries.map(([family, category]) => ({ family, category, pass: true })),
+  };
+}
+
+test("checkCorpusShape passes when every family has a control and a known-failure/boundary fixture", () => {
+  const evaluation = resultsFor([
+    ["normalization", "control"],
+    ["normalization", "known_failure"],
+    ["dialogue", "control"],
+    ["dialogue", "boundary"],
+    ["repair", "control"],
+    ["repair", "known_failure"],
+  ]);
+  assert.deepEqual(checkCorpusShape(evaluation), []);
 });
 
-test("every table cell from Decision 010's evaluation gate has coverage across the three families", async () => {
-  const evaluation = await evaluateAll();
-  const categoriesByFamily = new Map();
-  for (const result of evaluation.results) {
-    const categories = categoriesByFamily.get(result.family) ?? new Set();
-    categories.add(result.category);
-    categoriesByFamily.set(result.family, categories);
-  }
-  for (const family of ["normalization", "dialogue", "repair"]) {
-    const categories = categoriesByFamily.get(family);
-    assert.ok(categories, `expected fixtures for the "${family}" family`);
-    assert.ok(categories.has("control"), `expected a control fixture for "${family}"`);
-    assert.ok(
-      categories.has("known_failure") || categories.has("boundary"),
-      `expected a known-failure or boundary fixture for "${family}"`,
-    );
-  }
+test("checkCorpusShape reports a missing family", () => {
+  const evaluation = resultsFor([
+    ["normalization", "control"],
+    ["normalization", "known_failure"],
+    ["repair", "control"],
+    ["repair", "boundary"],
+  ]);
+  const problems = checkCorpusShape(evaluation);
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /"dialogue"/);
+});
+
+test("checkCorpusShape reports a family missing a control fixture", () => {
+  const evaluation = resultsFor([
+    ["normalization", "known_failure"],
+    ["dialogue", "control"],
+    ["dialogue", "boundary"],
+    ["repair", "control"],
+    ["repair", "known_failure"],
+  ]);
+  const problems = checkCorpusShape(evaluation);
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /"control".*"normalization"/);
+});
+
+test("checkCorpusShape reports a family missing both known-failure and boundary fixtures", () => {
+  const evaluation = resultsFor([
+    ["normalization", "control"],
+    ["dialogue", "control"],
+    ["dialogue", "boundary"],
+    ["repair", "control"],
+    ["repair", "known_failure"],
+  ]);
+  const problems = checkCorpusShape(evaluation);
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /"known_failure" or "boundary".*"normalization"/);
+});
+
+test("checkCorpusShape reports every missing family when the corpus is empty", () => {
+  const problems = checkCorpusShape({ results: [] });
+  assert.equal(problems.length, 3);
 });
 
 test("reducedCostDialogueAllowed requires every dialogue fixture in the baseline to pass", () => {

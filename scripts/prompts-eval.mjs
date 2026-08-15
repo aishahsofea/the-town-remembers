@@ -262,6 +262,41 @@ export async function evaluateAll() {
 }
 
 /**
+ * Corpus-shape assertions -- every family present, every family carrying
+ * both a control fixture and a known-failure/boundary fixture -- used to
+ * live as a second real-corpus traversal in `prompts-eval.test.mjs`
+ * (`VPR-04`). Folded into the runner's own single `evaluateAll()` result
+ * instead, so the real fixture directory is only ever read once per
+ * `pnpm validate` run, by `pnpm prompts:eval` itself.
+ */
+export function checkCorpusShape(evaluation) {
+  const categoriesByFamily = new Map();
+  for (const result of evaluation.results) {
+    const categories = categoriesByFamily.get(result.family) ?? new Set();
+    categories.add(result.category);
+    categoriesByFamily.set(result.family, categories);
+  }
+
+  const problems = [];
+  for (const family of FAMILIES) {
+    const categories = categoriesByFamily.get(family);
+    if (!categories) {
+      problems.push(`expected at least one fixture for the "${family}" family`);
+      continue;
+    }
+    if (!categories.has("control")) {
+      problems.push(`expected a "control" category fixture for the "${family}" family`);
+    }
+    if (!categories.has("known_failure") && !categories.has("boundary")) {
+      problems.push(
+        `expected a "known_failure" or "boundary" category fixture for the "${family}" family`,
+      );
+    }
+  }
+  return problems;
+}
+
+/**
  * Reduced-cost (Haiku) dialogue may be selected only once every dialogue
  * fixture in the baseline passes -- structural/semantic validation is
  * model-agnostic, so "Haiku passes the same suite" means the baseline
@@ -326,6 +361,7 @@ async function runCli() {
   const updateBaseline = process.argv.includes("--update-baseline");
   const evaluation = await evaluateAll();
   const failures = evaluation.results.filter((result) => !result.pass);
+  const shapeProblems = checkCorpusShape(evaluation);
   const baseline = loadBaseline();
   const { regressions } = compareToBaseline(evaluation, baseline);
 
@@ -336,6 +372,9 @@ async function runCli() {
     );
     console.error(`  actual: ${JSON.stringify(failure.actual)}`);
   }
+  for (const problem of shapeProblems) {
+    console.error(`Corpus shape: ${problem}`);
+  }
   if (regressions.length > 0) {
     console.error(
       `Regression against baseline: ${regressions.join(", ")} previously passed and now fail.`,
@@ -343,8 +382,10 @@ async function runCli() {
   }
 
   if (updateBaseline) {
-    if (failures.length > 0) {
-      console.error("Refusing to update the baseline while fixtures are failing.");
+    if (failures.length > 0 || shapeProblems.length > 0) {
+      console.error(
+        "Refusing to update the baseline while fixtures or corpus shape fail.",
+      );
       process.exitCode = 1;
       return;
     }
@@ -353,7 +394,7 @@ async function runCli() {
     return;
   }
 
-  if (failures.length > 0 || regressions.length > 0) {
+  if (failures.length > 0 || shapeProblems.length > 0 || regressions.length > 0) {
     process.exitCode = 1;
     return;
   }

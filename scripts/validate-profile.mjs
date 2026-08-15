@@ -37,7 +37,6 @@ export const STAGES = Object.freeze([
     env: { TTR_REQUIRE_DB_TESTS: "1" },
     touchesDatabase: true,
   },
-  { name: "test:model", script: "test:model" },
   { name: "prompts:eval", script: "prompts:eval" },
   { name: "build", script: "build" },
   { name: "check:bundle", script: "check:bundle" },

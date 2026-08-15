@@ -82,7 +82,6 @@ test("ignores file types that are legitimately binary", () => {
   assert.deepEqual(checkSourceText(rootDir), []);
 });
 
-test("the repository itself is clean", () => {
-  const rootDir = path.resolve(import.meta.dirname, "..");
-  assert.deepEqual(checkSourceText(rootDir), []);
-});
+// A "the real repository is clean" case used to live here, duplicating
+// exactly what the standalone `pnpm check:source-text` stage already proves
+// against the same repository root earlier in `pnpm validate` (`VPR-05`).

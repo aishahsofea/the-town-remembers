@@ -70,10 +70,7 @@ test("reports a key the web manifest lists but content never authored", () => {
   });
 });
 
-test("the real repository's two lists agree", () => {
-  const rootDir = path.resolve(import.meta.dirname, "..");
-  assert.deepEqual(findAssetKeyDrift(rootDir), {
-    missingFromWeb: [],
-    missingFromContent: [],
-  });
-});
+// A "the real repository's two lists agree" case used to live here,
+// duplicating exactly what the standalone `pnpm check:assets` stage already
+// proves against the same repository root earlier in `pnpm validate`
+// (`VPR-05`).
