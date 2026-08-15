@@ -45,12 +45,42 @@ corepack pnpm validate
 | `pnpm cdk:synth` | Deterministic CDK synthesis into `cdk.out/` |
 | `pnpm test:e2e` | The browser health journey, the invite/join bootstrap journey, and `phase-03-first-playable` — the full create/join/travel/inspect/leave/away/return journey against a real running pair and its own disposable database (`e2e/global-teardown.ts`, `packages/game-server/README.md`) |
 | `pnpm validate` | All of the above, in dependency order |
+| `pnpm validate:profile` | Runs the same stages `pnpm validate` does, one at a time, and reports each stage's wall-clock duration as a table plus a JSON file under the ignored `.cache/` — use this instead of timing `pnpm validate` by hand when you're changing what a stage does |
 
 `pnpm typecheck` comes before `pnpm lint` on purpose. Packages resolve each
 other through their `dist` declarations, so type-aware lint rules need the
 ordered build to have run. `pnpm lint`, `pnpm test:e2e`, and `pnpm cdk:synth`
 all read built output; run `pnpm typecheck` or `pnpm build` first when invoking
 them on their own.
+
+`pnpm validate` no longer runs `pnpm test:model` or `pnpm test:tooling`'s old
+real-repository scans as separate stages — `pnpm test` already covers the
+`model-runtime` project once, and the standalone `check:*` stages already
+prove what those scans checked again. Both targeted commands
+(`pnpm test:model`, `pnpm test:tooling`) remain valid for focused
+development; only the aggregate gate stopped repeating them
+(`implementation-plans/validate-performance-and-test-rationalization.md`).
+
+### Measuring validate performance
+
+To reproduce a before/after timing comparison rather than trust a single run:
+
+1. Confirm nothing else is using the local CockroachDB node
+   (`pnpm db:status`) and no other Vitest, Playwright, or migration process is
+   running — `pnpm validate:profile` refuses to measure a database stage
+   under contention rather than report a contended, misleading number
+   (`scripts/db-suite-lock.mjs`).
+2. Run `node scripts/validate-profile.mjs --label cold` once from a freshly
+   booted machine or right after `pnpm db:down`, then `node
+   scripts/validate-profile.mjs --label warm` three times in a row.
+3. Read the JSON files it writes under `.cache/validate-profile-*.json` (each
+   stage's name, status, and duration in milliseconds) and take the median of
+   the three warm runs. Report cold and warm medians separately — a fast warm
+   result says nothing about first-run cost.
+
+The profiler mirrors `pnpm validate`'s stage list by hand
+(`scripts/validate-profile.mjs`'s own `STAGES` constant); keep the two in
+sync when either changes.
 
 ## Working with the database
 
@@ -98,15 +128,61 @@ through the test category, which does default to the local node.
 | `pnpm db:snapshot` | Regenerates `packages/database-admin/schema-snapshot.json` |
 | `pnpm db:types` | Regenerates the Kysely interface from that snapshot |
 
-The integration suite creates its own `ttr_test_<random>` database per test
-file, migrates it, and drops it. Teardown validates that prefix before issuing
-`DROP DATABASE`, because the prefix is the only thing standing between a
-mistyped DSN and a real database.
+Every database test file is classified by what its setup and assertions
+actually mutate, not by which package it lives in
+(`scripts/database-test-classification.mjs`, checked against the real
+repository on every `pnpm test:tooling` run):
+
+| Class | What it means | Example |
+|---|---|---|
+| `pure` | No live database at all | `packages/database/src/domains.test.ts` |
+| `shared-migrated` | Reads/writes ordinary per-town runtime data | most of `packages/game-server/src/**/*.db.test.ts` |
+| `isolated-schema` | Changes or verifies migrations, grants, or schema identity | `packages/database-admin/src/grants.test.ts` |
+| `isolated-concurrency` | Needs to be the only writer against its database while it runs | `packages/database-admin/src/vector-concurrency.test.ts` |
+
+`pure` files run in the `database-unit` vitest project alongside the other
+pure projects — no CockroachDB, no serialization. `isolated-*` files still
+each call `createDisposableDatabase()`
+(`packages/test-support/src/database/harness.ts`): their own
+`ttr_test_<random>` database, migrated from empty and dropped when the file
+finishes. `shared-migrated` files call `useSharedTestDatabase()` instead: the
+`database` project's `globalSetup` creates and migrates **one** suite-owned
+database for the whole run, and each shared-migrated file resets its mutable
+rows (`resetSharedDatabase()`, a reviewed, hardcoded table list — never a name
+built from anything but that one fixture) before its own tests run. The
+suite-owned database is dropped once, after every file has finished with it.
+Either way, teardown validates the `ttr_test_` prefix before issuing `DROP
+DATABASE`, because the prefix is the only thing standing between a mistyped
+DSN and a real database.
 
 `TTR_SKIP_DB_TESTS=1` skips the suite for a contributor without the binary.
 `pnpm validate` sets `TTR_REQUIRE_DB_TESTS=1`, and the two together are an
 error, so the gate cannot pass by skipping the part of the phase that matters
 most.
+
+### Database-suite ownership
+
+`pnpm test:db`, the database project inside `pnpm test`, and Playwright's own
+disposable database all migrate against the same local CockroachDB node.
+Running two of them at once doesn't fail loudly — it serializes schema
+changes on the node until one side times out. An atomic lock file
+(`scripts/db-suite-lock.mjs`, `.cache/db-suite-owner.lock`, itself
+`.gitignore`d) refuses a second database-touching run while a live one holds
+it, naming the owner's kind, PID, and how long it's been running:
+
+```
+Another database suite is already running: "test:e2e" (pid 12345, run
+12345-abc-xyz), started 42s ago. Wait for it to finish. If it crashed
+without cleaning up, confirm pid 12345 is not running, then remove
+.cache/db-suite-owner.lock.
+```
+
+A crashed owner never permanently blocks later runs: every check verifies the
+recorded PID is still alive before treating the lock as live, and clears it
+otherwise. If you hit this refusal and nothing you started could be the
+owner, check for a lingering `playwright test-server` process (an IDE
+extension's own process, not a `pnpm test:e2e` invocation, can hold it) before
+assuming the lock is stale.
 
 ### Three credentials, three categories
 
