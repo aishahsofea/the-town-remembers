@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "scenarios": [
+    "control-new-pure-branch.json",
+    "control-new-required-boundary-row.json",
+    "control-extend-existing-claim.json",
+    "known-failure-e2e-duplicates-component.json",
+    "known-failure-fresh-db-when-shared-sufficient.json",
+    "known-failure-vacuous-assertion.json",
+    "known-failure-duplicate-validate-stage.json",
+    "boundary-defense-in-depth.json",
+    "boundary-schema-grant-isolation.json",
+    "boundary-concurrency-race.json",
+    "boundary-human-review-only.json"
+  ]
+}

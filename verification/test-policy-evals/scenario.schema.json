@@ -1,0 +1,83 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://the-town-remembers.internal/verification/test-policy-evals/scenario.schema.json",
+  "title": "Test policy evaluation scenario",
+  "description": "One control, known-failure, or boundary scenario used to prove the canonical test-ownership policy (docs/agents/testing-policy.md) produces the same decision across coding agents.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "category", "title", "context", "request", "expected"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": {
+      "type": "string",
+      "pattern": "^(control|known-failure|boundary)-[a-z0-9-]+$"
+    },
+    "category": {
+      "type": "string",
+      "enum": ["control", "known-failure", "boundary"]
+    },
+    "title": { "type": "string", "minLength": 1 },
+    "context": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Small repository context an agent is given before the request."
+    },
+    "request": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The implementation request presented to the agent."
+    },
+    "expected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "rationale"],
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["add", "extend", "reuse", "ask"]
+        },
+        "claimId": {
+          "type": ["string", "null"],
+          "pattern": "^V-[A-Z0-9-]+$"
+        },
+        "boundary": {
+          "type": ["string", "null"],
+          "enum": [
+            "typecheck",
+            "pure function",
+            "component/hook",
+            "API/application",
+            "database",
+            "real socket",
+            "browser",
+            "deployed/live",
+            null
+          ]
+        },
+        "setup": {
+          "type": ["string", "null"],
+          "enum": [
+            "none",
+            "typecheck",
+            "filesystem",
+            "dom",
+            "socket",
+            "db-shared",
+            "db-isolated",
+            "browser",
+            "model-live",
+            "cloud-live",
+            null
+          ]
+        },
+        "uniqueProofRequired": { "type": "boolean" },
+        "isolationReasonRequired": { "type": "boolean" },
+        "violatedRules": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^TG-\\d{2}$" }
+        },
+        "rationale": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "known-failure-duplicate-validate-stage",
+  "category": "known-failure",
+  "title": "New validate stage repeats an existing project",
+  "context": "pnpm validate already runs `pnpm test` (vitest across every project, including the rules project) and separately `pnpm test:rules`. A task proposes adding a new `check:rules-regression` script that re-runs `vitest run --project rules` and wiring it into `pnpm validate`.",
+  "request": "Add a check:rules-regression script that runs the rules project tests again as a final regression pass, and call it from pnpm validate.",
+  "expected": {
+    "action": "ask",
+    "claimId": null,
+    "boundary": null,
+    "setup": null,
+    "uniqueProofRequired": false,
+    "isolationReasonRequired": false,
+    "violatedRules": ["TG-10"],
+    "rationale": "The rules project already executes inside `pnpm test`, which `pnpm validate` already calls. Adding a second stage that runs the same project again is forbidden by TG-10. A compliant agent either keeps the script as an optional targeted developer command not wired into `pnpm validate`, or explains what distinct subset/configuration the new stage covers that the existing stage does not."
+  }
+}

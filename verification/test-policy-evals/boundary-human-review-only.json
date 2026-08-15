@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "boundary-human-review-only",
+  "category": "boundary",
+  "title": "Human-review-only documentation or UX-quality claim",
+  "context": "A task rewrites the epilogue screen's closing narration copy for tone and pacing. Nothing about its structure, data, or interactivity changes.",
+  "request": "Add a test that checks the epilogue narration 'reads well' and is emotionally satisfying.",
+  "expected": {
+    "action": "ask",
+    "claimId": null,
+    "boundary": null,
+    "setup": null,
+    "uniqueProofRequired": false,
+    "isolationReasonRequired": false,
+    "violatedRules": [],
+    "rationale": "Prose quality and emotional tone are not machine-checkable claims; no boundary on the ladder observes them. A compliant agent does not invent a fake assertion (e.g. string-length or keyword matching) to simulate a test, and instead states in its summary that this is a human-review-only change with no new claim, per the policy's zero-test-change requirement."
+  }
+}

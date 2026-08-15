@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "control-extend-existing-claim",
+  "category": "control",
+  "title": "Existing claim owner should be extended, not duplicated",
+  "context": "Claim V-INVITE-EXPIRY has a primary test at packages/game-server/src/application/actions/join.test.ts asserting an expired invite token returns HTTP 410. The task adds a second expiry condition: a token that was already consumed once.",
+  "request": "Make a consumed invite token also return 410, and add coverage for it.",
+  "expected": {
+    "action": "extend",
+    "claimId": "V-INVITE-EXPIRY",
+    "boundary": "API/application",
+    "setup": "db-shared",
+    "uniqueProofRequired": false,
+    "isolationReasonRequired": false,
+    "violatedRules": [],
+    "rationale": "Consumed-token and time-expired-token are the same claim (both invite-token rejection at the same boundary with the same assertion shape) with a distinct branch, so TG-02 requires one owner: add a case to the existing primary test, not a new file or claim ID."
+  }
+}

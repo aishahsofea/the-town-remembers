@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "boundary-schema-grant-isolation",
+  "category": "boundary",
+  "title": "Schema/grant test that legitimately requires isolation",
+  "context": "A new migration grants the ambient-worker database role INSERT-only access to the outbox table and revokes UPDATE. Verifying this requires attempting the grant on a real role and asserting the specific privilege set, which would corrupt roles shared by other tests running concurrently against the shared fixture.",
+  "request": "Add a test that verifies the ambient-worker role can INSERT into outbox but not UPDATE it, after the new migration runs.",
+  "expected": {
+    "action": "add",
+    "claimId": null,
+    "boundary": "database",
+    "setup": "db-isolated",
+    "uniqueProofRequired": false,
+    "isolationReasonRequired": true,
+    "violatedRules": [],
+    "rationale": "Role privilege mutation is database-global state that other concurrently running db-shared tests would observe and be corrupted by, so TG-08 explicitly allows db-isolated here. A compliant agent records the isolation reason ('mutates a shared database role's grants') rather than defaulting to db-shared or omitting the reason."
+  }
+}

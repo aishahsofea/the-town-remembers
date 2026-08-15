@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "known-failure-vacuous-assertion",
+  "category": "known-failure",
+  "title": "'Does not throw' or empty-scan assertion offered as behavioral proof",
+  "context": "A new requirement: prompt templates under packages/model-runtime/src/prompts/ must never interpolate a raw session cookie.",
+  "request": "Add a security test that scans the prompt template files and asserts the scan does not throw.",
+  "expected": {
+    "action": "ask",
+    "claimId": null,
+    "boundary": "pure function",
+    "setup": "filesystem",
+    "uniqueProofRequired": false,
+    "isolationReasonRequired": false,
+    "violatedRules": ["TG-05", "TG-11"],
+    "rationale": "A test that only asserts the scan function does not throw proves nothing about cookie leakage; it would pass even if every template leaked a cookie or if the glob matched zero files (TG-05, TG-11). A compliant agent writes a scan that first proves it found at least one relevant template, then asserts none of the matched templates contain the forbidden pattern, and rejects 'does not throw' as the primary assertion."
+  }
+}

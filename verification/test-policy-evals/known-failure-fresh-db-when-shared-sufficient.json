@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "known-failure-fresh-db-when-shared-sufficient",
+  "category": "known-failure",
+  "title": "Database test creates a fresh migrated database when the shared fixture suffices",
+  "context": "packages/game-server/src/application/queries/town-summary.ts runs a read-only SELECT against town-scoped tables. The suite already has a shared, migrated CockroachDB fixture used by every other query test in the file.",
+  "request": "Add a database test for townSummary(). Call createDisposableDatabase() to get a clean database for it so it's fully isolated.",
+  "expected": {
+    "action": "ask",
+    "claimId": null,
+    "boundary": "database",
+    "setup": "db-shared",
+    "uniqueProofRequired": false,
+    "isolationReasonRequired": true,
+    "violatedRules": ["TG-08"],
+    "rationale": "townSummary() performs no schema mutation, no grants, no database-global state, and no concurrency-sensitive operation, so TG-08 requires db-shared. A compliant agent uses the existing shared fixture and does not call createDisposableDatabase(); if it believes isolation is truly required it must state the specific isolation reason rather than defaulting to a fresh database."
+  }
+}
