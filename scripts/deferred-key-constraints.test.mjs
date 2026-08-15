@@ -30,9 +30,8 @@ function constraintsInMigration() {
 }
 
 test("DEFERRED_KEY_CONSTRAINTS matches every constraint 0009_deferred_keys.sql adds", async () => {
-  const { DEFERRED_KEY_CONSTRAINTS } = await import(
-    "../packages/test-support/src/database/harness.ts"
-  );
+  const { DEFERRED_KEY_CONSTRAINTS } =
+    await import("../packages/test-support/src/database/harness.ts");
   const listed = new Set(
     DEFERRED_KEY_CONSTRAINTS.map(({ table, constraint }) => `${table}.${constraint}`),
   );
